@@ -185,3 +185,13 @@ it may be used in proprietary projects.  There are interfaces to some GNU code
 but these are entirely optional.
 
 All trademarks referenced herein are property of their respective holders.
+
+SCI Modifications
+-----------------
+
+* CMake based-build
+* Python scripts are archived in pythonlib.zip file.
+  * Created using command run in Lib directory:
+    find . -name "*.py" | xargs zip pythonlib.zip
+* Source file modifications (see file logs):
+  * Modules/posixmodule.c

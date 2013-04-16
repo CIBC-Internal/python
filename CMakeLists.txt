@@ -7,6 +7,7 @@ PROJECT(Python)
 #  MESSAGE(FATAL_ERROR "zlib library is required to compile Python.")
 #ENDIF()
 
+
 ##########################################################################
 # Version information                                                    #
 ##########################################################################
@@ -147,7 +148,7 @@ ELSE()
   SET(PY_POSIX_NAME posix)
 ENDIF()
 
-#_io module
+# _io module
 ADD_PYTHON_MODULE(_io  MOD_SRCS Modules/_io/_iomodule.c)
 SET(MOD_SRCS ${MOD_SRCS}
   Modules/_io/bufferedio.c
@@ -156,25 +157,66 @@ SET(MOD_SRCS ${MOD_SRCS}
   Modules/_io/iobase.c
   Modules/_io/stringio.c
   Modules/_io/textio.c
-  Modules/_math.c
-  #Modules/_time.c - not in 3.3?
 )
-      
+
+# Stefan Krah's _decimal module
+ADD_PYTHON_MODULE(_decimal DECIMAL_MOD_SRCS Modules/_decimal/_decimal.c)
+SET(DECIMAL_MOD_SRCS ${DECIMAL_MOD_SRCS}
+  Modules/_decimal/libmpdec/basearith.c
+  Modules/_decimal/libmpdec/constants.c
+  Modules/_decimal/libmpdec/context.c
+  Modules/_decimal/libmpdec/convolute.c
+  Modules/_decimal/libmpdec/crt.c
+  Modules/_decimal/libmpdec/difradix2.c
+  Modules/_decimal/libmpdec/fnt.c
+  Modules/_decimal/libmpdec/fourstep.c
+  Modules/_decimal/libmpdec/io.c
+  Modules/_decimal/libmpdec/memory.c
+  Modules/_decimal/libmpdec/mpdecimal.c
+  Modules/_decimal/libmpdec/numbertheory.c
+  Modules/_decimal/libmpdec/sixstep.c
+  Modules/_decimal/libmpdec/transpose.c
+)
+
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/Modules/_decimal/libmpdec)
+
+# TODO: will ASM work on Windows? Test this...
+# See setup.py for other configuration options
+MESSAGE(STATUS "CMAKE_SIZEOF_VOID_P=${CMAKE_SIZEOF_VOID_P}")
+IF(CMAKE_SIZEOF_VOID_P MATCHES  8)
+  SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+    PROPERTY
+    COMPILE_DEFINITIONS CONFIG_64=1 ASM=1)
+ELSE()
+  SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+    PROPERTY
+    COMPILE_DEFINITIONS CONFIG_32=1 ASM=1)
+ENDIF()
+
+SET(MOD_SRCS ${DECIMAL_MOD_SRCS})
+
+# from setup.py
+ADD_PYTHON_MODULE(cmath MOD_SRCS Modules/cmathmodule.c)
+SET(MOD_SRCS ${MOD_SRCS}
+  Modules/_math.c
+)
+# from setup.py
+# requires Modules/_math.c, which was added when configuring cmathmodule
+ADD_PYTHON_MODULE(math MOD_SRCS Modules/mathmodule.c)
+
 #_multiprocessing module
 ADD_PYTHON_MODULE(_multiprocessing  MOD_SRCS Modules/_multiprocessing/multiprocessing.c)
-#SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/socket_connection.c) - not in 3.3?
+
 IF(WIN32)
-  SET(MOD_SRCS ${MOD_SRCS}
-    Modules/_multiprocessing/semaphore.c
-    Modules/_multiprocessing/win32_functions.c
-    Modules/_multiprocessing/pipe_connection.c)
+  SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
   SET(extraLibs ${extraLibs} Ws2_32.lib)
-ELSE()
-  IF(HAVE_SEM_OPEN)
-    SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
-  ENDIF()
+ELSEIF(HAVE_SEM_OPEN AND NOT POSIX_SEMAPHORES_NOT_ENABLED)
+  # Probably only a problem on some FreeBSD and Solaris distributions.
+  # If needed, there is a test for POSIX_SEMAPHORES_NOT_ENABLED in configure.ac.
+  SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
 ENDIF()
       
+# TODO: enable this once zlib support is available in SCIRun prototype
 # zlib module
 #IF(SCI_ZLIB_LIBRARY)
 #  ADD_PYTHON_MODULE(zlib MOD_SRCS Modules/zlibmodule.c)
@@ -187,9 +229,7 @@ ADD_PYTHON_MODULE(atexit        MOD_SRCS Modules/atexitmodule.c)
 ADD_PYTHON_MODULE(_pickle       MOD_SRCS Modules/_pickle.c)
 ADD_PYTHON_MODULE(array         MOD_SRCS Modules/arraymodule.c)
 ADD_PYTHON_MODULE(binascii      MOD_SRCS Modules/binascii.c)
-ADD_PYTHON_MODULE(cmath         MOD_SRCS Modules/cmathmodule.c)
 ADD_PYTHON_MODULE(errno       MOD_SRCS Modules/errnomodule.c)
-ADD_PYTHON_MODULE(math          MOD_SRCS Modules/mathmodule.c)
 ADD_PYTHON_MODULE(${PY_POSIX_NAME}  MOD_SRCS Modules/posixmodule.c)
 ADD_PYTHON_MODULE(operator      MOD_SRCS Modules/operator.c)
 ADD_PYTHON_MODULE(signal      MOD_SRCS Modules/signalmodule.c)
@@ -272,20 +312,18 @@ FILE(WRITE ${Python_BINARY_DIR}/Modules/Setup "#created by cmake, do not edit\n"
 #####################################
 
 SET(P_SRCS Parser/acceler.c
-  Parser/bitSET.c
-  Parser/firstsets.c
-  Parser/grammar.c
   Parser/grammar1.c
   Parser/listnode.c
-  Parser/metagrammar.c
   Parser/node.c
   Parser/parser.c
-  Parser/parser.h
-  Parser/parsetok.c
+  Parser/bitset.c
+  Parser/metagrammar.c
+  Parser/firstsets.c
+  Parser/grammar.c
   Parser/pgen.c
 )
 
-SET(PARSER_SRCS ${P_SRCS} Parser/myreadline.c Parser/tokenizer.c Parser/tokenizer.h)
+SET(PARSER_SRCS ${P_SRCS} Parser/myreadline.c Parser/parsetok.c Parser/tokenizer.c)
 
 SET(OBJECT_SRCS Objects/abstract.c
   Objects/boolobject.c
