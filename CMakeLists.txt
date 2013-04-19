@@ -159,42 +159,6 @@ SET(MOD_SRCS ${MOD_SRCS}
   Modules/_io/textio.c
 )
 
-# Stefan Krah's _decimal module
-ADD_PYTHON_MODULE(_decimal DECIMAL_MOD_SRCS Modules/_decimal/_decimal.c)
-SET(DECIMAL_MOD_SRCS ${DECIMAL_MOD_SRCS}
-  Modules/_decimal/libmpdec/basearith.c
-  Modules/_decimal/libmpdec/constants.c
-  Modules/_decimal/libmpdec/context.c
-  Modules/_decimal/libmpdec/convolute.c
-  Modules/_decimal/libmpdec/crt.c
-  Modules/_decimal/libmpdec/difradix2.c
-  Modules/_decimal/libmpdec/fnt.c
-  Modules/_decimal/libmpdec/fourstep.c
-  Modules/_decimal/libmpdec/io.c
-  Modules/_decimal/libmpdec/memory.c
-  Modules/_decimal/libmpdec/mpdecimal.c
-  Modules/_decimal/libmpdec/numbertheory.c
-  Modules/_decimal/libmpdec/sixstep.c
-  Modules/_decimal/libmpdec/transpose.c
-)
-
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/Modules/_decimal/libmpdec)
-
-# TODO: will ASM work on Windows? Test this...
-# See setup.py for other configuration options
-MESSAGE(STATUS "CMAKE_SIZEOF_VOID_P=${CMAKE_SIZEOF_VOID_P}")
-IF(CMAKE_SIZEOF_VOID_P MATCHES  8)
-  SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
-    PROPERTY
-    COMPILE_DEFINITIONS CONFIG_64=1 ASM=1)
-ELSE()
-  SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
-    PROPERTY
-    COMPILE_DEFINITIONS CONFIG_32=1 ASM=1)
-ENDIF()
-
-SET(MOD_SRCS ${DECIMAL_MOD_SRCS})
-
 # from setup.py
 ADD_PYTHON_MODULE(cmath MOD_SRCS Modules/cmathmodule.c)
 SET(MOD_SRCS ${MOD_SRCS}
@@ -260,9 +224,10 @@ ADD_PYTHON_MODULE(xxsubtype   MOD_SRCS Modules/xxsubtype.c)
 ADD_PYTHON_MODULE(zipimport   MOD_SRCS Modules/zipimport.c)
 ADD_PYTHON_MODULE(select    MOD_SRCS Modules/selectmodule.c)
 
+# TODO: look at Modules/_freeze_importlib - not built by default on OS X
+
 IF(WIN32)
   ADD_PYTHON_MODULE(msvcrt    MOD_SRCS PC/msvcrtmodule.c)
-  ADD_PYTHON_MODULE(_subprocess  MOD_SRCS PC/_subprocess.c)
   ADD_PYTHON_MODULE(winreg    MOD_SRCS PC/winreg.c)
 ELSE()
   ADD_PYTHON_MODULE(pwd    MOD_SRCS Modules/pwdmodule.c)
@@ -275,6 +240,56 @@ ELSE()
 
   ADD_PYTHON_MODULE(fcntl         MOD_SRCS Modules/fcntlmodule.c )
   ADD_PYTHON_MODULE(grp           MOD_SRCS Modules/grpmodule.c )
+
+  # extension modules
+  # Stefan Krah's _decimal module
+  ADD_PYTHON_MODULE(_decimal DECIMAL_MOD_SRCS Modules/_decimal/_decimal.c)
+  SET(DECIMAL_MOD_SRCS ${DECIMAL_MOD_SRCS}
+    Modules/_decimal/libmpdec/basearith.c
+    Modules/_decimal/libmpdec/constants.c
+    Modules/_decimal/libmpdec/context.c
+    Modules/_decimal/libmpdec/convolute.c
+    Modules/_decimal/libmpdec/crt.c
+    Modules/_decimal/libmpdec/difradix2.c
+    Modules/_decimal/libmpdec/fnt.c
+    Modules/_decimal/libmpdec/fourstep.c
+    Modules/_decimal/libmpdec/io.c
+    Modules/_decimal/libmpdec/memory.c
+    Modules/_decimal/libmpdec/mpdecimal.c
+    Modules/_decimal/libmpdec/numbertheory.c
+    Modules/_decimal/libmpdec/sixstep.c
+    Modules/_decimal/libmpdec/transpose.c
+  )
+
+  INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/Modules/_decimal/libmpdec)
+
+  # See setup.py for other configuration options
+  MESSAGE(STATUS "CMAKE_SIZEOF_VOID_P=${CMAKE_SIZEOF_VOID_P}")
+  # Windows flags from PCbuild/pcbuild.sln
+  IF(CMAKE_SIZEOF_VOID_P MATCHES  8)
+    IF(WIN32)
+      SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+        PROPERTY
+          COMPILE_DEFINITIONS CONFIG_64=1 MASM=1)
+    ELSE()
+      SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+        PROPERTY
+          COMPILE_DEFINITIONS CONFIG_64=1 ASM=1)
+    ENDIF()
+  ELSE()
+    IF(WIN32)
+     # /DPPRO?
+      SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+        PROPERTY
+          COMPILE_DEFINITIONS CONFIG_32=1 PPRO=1 MASM=1)
+    ELSE()
+      SET_PROPERTY(SOURCE ${DECIMAL_MOD_SRCS}
+        PROPERTY
+          COMPILE_DEFINITIONS CONFIG_32=1 ASM=1)
+    ENDIF()
+  ENDIF()
+
+  SET(MOD_SRCS ${DECIMAL_MOD_SRCS})
 
 #ENDIF()
 ENDIF()
@@ -292,6 +307,8 @@ IF(Py_USING_UNICODE)
   ADD_PYTHON_MODULE(_string MOD_SRCS Objects/unicodeobject.c)
   SET(MOD_SRCS ${MOD_SRCS} Objects/unicodectype.c)
 ENDIF()
+
+# TODO: module _ctypes
 
 FILE(MAKE_DIRECTORY ${Python_BINARY_DIR}/Modules)
 # PC/pyconfig.h used for Windows builds, contains macro definitions for types missing on Windows
