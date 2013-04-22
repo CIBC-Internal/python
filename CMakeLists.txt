@@ -223,6 +223,7 @@ ADD_PYTHON_MODULE(_json        MOD_SRCS Modules/_json.c )
 ADD_PYTHON_MODULE(xxsubtype   MOD_SRCS Modules/xxsubtype.c)
 ADD_PYTHON_MODULE(zipimport   MOD_SRCS Modules/zipimport.c)
 ADD_PYTHON_MODULE(select    MOD_SRCS Modules/selectmodule.c)
+ADD_PYTHON_MODULE(faulthandler MOD_SRCS Modules/faulthandler.c)
 
 # TODO: look at Modules/_freeze_importlib - not built by default on OS X
 
@@ -342,6 +343,7 @@ SET(P_SRCS Parser/acceler.c
 SET(PARSER_SRCS ${P_SRCS} Parser/myreadline.c Parser/parsetok.c Parser/tokenizer.c)
 
 SET(OBJECT_SRCS Objects/abstract.c
+  Objects/accu.c
   Objects/boolobject.c
   Objects/bytearrayobject.c
   Objects/bytes_methods.c
@@ -366,6 +368,7 @@ SET(OBJECT_SRCS Objects/abstract.c
   Objects/memoryobject.c
   Objects/methodobject.c
   Objects/moduleobject.c
+  Objects/namespaceobject.c
   Objects/object.c
   Objects/obmalloc.c
   Objects/rangeobject.c
@@ -374,6 +377,8 @@ SET(OBJECT_SRCS Objects/abstract.c
   Objects/structseq.c
   Objects/tupleobject.c
   Objects/typeobject.c
+  Objects/unicodectype.c
+  Objects/unicodeobject.c
   Objects/weakrefobject.c
 )
 
@@ -385,6 +390,7 @@ SET(PYTHON_SRCS Python/Python-ast.c
   Python/ceval.c 
   Python/compile.c 
   Python/codecs.c 
+  Python/dynamic_annotations.c
   Python/dtoa.c
   Python/errors.c 
   Python/fileutils.c
@@ -416,6 +422,7 @@ SET(PYTHON_SRCS Python/Python-ast.c
   Python/pystrtod.c 
   Python/pythonrun.c
   Python/pytime.c
+  Python/random.c
   Python/structmember.c 
   Python/symtable.c 
   Python/sysmodule.c 
