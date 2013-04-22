@@ -136,7 +136,7 @@ MACRO(ADD_PYTHON_MODULE _NAME _STATIC_SRCS)
       SET(PY_STATIC_MODULES_INITTAB        "${PY_STATIC_MODULES_INITTAB}  {\"${_NAME}\", PyInit_${_NAME}},\n")
     ENDIF()
   ENDIF()
-ENDMACRO(ADD_PYTHON_MODULE)
+ENDMACRO()
 
 IF(WITH_THREAD)
   ADD_PYTHON_MODULE(_thread  MOD_SRCS Modules/_threadmodule.c)
@@ -264,7 +264,6 @@ ELSE()
   INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/Modules/_decimal/libmpdec)
 
   # See setup.py for other configuration options
-  MESSAGE(STATUS "CMAKE_SIZEOF_VOID_P=${CMAKE_SIZEOF_VOID_P}")
   # Windows flags from PCbuild/pcbuild.sln
   IF(CMAKE_SIZEOF_VOID_P MATCHES  8)
     IF(WIN32)
@@ -289,7 +288,7 @@ ELSE()
     ENDIF()
   ENDIF()
 
-  SET(MOD_SRCS ${DECIMAL_MOD_SRCS})
+  SET(MOD_SRCS ${MOD_SRCS} ${DECIMAL_MOD_SRCS})
 
 #ENDIF()
 ENDIF()
