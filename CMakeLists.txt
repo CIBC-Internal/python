@@ -50,6 +50,10 @@ OPTION(WITH_THREAD "compile in rudimentary thread support" 1)
 MARK_AS_ADVANCED(FORCE WITH_TSC ENABLE_IPV6 WITH_DOC_STRINGS Py_USING_UNICODE 
         Py_DEBUG WITH_PYMALLOC HAVE_LARGEFILE_SUPPORT WITH_THREAD)
 
+IF(NOT Py_DEBUG)
+  ADD_DEFINITIONS(-DNDEBUG)
+ENDIF()
+
 # do the configure checks
 
 INCLUDE(ConfigureChecks.cmake)
@@ -377,8 +381,6 @@ SET(OBJECT_SRCS Objects/abstract.c
   Objects/structseq.c
   Objects/tupleobject.c
   Objects/typeobject.c
-  Objects/unicodectype.c
-  Objects/unicodeobject.c
   Objects/weakrefobject.c
 )
 
