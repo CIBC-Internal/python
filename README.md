@@ -191,7 +191,7 @@ SCI Modifications
 
 * CMake based-build
 * Python scripts are archived in pythonlib.zip file.
-  * Created using command run in Lib directory:
-    find . -name "*.py" | xargs zip pythonlib.zip
+  * Created using command run in Lib directory (on OS X):
+    zip ../pythonlib.zip *
 * Source file modifications (see file logs):
   * Modules/posixmodule.c
