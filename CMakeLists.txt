@@ -50,6 +50,10 @@ OPTION(WITH_THREAD "compile in rudimentary thread support" 1)
 MARK_AS_ADVANCED(FORCE WITH_TSC ENABLE_IPV6 WITH_DOC_STRINGS Py_USING_UNICODE 
         Py_DEBUG WITH_PYMALLOC HAVE_LARGEFILE_SUPPORT WITH_THREAD)
 
+IF(CMAKE_BUILD_TYPE MATCHES "Debug")
+  SET(Py_DEBUG 1)
+ENDIF()
+
 IF(NOT Py_DEBUG)
   ADD_DEFINITIONS(-DNDEBUG)
 ENDIF()
@@ -173,15 +177,17 @@ SET(MOD_SRCS ${MOD_SRCS}
 ADD_PYTHON_MODULE(math MOD_SRCS Modules/mathmodule.c)
 
 #_multiprocessing module
-ADD_PYTHON_MODULE(_multiprocessing  MOD_SRCS Modules/_multiprocessing/multiprocessing.c)
+IF(WITH_THREAD)
+  ADD_PYTHON_MODULE(_multiprocessing  MOD_SRCS Modules/_multiprocessing/multiprocessing.c)
 
-IF(WIN32)
-  SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
-  SET(extraLibs ${extraLibs} Ws2_32.lib)
-ELSEIF(HAVE_SEM_OPEN AND NOT POSIX_SEMAPHORES_NOT_ENABLED)
-  # Probably only a problem on some FreeBSD and Solaris distributions.
-  # If needed, there is a test for POSIX_SEMAPHORES_NOT_ENABLED in configure.ac.
-  SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
+  IF(WIN32)
+    SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
+    SET(extraLibs ${extraLibs} Ws2_32.lib)
+  ELSEIF(HAVE_SEM_OPEN AND NOT POSIX_SEMAPHORES_NOT_ENABLED)
+    # Probably only a problem on some FreeBSD and Solaris distributions.
+    # If needed, there is a test for POSIX_SEMAPHORES_NOT_ENABLED in configure.ac.
+    SET(MOD_SRCS ${MOD_SRCS} Modules/_multiprocessing/semaphore.c)
+  ENDIF()
 ENDIF()
       
 # TODO: enable this once zlib support is available in SCIRun prototype

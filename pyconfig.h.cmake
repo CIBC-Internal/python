@@ -1159,7 +1159,7 @@
 #define PY_FORMAT_SIZE_T "z"
 
 /* Define if you want to build an interpreter with many run-time checks. */
-/* #undef Py_DEBUG */
+#cmakedefine Py_DEBUG 1
 
 /* Defined if Python is built as a shared library. */
 /* #undef Py_ENABLE_SHARED */
