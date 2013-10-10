@@ -525,7 +525,8 @@ ELSE()
 ENDIF()
 
 SET(PYTHON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "" FORCE)
-SET(PYTHON_MODULE_SEARCH_PATH "./lib/pythonlib.zip" CACHE INTERNAL "Relative path to pythonlib.zip file." FORCE)
+#SET(PYTHON_MODULE_SEARCH_PATH "./lib/pythonlib.zip" CACHE INTERNAL "Relative path to pythonlib.zip file." FORCE)
+SET(PYTHON_MODULE_SEARCH_PATH "./lib" CACHE INTERNAL "Relative path to python module files." FORCE)
 
 OPTION(BUILD_PYTHON_INTERPRETER "Build the python interpreter executable." OFF)
 IF(BUILD_PYTHON_INTERPRETER)
