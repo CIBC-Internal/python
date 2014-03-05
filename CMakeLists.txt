@@ -2,10 +2,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8 FATAL_ERROR)
 
 PROJECT(Python)
 
-# TODO: add zlib support eventually
-#IF(NOT SCI_ZLIB_LIBRARY)
-#  MESSAGE(FATAL_ERROR "zlib library is required to compile Python.")
-#ENDIF()
+IF(NOT SCI_ZLIB_LIBRARY)
+  MESSAGE(FATAL_ERROR "zlib library is required to compile Python.")
+ENDIF()
 
 
 ##########################################################################
@@ -190,7 +189,6 @@ IF(WITH_THREAD)
   ENDIF()
 ENDIF()
       
-# TODO: enable this once zlib support is available in SCIRun prototype
 # zlib module
 IF(SCI_ZLIB_LIBRARY)
   ADD_PYTHON_MODULE(zlib MOD_SRCS Modules/zlibmodule.c)
@@ -485,7 +483,7 @@ ENDIF()
 #  ADD_DEFINITIONS(-DWITHOUT_COMPLEX)
 #ENDIF()
 
-ADD_LIBRARY(${SCI_PYTHON_LIBRARY}  STATIC
+ADD_LIBRARY(${SCI_PYTHON_LIBRARY} STATIC
   ${PARSER_SRCS}
   ${OBJECT_SRCS}
   ${PYTHON_SRCS}
@@ -520,13 +518,11 @@ ELSE()
   ADD_CUSTOM_COMMAND(TARGET ${SCI_PYTHON_LIBRARY}
        POST_BUILD
        COMMAND [ -d ${PYTHONLIB_DST_PATH} ] || mkdir -p "${PYTHONLIB_DST_PATH}" 
-       #COMMAND cp -rf "${CMAKE_CURRENT_SOURCE_DIR}/pythonlib.zip" "${PYTHONLIB_DST_PATH}")       
-       COMMAND cp -rf "${CMAKE_CURRENT_SOURCE_DIR}/Lib/*" "${PYTHONLIB_DST_PATH}")       
+       COMMAND cp -rf "${CMAKE_CURRENT_SOURCE_DIR}/pythonlib.zip" "${PYTHONLIB_DST_PATH}")       
 ENDIF()
 
 SET(PYTHON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "" FORCE)
-#SET(PYTHON_MODULE_SEARCH_PATH "./lib/pythonlib.zip" CACHE INTERNAL "Relative path to pythonlib.zip file." FORCE)
-SET(PYTHON_MODULE_SEARCH_PATH "./lib" CACHE INTERNAL "Relative path to python module files." FORCE)
+SET(PYTHON_MODULE_SEARCH_PATH "./lib/pythonlib.zip" CACHE INTERNAL "Relative path to pythonlib.zip file." FORCE)
 
 OPTION(BUILD_PYTHON_INTERPRETER "Build the python interpreter executable." OFF)
 IF(BUILD_PYTHON_INTERPRETER)
