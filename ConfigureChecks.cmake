@@ -851,18 +851,18 @@ endif(HAVE_SYS_TIME_H AND HAVE_SYS_SELECT_H)
 
 ##########################################################
 
-find_package(ZLIB)
-if(ZLIB_FOUND)
-  macro_push_required_vars()
-  set(CFG_HEADERS_SAVE ${CFG_HEADERS})
-
-  set(CFG_HEADERS ${CFG_HEADERS} zlib.h)
-  add_cond(CMAKE_REQUIRED_LIBRARIES ZLIB_FOUND ${ZLIB_LIBRARIES})
-  check_symbol_exists(inflateCopy      "${CFG_HEADERS}" HAVE_ZLIB_COPY)
-
-  set(CFG_HEADERS ${CFG_HEADERS_SAVE})
-  macro_pop_required_vars()
-endif(ZLIB_FOUND)
+#find_package(ZLIB)
+#if(ZLIB_FOUND)
+#  macro_push_required_vars()
+#  set(CFG_HEADERS_SAVE ${CFG_HEADERS})
+#
+#  set(CFG_HEADERS ${CFG_HEADERS} zlib.h)
+#  add_cond(CMAKE_REQUIRED_LIBRARIES ZLIB_FOUND ${ZLIB_LIBRARIES})
+#  check_symbol_exists(inflateCopy      "${CFG_HEADERS}" HAVE_ZLIB_COPY)
+#
+#  set(CFG_HEADERS ${CFG_HEADERS_SAVE})
+#  macro_pop_required_vars()
+#endif(ZLIB_FOUND)
 
 ############################################
 
