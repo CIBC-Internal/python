@@ -19,7 +19,7 @@ This module implements the HMAC algorithm as described by :rfc:`2104`.
    Return a new hmac object.  *key* is a bytes object giving the secret key.  If
    *msg* is present, the method call ``update(msg)`` is made.  *digestmod* is
    the digest constructor or module for the HMAC object to use. It defaults to
-   the :func:`hashlib.md5` constructor.
+   the :data:`hashlib.md5` constructor.
 
 
 An HMAC object has the following methods:
@@ -74,8 +74,7 @@ This module also provides the following helper function:
    timing analysis by avoiding content-based short circuiting behaviour,
    making it appropriate for cryptography.  *a* and *b* must both be of the
    same type: either :class:`str` (ASCII only, as e.g. returned by
-   :meth:`HMAC.hexdigest`), or any type that supports the buffer protocol
-   (e.g. :class:`bytes`).
+   :meth:`HMAC.hexdigest`), or a :term:`bytes-like object`.
 
    .. note::
 

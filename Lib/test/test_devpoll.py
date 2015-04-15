@@ -3,7 +3,7 @@
 # Initial tests are copied as is from "test_poll.py"
 
 import os, select, random, unittest, sys
-from test.support import TESTFN, run_unittest
+from test.support import TESTFN, run_unittest, cpython_only
 
 try:
     select.devpoll
@@ -86,6 +86,27 @@ class DevPollTests(unittest.TestCase):
         self.assertRaises(OverflowError, pollster.poll, 1 << 31)
         self.assertRaises(OverflowError, pollster.poll, 1 << 63)
         self.assertRaises(OverflowError, pollster.poll, 1 << 64)
+
+    def test_events_mask_overflow(self):
+        pollster = select.devpoll()
+        w, r = os.pipe()
+        pollster.register(w)
+        # Issue #17919
+        self.assertRaises(OverflowError, pollster.register, 0, -1)
+        self.assertRaises(OverflowError, pollster.register, 0, 1 << 64)
+        self.assertRaises(OverflowError, pollster.modify, 1, -1)
+        self.assertRaises(OverflowError, pollster.modify, 1, 1 << 64)
+
+    @cpython_only
+    def test_events_mask_overflow_c_limits(self):
+        from _testcapi import USHRT_MAX
+        pollster = select.devpoll()
+        w, r = os.pipe()
+        pollster.register(w)
+        # Issue #17919
+        self.assertRaises(OverflowError, pollster.register, 0, USHRT_MAX + 1)
+        self.assertRaises(OverflowError, pollster.modify, 1, USHRT_MAX + 1)
+
 
 def test_main():
     run_unittest(DevPollTests)

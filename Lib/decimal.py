@@ -21,7 +21,7 @@ the General Decimal Arithmetic Specification:
 
 and IEEE standard 854-1987:
 
-    www.cs.berkeley.edu/~ejr/projects/754/private/drafts/854-1987/dir.html
+    http://en.wikipedia.org/wiki/IEEE_854-1987
 
 Decimal floating point has finite precision with arbitrarily large bounds.
 
@@ -140,6 +140,7 @@ __all__ = [
 
 __version__ = '1.70'    # Highest version of the spec this complies with
                         # See http://speleotrove.com/decimal/
+__libmpdec_version__ = "2.4.0" # compatible libmpdec version
 
 import copy as _copy
 import math as _math
@@ -6140,7 +6141,7 @@ _parse_format_specifier_regex = re.compile(r"""\A
 (?:\.(?P<precision>0|(?!0)\d+))?
 (?P<type>[eEfFgGn%])?
 \Z
-""", re.VERBOSE)
+""", re.VERBOSE|re.DOTALL)
 
 del re
 

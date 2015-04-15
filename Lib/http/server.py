@@ -355,7 +355,7 @@ class BaseHTTPRequestHandler(socketserver.StreamRequestHandler):
 
         """
         self.send_response_only(100)
-        self.flush_headers()
+        self.end_headers()
         return True
 
     def handle_one_request(self):
@@ -670,8 +670,10 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         """Serve a GET request."""
         f = self.send_head()
         if f:
-            self.copyfile(f, self.wfile)
-            f.close()
+            try:
+                self.copyfile(f, self.wfile)
+            finally:
+                f.close()
 
     def do_HEAD(self):
         """Serve a HEAD request."""
@@ -712,13 +714,17 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         except IOError:
             self.send_error(404, "File not found")
             return None
-        self.send_response(200)
-        self.send_header("Content-type", ctype)
-        fs = os.fstat(f.fileno())
-        self.send_header("Content-Length", str(fs[6]))
-        self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
-        self.end_headers()
-        return f
+        try:
+            self.send_response(200)
+            self.send_header("Content-type", ctype)
+            fs = os.fstat(f.fileno())
+            self.send_header("Content-Length", str(fs[6]))
+            self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+            self.end_headers()
+            return f
+        except:
+            f.close()
+            raise
 
     def list_directory(self, path):
         """Helper to produce a directory listing (absent index.html).
@@ -780,6 +786,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         # abandon query parameters
         path = path.split('?',1)[0]
         path = path.split('#',1)[0]
+        # Don't forget explicit trailing slash when normalizing. Issue17324
+        trailing_slash = path.rstrip().endswith('/')
         path = posixpath.normpath(urllib.parse.unquote(path))
         words = path.split('/')
         words = filter(None, words)
@@ -789,6 +797,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             head, word = os.path.split(word)
             if word in (os.curdir, os.pardir): continue
             path = os.path.join(path, word)
+        if trailing_slash:
+            path += '/'
         return path
 
     def copyfile(self, source, outputfile):
@@ -961,7 +971,7 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
         (and the next character is a '/' or the end of the string).
 
         """
-        collapsed_path = _url_collapse_path(self.path)
+        collapsed_path = _url_collapse_path(urllib.parse.unquote(self.path))
         dir_sep = collapsed_path.find('/', 1)
         head, tail = collapsed_path[:dir_sep], collapsed_path[dir_sep+1:]
         if head in self.cgi_directories:
@@ -983,10 +993,9 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
 
     def run_cgi(self):
         """Execute a CGI script."""
-        path = self.path
         dir, rest = self.cgi_info
-
-        i = path.find('/', len(dir) + 1)
+        path = dir + '/' + rest
+        i = path.find('/', len(dir)+1)
         while i >= 0:
             nextdir = path[:i]
             nextrest = path[i+1:]
@@ -994,7 +1003,7 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
             scriptdir = self.translate_path(nextdir)
             if os.path.isdir(scriptdir):
                 dir, rest = nextdir, nextrest
-                i = path.find('/', len(dir) + 1)
+                i = path.find('/', len(dir)+1)
             else:
                 break
 

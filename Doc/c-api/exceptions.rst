@@ -222,13 +222,19 @@ in various ways.  There is a separate error indicator for each thread.
    when the system call returns an error.
 
 
-.. c:function:: PyObject* PyErr_SetFromErrnoWithFilename(PyObject *type, const char *filename)
+.. c:function:: PyObject* PyErr_SetFromErrnoWithFilenameObject(PyObject *type, PyObject *filenameObject)
 
    Similar to :c:func:`PyErr_SetFromErrno`, with the additional behavior that if
-   *filename* is not *NULL*, it is passed to the constructor of *type* as a third
-   parameter.  In the case of exceptions such as :exc:`IOError` and :exc:`OSError`,
-   this is used to define the :attr:`filename` attribute of the exception instance.
-   *filename* is decoded from the filesystem encoding
+   *filenameObject* is not *NULL*, it is passed to the constructor of *type* as
+   a third parameter.  In the case of exceptions such as :exc:`IOError` and
+   :exc:`OSError`, this is used to define the :attr:`filename` attribute of the
+   exception instance.
+
+
+.. c:function:: PyObject* PyErr_SetFromErrnoWithFilename(PyObject *type, const char *filename)
+
+   Similar to :c:func:`PyErr_SetFromErrnoWithFilenameObject`, but the filename
+   is given as a C string.  *filename* is decoded from the filesystem encoding
    (:func:`sys.getfilesystemencoding`).
 
 
@@ -250,16 +256,28 @@ in various ways.  There is a separate error indicator for each thread.
    specifying the exception type to be raised. Availability: Windows.
 
 
+.. c:function:: PyObject* PyErr_SetFromWindowsErrWithFilenameObject(int ierr, PyObject *filenameObject)
+
+   Similar to :c:func:`PyErr_SetFromWindowsErr`, with the additional behavior
+   that if *filenameObject* is not *NULL*, it is passed to the constructor of
+   :exc:`WindowsError` as a third parameter.  Availability: Windows.
+
+
 .. c:function:: PyObject* PyErr_SetFromWindowsErrWithFilename(int ierr, const char *filename)
 
-   Similar to :c:func:`PyErr_SetFromWindowsErr`, with the additional behavior that
-   if *filename* is not *NULL*, it is passed to the constructor of
-   :exc:`WindowsError` as a third parameter.  *filename* is decoded from the
-   filesystem encoding (:func:`sys.getfilesystemencoding`).  Availability:
-   Windows.
+   Similar to :c:func:`PyErr_SetFromWindowsErrWithFilenameObject`, but the
+   filename is given as a C string.  *filename* is decoded from the filesystem
+   encoding (:func:`sys.getfilesystemencoding`).  Availability: Windows.
 
 
-.. c:function:: PyObject* PyErr_SetExcFromWindowsErrWithFilename(PyObject *type, int ierr, char *filename)
+.. c:function:: PyObject* PyErr_SetExcFromWindowsErrWithFilenameObject(PyObject *type, int ierr, PyObject *filename)
+
+   Similar to :c:func:`PyErr_SetFromWindowsErrWithFilenameObject`, with an
+   additional parameter specifying the exception type to be raised.
+   Availability: Windows.
+
+
+.. c:function:: PyObject* PyErr_SetExcFromWindowsErrWithFilename(PyObject *type, int ierr, const char *filename)
 
    Similar to :c:func:`PyErr_SetFromWindowsErrWithFilename`, with an additional
    parameter specifying the exception type to be raised. Availability: Windows.
@@ -288,7 +306,7 @@ in various ways.  There is a separate error indicator for each thread.
 
 .. c:function:: void PyErr_SyntaxLocation(char *filename, int lineno)
 
-   Like :c:func:`PyErr_SyntaxLocationExc`, but the col_offset parameter is
+   Like :c:func:`PyErr_SyntaxLocationEx`, but the col_offset parameter is
    omitted.
 
 
@@ -472,11 +490,11 @@ Exception Objects
    reference, as accessible from Python through :attr:`__cause__`.
 
 
-.. c:function:: void PyException_SetCause(PyObject *ex, PyObject *ctx)
+.. c:function:: void PyException_SetCause(PyObject *ex, PyObject *cause)
 
-   Set the cause associated with the exception to *ctx*.  Use *NULL* to clear
-   it.  There is no type check to make sure that *ctx* is either an exception
-   instance or :const:`None`.  This steals a reference to *ctx*.
+   Set the cause associated with the exception to *cause*.  Use *NULL* to clear
+   it.  There is no type check to make sure that *cause* is either an exception
+   instance or :const:`None`.  This steals a reference to *cause*.
 
    :attr:`__suppress_context__` is implicitly set to ``True`` by this function.
 
@@ -589,28 +607,28 @@ recursion depth automatically).
    Ends a :c:func:`Py_EnterRecursiveCall`.  Must be called once for each
    *successful* invocation of :c:func:`Py_EnterRecursiveCall`.
 
-Properly implementing :attr:`tp_repr` for container types requires
+Properly implementing :c:member:`~PyTypeObject.tp_repr` for container types requires
 special recursion handling.  In addition to protecting the stack,
-:attr:`tp_repr` also needs to track objects to prevent cycles.  The
+:c:member:`~PyTypeObject.tp_repr` also needs to track objects to prevent cycles.  The
 following two functions facilitate this functionality.  Effectively,
 these are the C equivalent to :func:`reprlib.recursive_repr`.
 
 .. c:function:: int Py_ReprEnter(PyObject *object)
 
-   Called at the beginning of the :attr:`tp_repr` implementation to
+   Called at the beginning of the :c:member:`~PyTypeObject.tp_repr` implementation to
    detect cycles.
 
    If the object has already been processed, the function returns a
-   positive integer.  In that case the :attr:`tp_repr` implementation
+   positive integer.  In that case the :c:member:`~PyTypeObject.tp_repr` implementation
    should return a string object indicating a cycle.  As examples,
    :class:`dict` objects return ``{...}`` and :class:`list` objects
    return ``[...]``.
 
    The function will return a negative integer if the recursion limit
-   is reached.  In that case the :attr:`tp_repr` implementation should
+   is reached.  In that case the :c:member:`~PyTypeObject.tp_repr` implementation should
    typically return ``NULL``.
 
-   Otherwise, the function returns zero and the :attr:`tp_repr`
+   Otherwise, the function returns zero and the :c:member:`~PyTypeObject.tp_repr`
    implementation can continue normally.
 
 .. c:function:: void Py_ReprLeave(PyObject *object)

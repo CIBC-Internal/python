@@ -25,32 +25,20 @@ optional arguments:
   --upgrade             Upgrade the environment directory to use this version
                         of Python, assuming Python has been upgraded in-place.
 """
-import base64
-import io
 import logging
 import os
-import os.path
 import shutil
 import sys
 import sysconfig
-try:
-    import threading
-except ImportError:
-    threading = None
+import types
 
 logger = logging.getLogger(__name__)
-
-class Context:
-    """
-    Holds information about a current venv creation/upgrade request.
-    """
-    pass
 
 
 class EnvBuilder:
     """
     This class exists to allow virtual environment creation to be
-    customised. The constructor parameters determine the builder's
+    customized. The constructor parameters determine the builder's
     behaviour when called upon to create a virtual environment.
 
     By default, the builder makes the system (global) site-packages dir
@@ -108,7 +96,7 @@ class EnvBuilder:
             raise ValueError('Directory exists: %s' % env_dir)
         if os.path.exists(env_dir) and self.clear:
             shutil.rmtree(env_dir)
-        context = Context()
+        context = types.SimpleNamespace()
         context.env_dir = env_dir
         context.env_name = os.path.split(env_dir)[1]
         context.prompt = '(%s) ' % context.env_name
@@ -348,7 +336,7 @@ def main(args=None):
     elif not hasattr(sys, 'base_prefix'):
         compatible = False
     if not compatible:
-        raise ValueError('This script is only for use with Python 3.3')
+        raise ValueError('This script is only for use with Python >= 3.3')
     else:
         import argparse
 

@@ -195,14 +195,18 @@ time_clock_settime(PyObject *self, PyObject *args)
 {
     int clk_id;
     PyObject *obj;
+    time_t tv_sec;
+    long tv_nsec;
     struct timespec tp;
     int ret;
 
     if (!PyArg_ParseTuple(args, "iO:clock_settime", &clk_id, &obj))
         return NULL;
 
-    if (_PyTime_ObjectToTimespec(obj, &tp.tv_sec, &tp.tv_nsec) == -1)
+    if (_PyTime_ObjectToTimespec(obj, &tv_sec, &tv_nsec) == -1)
         return NULL;
+    tp.tv_sec = tv_sec;
+    tp.tv_nsec = tv_nsec;
 
     ret = clock_settime((clockid_t)clk_id, &tp);
     if (ret != 0) {
@@ -584,7 +588,7 @@ time_strftime(PyObject *self, PyObject *args)
     else if (!gettmarg(tup, &buf) || !checktm(&buf))
         return NULL;
 
-#if defined(_MSC_VER) || defined(sun)
+#if defined(_MSC_VER) || defined(sun) || defined(_AIX)
     if (buf.tm_year + 1900 < 1 || 9999 < buf.tm_year + 1900) {
         PyErr_SetString(PyExc_ValueError,
                         "strftime() requires year in [1; 9999]");
@@ -625,6 +629,13 @@ time_strftime(PyObject *self, PyObject *args)
             !strchr("aAbBcdHIjmMpSUwWxXyYzZ%", outbuf[1]))
         {
             PyErr_SetString(PyExc_ValueError, "Invalid format string");
+            Py_DECREF(format);
+            return NULL;
+        }
+        if ((outbuf[1] == 'y') && buf.tm_year < 0)
+        {
+            PyErr_SetString(PyExc_ValueError,
+                        "format %y requires year >= 1900 on Windows");
             Py_DECREF(format);
             return NULL;
         }

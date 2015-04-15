@@ -676,7 +676,7 @@ finally:
 PyDoc_STRVAR(compile_doc,
 "compile(source, filename, mode[, flags[, dont_inherit]]) -> code object\n\
 \n\
-Compile the source string (a Python module, statement or expression)\n\
+Compile the source (a Python module, statement or expression)\n\
 into a code object that can be executed by exec() or eval().\n\
 The filename will be used for run-time error messages.\n\
 The mode must be 'exec' to compile a module, 'single' to compile a\n\
@@ -1512,7 +1512,7 @@ PyDoc_STRVAR(pow_doc,
 "pow(x, y[, z]) -> number\n\
 \n\
 With two arguments, equivalent to x**y.  With three arguments,\n\
-equivalent to (x**y) % z, but may be more efficient (e.g. for longs).");
+equivalent to (x**y) % z, but may be more efficient (e.g. for ints).");
 
 
 
@@ -1733,6 +1733,7 @@ builtin_input(PyObject *self, PyObject *args)
         }
         s = PyOS_Readline(stdin, stdout, prompt);
         if (s == NULL) {
+            PyErr_CheckSignals();
             if (!PyErr_Occurred())
                 PyErr_SetNone(PyExc_KeyboardInterrupt);
             goto _readline_errors;
@@ -2008,6 +2009,11 @@ builtin_sum(PyObject *self, PyObject *args)
             }
             /* Either overflowed or is not an int. Restore real objects and process normally */
             result = PyLong_FromLong(i_result);
+            if (result == NULL) {
+                Py_DECREF(item);
+                Py_DECREF(iter);
+                return NULL;
+            }
             temp = PyNumber_Add(result, item);
             Py_DECREF(result);
             Py_DECREF(item);
@@ -2096,9 +2102,9 @@ builtin_sum(PyObject *self, PyObject *args)
 PyDoc_STRVAR(sum_doc,
 "sum(iterable[, start]) -> value\n\
 \n\
-Returns the sum of an iterable of numbers (NOT strings) plus the value\n\
+Return the sum of an iterable of numbers (NOT strings) plus the value\n\
 of parameter 'start' (which defaults to 0).  When the iterable is\n\
-empty, returns start.");
+empty, return start.");
 
 
 static PyObject *

@@ -17,6 +17,10 @@
    * :ref:`Advanced Tutorial <logging-advanced-tutorial>`
    * :ref:`Logging Cookbook <logging-cookbook>`
 
+**Source code:** :source:`Lib/logging/handlers.py`
+
+--------------
+
 .. currentmodule:: logging
 
 The following useful handlers are provided in the package. Note that three of
@@ -53,8 +57,8 @@ and :meth:`flush` methods).
    .. method:: flush()
 
       Flushes the stream by calling its :meth:`flush` method. Note that the
-      :meth:`close` method is inherited from :class:`Handler` and so does
-      no output, so an explicit :meth:`flush` call may be needed at times.
+      :meth:`close` method is inherited from :class:`~logging.Handler` and so
+      does no output, so an explicit :meth:`flush` call may be needed at times.
 
 .. versionchanged:: 3.2
    The ``StreamHandler`` class now has a ``terminator`` attribute, default
@@ -145,8 +149,8 @@ new stream.
 This handler is not appropriate for use under Windows, because under Windows
 open log files cannot be moved or renamed - logging opens the files with
 exclusive locks - and so there is no need for such a handler. Furthermore,
-*ST_INO* is not supported under Windows; :func:`stat` always returns zero for
-this value.
+*ST_INO* is not supported under Windows; :func:`~os.stat` always returns zero
+for this value.
 
 
 .. class:: WatchedFileHandler(filename[,mode[, encoding[, delay]]])
@@ -383,7 +387,8 @@ sends logging output to a network socket. The base class uses a TCP socket.
       binary format. If there is an error with the socket, silently drops the
       packet. If the connection was previously lost, re-establishes the
       connection. To unpickle the record at the receiving end into a
-      :class:`LogRecord`, use the :func:`makeLogRecord` function.
+      :class:`~logging.LogRecord`, use the :func:`~logging.makeLogRecord`
+      function.
 
 
    .. method:: handleError()
@@ -461,7 +466,8 @@ over UDP sockets.
       Pickles the record's attribute dictionary and writes it to the socket in
       binary format. If there is an error with the socket, silently drops the
       packet. To unpickle the record at the receiving end into a
-      :class:`LogRecord`, use the :func:`makeLogRecord` function.
+      :class:`~logging.LogRecord`, use the :func:`~logging.makeLogRecord`
+      function.
 
 
    .. method:: makeSocket()
@@ -825,7 +831,7 @@ supports sending logging messages to a Web server, using either ``GET`` or
 
    Returns a new instance of the :class:`HTTPHandler` class. The *host* can be
    of the form ``host:port``, should you need to use a specific port number.
-   If no *method* is specified, ``GET`` is used. If *secure* is True, an HTTPS
+   If no *method* is specified, ``GET`` is used. If *secure* is true, an HTTPS
    connection will be used. If *credentials* is specified, it should be a
    2-tuple consisting of userid and password, which will be placed in an HTTP
    'Authorization' header using Basic authentication. If you specify
@@ -886,7 +892,7 @@ possible, while any potentially slow operations (such as sending an email via
 
       Enqueues the record on the queue using ``put_nowait()``; you may
       want to override this if you want to use blocking behaviour, or a
-      timeout, or a customised queue implementation.
+      timeout, or a customized queue implementation.
 
 
 

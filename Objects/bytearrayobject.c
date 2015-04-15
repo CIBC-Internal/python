@@ -1506,7 +1506,10 @@ bytearray_translate(PyByteArrayObject *self, PyObject *args)
     }
     /* Fix the size of the resulting string */
     if (inlen > 0)
-        PyByteArray_Resize(result, output - output_start);
+        if (PyByteArray_Resize(result, output - output_start) < 0) {
+            Py_CLEAR(result);
+            goto done;
+        }
 
 done:
     if (tableobj != NULL)
@@ -3040,9 +3043,13 @@ bytearrayiter_setstate(bytesiterobject *it, PyObject *state)
     Py_ssize_t index = PyLong_AsSsize_t(state);
     if (index == -1 && PyErr_Occurred())
         return NULL;
-    if (index < 0)
-        index = 0;
-    it->it_index = index;
+    if (it->it_seq != NULL) {
+        if (index < 0)
+            index = 0;
+        else if (index > PyByteArray_GET_SIZE(it->it_seq))
+            index = PyByteArray_GET_SIZE(it->it_seq); /* iterator exhausted */
+        it->it_index = index;
+    }
     Py_RETURN_NONE;
 }
 

@@ -90,7 +90,7 @@ The following classes are provided:
    Netscape and RFC 2965 cookies.  By default, RFC 2109 cookies (ie. cookies
    received in a :mailheader:`Set-Cookie` header with a version cookie-attribute of
    1) are treated according to the RFC 2965 rules.  However, if RFC 2965 handling
-   is turned off or :attr:`rfc2109_as_netscape` is True, RFC 2109 cookies are
+   is turned off or :attr:`rfc2109_as_netscape` is ``True``, RFC 2109 cookies are
    'downgraded' by the :class:`CookieJar` instance to Netscape cookies, by
    setting the :attr:`version` attribute of the :class:`Cookie` instance to 0.
    :class:`DefaultCookiePolicy` also provides some parameters to allow some
@@ -154,9 +154,15 @@ contained :class:`Cookie` objects.
 
    The *request* object (usually a :class:`urllib.request..Request` instance)
    must support the methods :meth:`get_full_url`, :meth:`get_host`,
-   :meth:`get_type`, :meth:`unverifiable`, :meth:`get_origin_req_host`,
-   :meth:`has_header`, :meth:`get_header`, :meth:`header_items`, and
-   :meth:`add_unredirected_header`, as documented by :mod:`urllib.request`.
+   :meth:`get_type`, :meth:`unverifiable`, :meth:`has_header`,
+   :meth:`get_header`, :meth:`header_items`, :meth:`add_unredirected_header`
+   and :attr:`origin_req_host` attribute as documented by
+   :mod:`urllib.request`.
+
+   .. versionchanged:: 3.3
+
+    *request* object needs :attr:`origin_req_host` attribute. Dependency on a
+    deprecated method :meth:`get_origin_req_host` has been removed.
 
 
 .. method:: CookieJar.extract_cookies(response, request)
@@ -174,11 +180,15 @@ contained :class:`Cookie` objects.
 
    The *request* object (usually a :class:`urllib.request.Request` instance)
    must support the methods :meth:`get_full_url`, :meth:`get_host`,
-   :meth:`unverifiable`, and :meth:`get_origin_req_host`, as documented by
-   :mod:`urllib.request`.  The request is used to set default values for
+   :meth:`unverifiable`, and :attr:`origin_req_host` attribute, as documented
+   by :mod:`urllib.request`.  The request is used to set default values for
    cookie-attributes as well as for checking that the cookie is allowed to be
    set.
 
+   .. versionchanged:: 3.3
+
+    *request* object needs :attr:`origin_req_host` attribute. Dependency on a
+    deprecated method :meth:`get_origin_req_host` has been removed.
 
 .. method:: CookieJar.set_policy(policy)
 
@@ -299,7 +309,7 @@ FileCookieJar subclasses and co-operation with web browsers
 -----------------------------------------------------------
 
 The following :class:`CookieJar` subclasses are provided for reading and
-writing .
+writing.
 
 .. class:: MozillaCookieJar(filename, delayload=None, policy=None)
 
@@ -634,7 +644,7 @@ internal consistency, so you should know what you're doing if you do that.
 
 .. attribute:: Cookie.secure
 
-   True if cookie should only be returned over a secure connection.
+   ``True`` if cookie should only be returned over a secure connection.
 
 
 .. attribute:: Cookie.expires
@@ -645,7 +655,7 @@ internal consistency, so you should know what you're doing if you do that.
 
 .. attribute:: Cookie.discard
 
-   True if this is a session cookie.
+   ``True`` if this is a session cookie.
 
 
 .. attribute:: Cookie.comment
@@ -662,7 +672,7 @@ internal consistency, so you should know what you're doing if you do that.
 
 .. attribute:: Cookie.rfc2109
 
-   True if this cookie was received as an RFC 2109 cookie (ie. the cookie
+   ``True`` if this cookie was received as an RFC 2109 cookie (ie. the cookie
    arrived in a :mailheader:`Set-Cookie` header, and the value of the Version
    cookie-attribute in that header was 1).  This attribute is provided because
    :mod:`http.cookiejar` may 'downgrade' RFC 2109 cookies to Netscape cookies, in
@@ -671,18 +681,18 @@ internal consistency, so you should know what you're doing if you do that.
 
 .. attribute:: Cookie.port_specified
 
-   True if a port or set of ports was explicitly specified by the server (in the
+   ``True`` if a port or set of ports was explicitly specified by the server (in the
    :mailheader:`Set-Cookie` / :mailheader:`Set-Cookie2` header).
 
 
 .. attribute:: Cookie.domain_specified
 
-   True if a domain was explicitly specified by the server.
+   ``True`` if a domain was explicitly specified by the server.
 
 
 .. attribute:: Cookie.domain_initial_dot
 
-   True if the domain explicitly specified by the server began with a dot
+   ``True`` if the domain explicitly specified by the server began with a dot
    (``'.'``).
 
 Cookies may have additional non-standard cookie-attributes.  These may be
@@ -709,7 +719,7 @@ The :class:`Cookie` class also defines the following method:
 
 .. method:: Cookie.is_expired(now=None)
 
-   True if cookie has passed the time at which the server requested it should
+   ``True`` if cookie has passed the time at which the server requested it should
    expire.  If *now* is given (in seconds since the epoch), return whether the
    cookie has expired at the specified time.
 

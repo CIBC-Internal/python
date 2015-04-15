@@ -12,6 +12,13 @@ for parsing and creating XML data.
    This module will use a fast implementation whenever available.
    The :mod:`xml.etree.cElementTree` module is deprecated.
 
+
+.. warning::
+
+   The :mod:`xml.etree.ElementTree` module is not secure against
+   maliciously constructed data.  If you need to parse untrusted or
+   unauthenticated data see :ref:`xml-vulnerabilities`.
+
 Tutorial
 --------
 
@@ -116,7 +123,7 @@ the sub-tree below it (its children, their children, and so on).  For example,
 
 :meth:`Element.findall` finds only elements with a tag which are direct
 children of the current element.  :meth:`Element.find` finds the *first* child
-with a particular tag, and :meth:`Element.text` accesses the element's text
+with a particular tag, and :attr:`Element.text` accesses the element's text
 content.  :meth:`Element.get` accesses the element's attributes::
 
    >>> for country in root.findall('country'):
@@ -271,6 +278,8 @@ module.  We'll be using the ``countrydata`` XML document from the
 Supported XPath syntax
 ^^^^^^^^^^^^^^^^^^^^^^
 
+.. tabularcolumns:: |l|L|
+
 +-----------------------+------------------------------------------------------+
 | Syntax                | Meaning                                              |
 +=======================+======================================================+
@@ -370,12 +379,13 @@ Functions
 
    Parses an XML section into an element tree incrementally, and reports what's
    going on to the user.  *source* is a filename or :term:`file object`
-   containing XML data.  *events* is a list of events to report back.  The
+   containing XML data.  *events* is a tuple of events to report back.  The
    supported events are the strings ``"start"``, ``"end"``, ``"start-ns"``
    and ``"end-ns"`` (the "ns" events are used to get detailed namespace
    information).  If *events* is omitted, only ``"end"`` events are reported.
    *parser* is an optional parser instance.  If not given, the standard
-   :class:`XMLParser` parser is used.  Returns an :term:`iterator` providing
+   :class:`XMLParser` parser is used.  *parser* can only use the default
+   :class:`TreeBuilder` as a target.  Returns an :term:`iterator` providing
    ``(event, elem)`` pairs.
 
    .. note::
@@ -447,7 +457,7 @@ Functions
    is either ``"xml"``, ``"html"`` or ``"text"`` (default is ``"xml"``).
    Returns a list of (optionally) encoded strings containing the XML data.
    It does not guarantee any specific sequence, except that
-   ``"".join(tostringlist(element)) == tostring(element)``.
+   ``b"".join(tostringlist(element)) == tostring(element)``.
 
    .. versionadded:: 3.2
 
@@ -654,8 +664,9 @@ Element Objects
       or contents.
 
    :class:`Element` objects also support the following sequence type methods
-   for working with subelements: :meth:`__delitem__`, :meth:`__getitem__`,
-   :meth:`__setitem__`, :meth:`__len__`.
+   for working with subelements: :meth:`~object.__delitem__`,
+   :meth:`~object.__getitem__`, :meth:`~object.__setitem__`,
+   :meth:`~object.__len__`.
 
    Caution: Elements with no subelements will test as ``False``.  This behavior
    will change in future versions.  Use specific ``len(elem)`` or ``elem is
@@ -875,7 +886,9 @@ XMLParser Objects
 
    .. method:: close()
 
-      Finishes feeding data to the parser.  Returns an element structure.
+      Finishes feeding data to the parser.  Returns the result of calling the
+      ``close()`` method of the *target* passed during construction; by default,
+      this is the toplevel document element.
 
 
    .. method:: doctype(name, pubid, system)
@@ -889,12 +902,12 @@ XMLParser Objects
 
       Feeds data to the parser.  *data* is encoded data.
 
-:meth:`XMLParser.feed` calls *target*\'s :meth:`start` method
-for each opening tag, its :meth:`end` method for each closing tag,
-and data is processed by method :meth:`data`.  :meth:`XMLParser.close`
-calls *target*\'s method :meth:`close`.
-:class:`XMLParser` can be used not only for building a tree structure.
-This is an example of counting the maximum depth of an XML file::
+   :meth:`XMLParser.feed` calls *target*\'s ``start()`` method
+   for each opening tag, its ``end()`` method for each closing tag,
+   and data is processed by method ``data()``.  :meth:`XMLParser.close`
+   calls *target*\'s method ``close()``.
+   :class:`XMLParser` can be used not only for building a tree structure.
+   This is an example of counting the maximum depth of an XML file::
 
     >>> from xml.etree.ElementTree import XMLParser
     >>> class MaxDepth:                     # The target object of the parser

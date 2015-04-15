@@ -132,7 +132,7 @@ if sys.platform != 'win32':
         def wait(self, timeout=None):
             if self.returncode is None:
                 if timeout is not None:
-                    from .connection import wait
+                    from multiprocessing.connection import wait
                     if not wait([self.sentinel], timeout):
                         return None
                 # This shouldn't block if wait() returned successfully.
@@ -337,7 +337,7 @@ else:
 
     def main():
         '''
-        Run code specifed by data received over pipe
+        Run code specified by data received over pipe
         '''
         assert is_forking(sys.argv)
 

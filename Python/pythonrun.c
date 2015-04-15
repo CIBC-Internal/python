@@ -96,6 +96,10 @@ int Py_HashRandomizationFlag = 0; /* for -R and PYTHONHASHSEED */
 
 PyThreadState *_Py_Finalizing = NULL;
 
+/* Hack to force loading of object files */
+int (*_PyOS_mystrnicmp_hack)(const char *, const char *, Py_ssize_t) = \
+    PyOS_mystrnicmp; /* Python/pystrcmp.o */
+
 /* PyModule_GetWarningsModule is no longer necessary as of 2.6
 since _warnings is builtin.  This API should not be used. */
 PyObject *
@@ -506,9 +510,6 @@ Py_Finalize(void)
     /* Disable signal handling */
     PyOS_FiniInterrupts();
 
-    /* Clear type lookup cache */
-    PyType_ClearCache();
-
     /* Collect garbage.  This may call finalizers; it's nice to call these
      * before all modules are destroyed.
      * XXX If a __del__ or weakref callback is triggered here, and tries to
@@ -561,6 +562,9 @@ Py_Finalize(void)
     /* Destroy the database used by _PyImport_{Fixup,Find}Extension */
     _PyImport_Fini();
 
+    /* Cleanup typeobject.c's internal caches. */
+    _PyType_Fini();
+
     /* unload faulthandler module */
     _PyFaulthandler_Fini();
 
@@ -581,7 +585,7 @@ Py_Finalize(void)
         _Py_PrintReferences(stderr);
 #endif /* Py_TRACE_REFS */
 
-    /* Clear interpreter state */
+    /* Clear interpreter state and all thread states. */
     PyInterpreterState_Clear(interp);
 
     /* Now we decref the exception classes.  After this point nothing
@@ -596,10 +600,6 @@ Py_Finalize(void)
 #ifdef WITH_THREAD
     _PyGILState_Fini();
 #endif /* WITH_THREAD */
-
-    /* Delete current thread */
-    PyThreadState_Swap(NULL);
-    PyInterpreterState_Delete(interp);
 
     /* Sundry finalizers */
     PyMethod_Fini();
@@ -617,6 +617,10 @@ Py_Finalize(void)
 
     /* Cleanup Unicode implementation */
     _PyUnicode_Fini();
+
+    /* Delete current thread. After this, many C API calls become crashy. */
+    PyThreadState_Swap(NULL);
+    PyInterpreterState_Delete(interp);
 
     /* reset file system default encoding */
     if (!Py_HasFileSystemDefaultEncoding && Py_FileSystemDefaultEncoding) {
@@ -813,8 +817,9 @@ Py_GetPythonHome(void)
     if (home == NULL && !Py_IgnoreEnvironmentFlag) {
         char* chome = Py_GETENV("PYTHONHOME");
         if (chome) {
-            size_t r = mbstowcs(env_home, chome, PATH_MAX+1);
-            if (r != (size_t)-1 && r <= PATH_MAX)
+            size_t size = Py_ARRAY_LENGTH(env_home);
+            size_t r = mbstowcs(env_home, chome, size);
+            if (r != (size_t)-1 && r < size)
                 home = env_home;
         }
 
@@ -1237,16 +1242,15 @@ PyRun_InteractiveOneFlags(FILE *fp, const char *filename, PyCompilerFlags *flags
     _Py_IDENTIFIER(encoding);
 
     if (fp == stdin) {
-        /* Fetch encoding from sys.stdin */
+        /* Fetch encoding from sys.stdin if possible. */
         v = PySys_GetObject("stdin");
-        if (v == NULL || v == Py_None)
-            return -1;
-        oenc = _PyObject_GetAttrId(v, &PyId_encoding);
-        if (!oenc)
-            return -1;
-        enc = _PyUnicode_AsString(oenc);
-        if (enc == NULL)
-            return -1;
+        if (v && v != Py_None) {
+            oenc = _PyObject_GetAttrId(v, &PyId_encoding);
+            if (oenc)
+                enc = _PyUnicode_AsString(oenc);
+            if (!enc)
+                PyErr_Clear();
+        }
     }
     v = PySys_GetObject("ps1");
     if (v != NULL) {
@@ -1881,6 +1885,16 @@ PyErr_Display(PyObject *exception, PyObject *value, PyObject *tb)
 {
     PyObject *seen;
     PyObject *f = PySys_GetObject("stderr");
+    if (PyExceptionInstance_Check(value)
+        && tb != NULL && PyTraceBack_Check(tb)) {
+        /* Put the traceback on the exception, otherwise it won't get
+           displayed.  See issue #18776. */
+        PyObject *cur_tb = PyException_GetTraceback(value);
+        if (cur_tb == NULL)
+            PyException_SetTraceback(value, tb);
+        else
+            Py_DECREF(cur_tb);
+    }
     if (f == Py_None) {
         /* pass */
     }
@@ -2212,6 +2226,7 @@ err_input(perrdetail *err)
     PyObject *v, *w, *errtype, *errtext;
     PyObject *msg_obj = NULL;
     char *msg = NULL;
+    int offset = err->offset;
 
     errtype = PyExc_SyntaxError;
     switch (err->error) {
@@ -2296,11 +2311,20 @@ err_input(perrdetail *err)
         errtext = Py_None;
         Py_INCREF(Py_None);
     } else {
-        errtext = PyUnicode_DecodeUTF8(err->text, strlen(err->text),
+        errtext = PyUnicode_DecodeUTF8(err->text, err->offset,
                                        "replace");
+        if (errtext != NULL) {
+            Py_ssize_t len = strlen(err->text);
+            offset = (int)PyUnicode_GET_LENGTH(errtext);
+            if (len != err->offset) {
+                Py_DECREF(errtext);
+                errtext = PyUnicode_DecodeUTF8(err->text, len,
+                                               "replace");
+            }
+        }
     }
     v = Py_BuildValue("(OiiN)", err->filename,
-                      err->lineno, err->offset, errtext);
+                      err->lineno, offset, errtext);
     if (v != NULL) {
         if (msg_obj)
             w = Py_BuildValue("(OO)", msg_obj, v);

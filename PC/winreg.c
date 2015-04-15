@@ -253,7 +253,7 @@ PyDoc_STRVAR(QueryInfoKey_doc,
 "The result is a tuple of 3 items:"
 "An integer that identifies the number of sub keys this key has.\n"
 "An integer that identifies the number of values this key has.\n"
-"A long integer that identifies when the key was last modified (if available)\n"
+"An integer that identifies when the key was last modified (if available)\n"
 " as 100's of nanoseconds since Jan 1, 1600.");
 
 PyDoc_STRVAR(QueryValue_doc,
@@ -405,8 +405,7 @@ PyDoc_STRVAR(PyHKEY_Detach_doc,
 "After calling this function, the handle is effectively invalidated,\n"
 "but the handle is not closed.  You would call this function when you\n"
 "need the underlying win32 handle to exist beyond the lifetime of the\n"
-"handle object.\n"
-"On 64 bit windows, the result of this function is a long integer");
+"handle object.");
 
 
 /************************************************************************
@@ -944,8 +943,10 @@ Reg2Py(BYTE *retDataBuf, DWORD retDataSize, DWORD typ)
 
                 fixupMultiSZ(str, data, len);
                 obData = PyList_New(s);
-                if (obData == NULL)
+                if (obData == NULL) {
+                    free(str);
                     return NULL;
+                }
                 for (index = 0; index < s; index++)
                 {
                     size_t len = wcslen(str[index]);
@@ -953,6 +954,7 @@ Reg2Py(BYTE *retDataBuf, DWORD retDataSize, DWORD typ)
                         PyErr_SetString(PyExc_OverflowError,
                             "registry string is too long for a Python string");
                         Py_DECREF(obData);
+                        free(str);
                         return NULL;
                     }
                     PyList_SetItem(obData,

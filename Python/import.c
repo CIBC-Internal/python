@@ -253,8 +253,7 @@ imp_release_lock(PyObject *self, PyObject *noargs)
 void
 _PyImport_Fini(void)
 {
-    Py_XDECREF(extensions);
-    extensions = NULL;
+    Py_CLEAR(extensions);
 #ifdef WITH_THREAD
     if (import_lock != NULL) {
         PyThread_free_lock(import_lock);
@@ -497,8 +496,7 @@ _PyImport_FixupExtensionObject(PyObject *mod, PyObject *name,
             /* Somebody already imported the module,
                likely under a different name.
                XXX this should really not happen. */
-            Py_DECREF(def->m_base.m_copy);
-            def->m_base.m_copy = NULL;
+            Py_CLEAR(def->m_base.m_copy);
         }
         dict = PyModule_GetDict(mod);
         if (dict == NULL)
@@ -553,7 +551,10 @@ _PyImport_FindExtensionObject(PyObject *name, PyObject *filename)
         mod = def->m_base.m_init();
         if (mod == NULL)
             return NULL;
-        PyDict_SetItem(PyImport_GetModuleDict(), name, mod);
+        if (PyDict_SetItem(PyImport_GetModuleDict(), name, mod) == -1) {
+            Py_DECREF(mod);
+            return NULL;
+        }
         Py_DECREF(mod);
     }
     if (_PyState_AddModule(mod, def) < 0) {
@@ -1389,7 +1390,8 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *given_globals,
     if (builtins_import == NULL) {
         builtins_import = _PyDict_GetItemId(interp->builtins, &PyId___import__);
         if (builtins_import == NULL) {
-            Py_FatalError("__import__ missing");
+            PyErr_SetString(PyExc_ImportError, "__import__ not found");
+            goto error_with_unlock;
         }
     }
     Py_INCREF(builtins_import);

@@ -41,7 +41,7 @@ Glossary
 
    argument
       A value passed to a :term:`function` (or :term:`method`) when calling the
-      function.  There are two types of arguments:
+      function.  There are two kinds of argument:
 
       * :dfn:`keyword argument`: an argument preceded by an identifier (e.g.
         ``name=``) in a function call or passed as a value in a dictionary
@@ -77,6 +77,21 @@ Glossary
    BDFL
       Benevolent Dictator For Life, a.k.a. `Guido van Rossum
       <http://www.python.org/~guido/>`_, Python's creator.
+
+   binary file
+      A :term:`file object` able to read and write
+      :term:`bytes-like objects <bytes-like object>`.
+
+      .. seealso::
+         A :term:`text file` reads and writes :class:`str` objects.
+
+   bytes-like object
+      An object that supports the :ref:`bufferobjects`, like :class:`bytes`,
+      :class:`bytearray` or :class:`memoryview`.  Bytes-like objects can
+      be used for various operations that expect binary data, such as
+      compression, saving to a binary file or sending over a socket.
+      Some operations need the binary data to be mutable, in which case
+      not all bytes-like objects can apply.
 
    bytecode
       Python source code is compiled into bytecode, the internal representation
@@ -217,10 +232,11 @@ Glossary
       etc.).  File objects are also called :dfn:`file-like objects` or
       :dfn:`streams`.
 
-      There are actually three categories of file objects: raw binary files,
-      buffered binary files and text files.  Their interfaces are defined in the
-      :mod:`io` module.  The canonical way to create a file object is by using
-      the :func:`open` function.
+      There are actually three categories of file objects: raw
+      :term:`binary files <binary file>`, buffered
+      :term:`binary files <binary file>` and :term:`text files <text file>`.
+      Their interfaces are defined in the :mod:`io` module.  The canonical
+      way to create a file object is by using the :func:`open` function.
 
    file-like object
       A synonym for :term:`file object`.
@@ -243,6 +259,16 @@ Glossary
       be passed zero or more :term:`arguments <argument>` which may be used in
       the execution of the body. See also :term:`parameter`, :term:`method`,
       and the :ref:`function` section.
+
+   function annotation
+      An arbitrary metadata value associated with a function parameter or return
+      value. Its syntax is explained in section :ref:`function`.  Annotations
+      may be accessed via the :attr:`__annotations__` special attribute of a
+      function object.
+
+      Python itself does not assign any particular meaning to function
+      annotations. They are intended to be interpreted by third-party libraries
+      or tools.  See :pep:`3107`, which describes some of their potential uses.
 
    __future__
       A pseudo-module which programmers can use to enable new language features
@@ -502,6 +528,8 @@ Glossary
       have a namespace containing arbitrary Python objects.  Modules are loaded
       into Python by the process of :term:`importing`.
 
+      See also :term:`package`.
+
    MRO
       See :term:`method resolution order`.
 
@@ -527,9 +555,9 @@ Glossary
       dictionaries.  There are the local, global and built-in namespaces as well
       as nested namespaces in objects (in methods).  Namespaces support
       modularity by preventing naming conflicts.  For instance, the functions
-      :func:`builtins.open` and :func:`os.open` are distinguished by their
-      namespaces.  Namespaces also aid readability and maintainability by making
-      it clear which module implements a function.  For instance, writing
+      :func:`builtins.open <.open>` and :func:`os.open` are distinguished by
+      their namespaces.  Namespaces also aid readability and maintainability by
+      making it clear which module implements a function.  For instance, writing
       :func:`random.seed` or :func:`itertools.islice` makes it clear that those
       functions are implemented by the :mod:`random` and :mod:`itertools`
       modules, respectively.
@@ -539,6 +567,8 @@ Glossary
       subpackages.  Namespace packages may have no physical representation,
       and specifically are not like a :term:`regular package` because they
       have no ``__init__.py`` file.
+
+      See also :term:`module`.
 
    nested scope
       The ability to refer to a variable in an enclosing definition.  For
@@ -552,8 +582,8 @@ Glossary
    new-style class
       Old name for the flavor of classes now used for all class objects.  In
       earlier Python versions, only new-style classes could use Python's newer,
-      versatile features like :attr:`__slots__`, descriptors, properties,
-      :meth:`__getattribute__`, class methods, and static methods.
+      versatile features like :attr:`~object.__slots__`, descriptors,
+      properties, :meth:`__getattribute__`, class methods, and static methods.
 
    object
       Any data with state (attributes or value) and defined behavior
@@ -561,14 +591,16 @@ Glossary
       class`.
 
    package
-      A Python module which can contain submodules or recursively,
+      A Python :term:`module` which can contain submodules or recursively,
       subpackages.  Technically, a package is a Python module with an
       ``__path__`` attribute.
+
+      See also :term:`regular package` and :term:`namespace package`.
 
    parameter
       A named entity in a :term:`function` (or method) definition that
       specifies an :term:`argument` (or in some cases, arguments) that the
-      function can accept.  There are five types of parameters:
+      function can accept.  There are five kinds of parameter:
 
       * :dfn:`positional-or-keyword`: specifies an argument that can be passed
         either :term:`positionally <argument>` or as a :term:`keyword argument
@@ -581,6 +613,8 @@ Glossary
         by position.  Python has no syntax for defining positional-only
         parameters.  However, some built-in functions have positional-only
         parameters (e.g. :func:`abs`).
+
+      .. _keyword-only_parameter:
 
       * :dfn:`keyword-only`: specifies an argument that can be supplied only
         by keyword.  Keyword-only parameters can be defined by including a
@@ -710,6 +744,8 @@ Glossary
       A traditional :term:`package`, such as a directory containing an
       ``__init__.py`` file.
 
+      See also :term:`namespace package`.
+
    __slots__
       A declaration inside a class that saves memory by pre-declaring space for
       instance attributes and eliminating instance dictionaries.  Though
@@ -727,6 +763,14 @@ Glossary
       mapping rather than a sequence because the lookups use arbitrary
       :term:`immutable` keys rather than integers.
 
+      The :class:`collections.abc.Sequence` abstract base class
+      defines a much richer interface that goes beyond just
+      :meth:`__getitem__` and :meth:`__len__`, adding :meth:`count`,
+      :meth:`index`, :meth:`__contains__`, and
+      :meth:`__reversed__`. Types that implement this expanded
+      interface can be registered explicitly using
+      :func:`~abc.register`.
+
    slice
       An object usually containing a portion of a :term:`sequence`.  A slice is
       created using the subscript notation, ``[]`` with colons between numbers
@@ -741,7 +785,7 @@ Glossary
 
    statement
       A statement is part of a suite (a "block" of code).  A statement is either
-      an :term:`expression` or a one of several constructs with a keyword, such
+      an :term:`expression` or one of several constructs with a keyword, such
       as :keyword:`if`, :keyword:`while` or :keyword:`for`.
 
    struct sequence
@@ -751,6 +795,14 @@ Glossary
       methods like :meth:`~collections.somenamedtuple._make` or
       :meth:`~collections.somenamedtuple._asdict`. Examples of struct sequences
       include :data:`sys.float_info` and the return value of :func:`os.stat`.
+
+   text file
+      A :term:`file object` able to read and write :class:`str` objects.
+      Often, a text file actually accesses a byte-oriented datastream
+      and handles the text encoding automatically.
+
+      .. seealso::
+         A :term:`binary file` reads and write :class:`bytes` objects.
 
    triple-quoted string
       A string which is bound by three instances of either a quotation mark
@@ -764,7 +816,8 @@ Glossary
    type
       The type of a Python object determines what kind of object it is; every
       object has a type.  An object's type is accessible as its
-      :attr:`__class__` attribute or can be retrieved with ``type(obj)``.
+      :attr:`~instance.__class__` attribute or can be retrieved with
+      ``type(obj)``.
 
    universal newlines
       A manner of interpreting text streams in which all of the following are

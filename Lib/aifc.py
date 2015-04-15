@@ -123,7 +123,7 @@ It is best to first set all parameters, perhaps possibly the
 compression type, and then write audio frames using writeframesraw.
 When all frames have been written, either call writeframes('') or
 close() to patch up the sizes in the header.
-Marks can be added anytime.  If there are any marks, ypu must call
+Marks can be added anytime.  If there are any marks, you must call
 close() after all frames have been written.
 The close() method is called automatically when the class instance
 is destroyed.
@@ -457,15 +457,13 @@ class Aifc_read:
             if self._comptype != b'NONE':
                 if self._comptype == b'G722':
                     self._convert = self._adpcm2lin
-                    self._framesize = self._framesize // 4
                 elif self._comptype in (b'ulaw', b'ULAW'):
                     self._convert = self._ulaw2lin
-                    self._framesize = self._framesize // 2
                 elif self._comptype in (b'alaw', b'ALAW'):
                     self._convert = self._alaw2lin
-                    self._framesize = self._framesize // 2
                 else:
                     raise Error('unsupported compression type')
+                self._sampwidth = 2
         else:
             self._comptype = b'NONE'
             self._compname = b'not compressed'
@@ -773,7 +771,10 @@ class Aifc_write:
                 self._datalength = (self._datalength + 3) // 4
                 if self._datalength & 1:
                     self._datalength = self._datalength + 1
-        self._form_length_pos = self._file.tell()
+        try:
+            self._form_length_pos = self._file.tell()
+        except (AttributeError, OSError):
+            self._form_length_pos = None
         commlength = self._write_form_length(self._datalength)
         if self._aifc:
             self._file.write(b'AIFC')
@@ -785,15 +786,20 @@ class Aifc_write:
         self._file.write(b'COMM')
         _write_ulong(self._file, commlength)
         _write_short(self._file, self._nchannels)
-        self._nframes_pos = self._file.tell()
+        if self._form_length_pos is not None:
+            self._nframes_pos = self._file.tell()
         _write_ulong(self._file, self._nframes)
-        _write_short(self._file, self._sampwidth * 8)
+        if self._comptype in (b'ULAW', b'ulaw', b'ALAW', b'alaw', b'G722'):
+            _write_short(self._file, 8)
+        else:
+            _write_short(self._file, self._sampwidth * 8)
         _write_float(self._file, self._framerate)
         if self._aifc:
             self._file.write(self._comptype)
             _write_string(self._file, self._compname)
         self._file.write(b'SSND')
-        self._ssnd_length_pos = self._file.tell()
+        if self._form_length_pos is not None:
+            self._ssnd_length_pos = self._file.tell()
         _write_ulong(self._file, self._datalength + 8)
         _write_ulong(self._file, 0)
         _write_ulong(self._file, 0)
@@ -873,23 +879,27 @@ if __name__ == '__main__':
         sys.argv.append('/usr/demos/data/audio/bach.aiff')
     fn = sys.argv[1]
     f = open(fn, 'r')
-    print("Reading", fn)
-    print("nchannels =", f.getnchannels())
-    print("nframes   =", f.getnframes())
-    print("sampwidth =", f.getsampwidth())
-    print("framerate =", f.getframerate())
-    print("comptype  =", f.getcomptype())
-    print("compname  =", f.getcompname())
-    if sys.argv[2:]:
-        gn = sys.argv[2]
-        print("Writing", gn)
-        g = open(gn, 'w')
-        g.setparams(f.getparams())
-        while 1:
-            data = f.readframes(1024)
-            if not data:
-                break
-            g.writeframes(data)
-        g.close()
+    try:
+        print("Reading", fn)
+        print("nchannels =", f.getnchannels())
+        print("nframes   =", f.getnframes())
+        print("sampwidth =", f.getsampwidth())
+        print("framerate =", f.getframerate())
+        print("comptype  =", f.getcomptype())
+        print("compname  =", f.getcompname())
+        if sys.argv[2:]:
+            gn = sys.argv[2]
+            print("Writing", gn)
+            g = open(gn, 'w')
+            try:
+                g.setparams(f.getparams())
+                while 1:
+                    data = f.readframes(1024)
+                    if not data:
+                        break
+                    g.writeframes(data)
+            finally:
+                g.close()
+            print("Done.")
+    finally:
         f.close()
-        print("Done.")

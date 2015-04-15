@@ -145,7 +145,7 @@ class SocketIO(object):
 
     def exithook(self):
         "override for specific exit action"
-        os._exit()
+        os._exit(0)
 
     def debug(self, *args):
         if not self.debugging:
@@ -339,7 +339,7 @@ class SocketIO(object):
                 r, w, x = select.select([], [self.sock], [])
                 n = self.sock.send(s[:BUFSIZE])
             except (AttributeError, TypeError):
-                raise IOError("socket no longer exists")
+                raise OSError("socket no longer exists")
             except socket.error:
                 raise
             else:

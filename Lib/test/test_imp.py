@@ -5,6 +5,7 @@ import os.path
 import shutil
 import sys
 from test import support
+from test.test_importlib import util
 import unittest
 import warnings
 
@@ -208,6 +209,8 @@ class ImportTests(unittest.TestCase):
             self.assertIsNot(orig_getenv, new_os.getenv)
 
     @support.cpython_only
+    @unittest.skipIf(not hasattr(imp, 'load_dynamic'),
+                     'imp.load_dynamic() required')
     def test_issue15828_load_extensions(self):
         # Issue 15828 picked up that the adapter between the old imp API
         # and importlib couldn't handle C extensions
@@ -229,6 +232,28 @@ class ImportTests(unittest.TestCase):
             imp.load_dynamic(name, path)
         self.assertIn(path, err.exception.path)
         self.assertEqual(name, err.exception.name)
+
+    @support.cpython_only
+    @unittest.skipIf(not hasattr(imp, 'load_dynamic'),
+                     'imp.load_dynamic() required')
+    def test_load_module_extension_file_is_None(self):
+        # When loading an extension module and the file is None, open one
+        # on the behalf of imp.load_dynamic().
+        # Issue #15902
+        name = '_heapq'
+        found = imp.find_module(name)
+        if found[0] is not None:
+            found[0].close()
+        if found[2][2] != imp.C_EXTENSION:
+            self.skipTest("found module doesn't appear to be a C extension")
+        imp.load_module(name, None, *found[1:])
+
+    def test_multiple_calls_to_get_data(self):
+        # Issue #18755: make sure multiple calls to get_data() can succeed.
+        loader = imp._LoadSourceCompatibility('imp', imp.__file__,
+                                              open(imp.__file__))
+        loader.get_data(imp.__file__)  # File should be closed
+        loader.get_data(imp.__file__)  # Will need to create a newly opened file
 
 
 class ReloadTests(unittest.TestCase):
@@ -257,6 +282,32 @@ class ReloadTests(unittest.TestCase):
         with support.CleanImport('marshal'):
             import marshal
             imp.reload(marshal)
+
+    def test_with_deleted_parent(self):
+        # see #18681
+        from html import parser
+        html = sys.modules.pop('html')
+        def cleanup():
+            sys.modules['html'] = html
+        self.addCleanup(cleanup)
+        with self.assertRaisesRegex(ImportError, 'html'):
+            imp.reload(parser)
+
+    def test_module_replaced(self):
+        # see #18698
+        def code():
+            module = type(sys)('top_level')
+            module.spam = 3
+            sys.modules['top_level'] = module
+        mock = util.mock_modules('top_level',
+                                 module_code={'top_level': code})
+        with mock:
+            with util.import_state(meta_path=[mock]):
+                module = importlib.import_module('top_level')
+                reloaded = imp.reload(module)
+                actual = sys.modules['top_level']
+                self.assertEqual(actual.spam, 3)
+                self.assertEqual(reloaded.spam, 3)
 
 
 class PEP3147Tests(unittest.TestCase):

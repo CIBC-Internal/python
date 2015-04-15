@@ -2083,7 +2083,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
             }
             else {
                 x = PyObject_GetItem(v, w);
-                if (x == NULL && PyErr_Occurred()) {
+                if (x == NULL && _PyErr_OCCURRED()) {
                     if (!PyErr_ExceptionMatches(
                                     PyExc_KeyError))
                         break;
@@ -2127,7 +2127,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                                        (PyDictObject *)f->f_builtins,
                                        w);
                 if (x == NULL) {
-                    if (!PyErr_Occurred())
+                    if (!_PyErr_OCCURRED())
                         format_exc_check_arg(PyExc_NameError,
                                              GLOBAL_NAME_ERROR_MSG, w);
                     break;
@@ -2573,7 +2573,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
 
         TARGET(WITH_CLEANUP)
         {
-            /* At the top of the stack are 1-3 values indicating
+            /* At the top of the stack are 1-6 values indicating
                how/why we entered the finally clause:
                - TOP = None
                - (TOP, SECOND) = (WHY_{RETURN,CONTINUE}), retval
@@ -2586,9 +2586,9 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                otherwise we must call
                  EXIT(None, None, None)
 
-               In the first two cases, we remove EXIT from the
+               In the first three cases, we remove EXIT from the
                stack, leaving the rest in the same order.  In the
-               third case, we shift the bottom 3 values of the
+               fourth case, we shift the bottom 3 values of the
                stack down, and replace the empty spot with NULL.
 
                In addition, if the stack represents an exception,
@@ -3049,8 +3049,7 @@ fast_yield:
                 if (call_trace(tstate->c_tracefunc,
                                tstate->c_traceobj, f,
                                PyTrace_RETURN, retval)) {
-                    Py_XDECREF(retval);
-                    retval = NULL;
+                    Py_CLEAR(retval);
                     why = WHY_EXCEPTION;
                 }
             }
@@ -3068,8 +3067,7 @@ fast_yield:
             else if (call_trace(tstate->c_profilefunc,
                                 tstate->c_profileobj, f,
                                 PyTrace_RETURN, retval)) {
-                Py_XDECREF(retval);
-                retval = NULL;
+                Py_CLEAR(retval);
                 /* why = WHY_EXCEPTION; */
             }
         }
@@ -3333,7 +3331,9 @@ PyEval_EvalCodeEx(PyObject *_co, PyObject *globals, PyObject *locals,
                          keyword);
             goto fail;
         }
-        PyDict_SetItem(kwdict, keyword, value);
+        if (PyDict_SetItem(kwdict, keyword, value) == -1) {
+            goto fail;
+        }
         continue;
       kw_found:
         if (GETLOCAL(j) != NULL) {
@@ -3403,10 +3403,14 @@ PyEval_EvalCodeEx(PyObject *_co, PyObject *globals, PyObject *locals,
         int arg;
         /* Possibly account for the cell variable being an argument. */
         if (co->co_cell2arg != NULL &&
-            (arg = co->co_cell2arg[i]) != CO_CELL_NOT_AN_ARG)
+            (arg = co->co_cell2arg[i]) != CO_CELL_NOT_AN_ARG) {
             c = PyCell_New(GETLOCAL(arg));
-        else
+            /* Clear the local copy. */
+            SETLOCAL(arg, NULL);
+        }
+        else {
             c = PyCell_New(NULL);
+        }
         if (c == NULL)
             goto fail;
         SETLOCAL(co->co_nlocals + i, c);
@@ -3420,8 +3424,7 @@ PyEval_EvalCodeEx(PyObject *_co, PyObject *globals, PyObject *locals,
     if (co->co_flags & CO_GENERATOR) {
         /* Don't need to keep the reference to f_back, it will be set
          * when the generator is resumed. */
-        Py_XDECREF(f->f_back);
-        f->f_back = NULL;
+        Py_CLEAR(f->f_back);
 
         PCALL(PCALL_GENERATOR);
 
@@ -3712,6 +3715,7 @@ call_exc_trace(Py_tracefunc func, PyObject *self, PyFrameObject *f)
         value = Py_None;
         Py_INCREF(value);
     }
+    PyErr_NormalizeException(&type, &value, &traceback);
     arg = PyTuple_Pack(3, type, value, traceback);
     if (arg == NULL) {
         PyErr_Restore(type, value, traceback);

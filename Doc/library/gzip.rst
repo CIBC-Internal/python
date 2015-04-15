@@ -62,12 +62,12 @@ The module defines the following items:
    value.
 
    The new class instance is based on *fileobj*, which can be a regular file, a
-   :class:`StringIO` object, or any other object which simulates a file.  It
+   :class:`io.BytesIO` object, or any other object which simulates a file.  It
    defaults to ``None``, in which case *filename* is opened to provide a file
    object.
 
    When *fileobj* is not ``None``, the *filename* argument is only used to be
-   included in the :program:`gzip` file header, which may includes the original
+   included in the :program:`gzip` file header, which may include the original
    filename of the uncompressed file.  It defaults to the filename of *fileobj*, if
    discernible; otherwise, it defaults to the empty string, and in this case the
    original filename is not included in the header.
@@ -113,16 +113,19 @@ The module defines the following items:
       the call.  The number of bytes returned may be more or less than
       requested.
 
+      .. note:: While calling :meth:`peek` does not change the file position of
+         the :class:`GzipFile`, it may change the position of the underlying
+         file object (e.g. if the :class:`GzipFile` was constructed with the
+         *fileobj* parameter).
+
       .. versionadded:: 3.2
 
    .. versionchanged:: 3.1
-      Support for the :keyword:`with` statement was added.
+      Support for the :keyword:`with` statement was added, along with the
+      *mtime* argument.
 
    .. versionchanged:: 3.2
-      Support for zero-padded files was added.
-
-   .. versionchanged:: 3.2
-      Support for unseekable files was added.
+      Support for zero-padded and unseekable files was added.
 
    .. versionchanged:: 3.3
       The :meth:`io.BufferedIOBase.read1` method is now implemented.

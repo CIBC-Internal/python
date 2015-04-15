@@ -8,7 +8,7 @@ import os, sys
 
 import asdl
 
-TABSIZE = 8
+TABSIZE = 4
 MAX_COL = 80
 
 def get_c_type(name):
@@ -526,8 +526,7 @@ class Obj2ModVisitor(PickleVisitor):
                       (field.type, field.name), depth+1)
             self.emit("if (res != 0) goto failed;", depth+1)
 
-        self.emit("Py_XDECREF(tmp);", depth+1)
-        self.emit("tmp = NULL;", depth+1)
+        self.emit("Py_CLEAR(tmp);", depth+1)
         self.emit("} else {", depth)
         if not field.opt:
             message = "required field \\\"%s\\\" missing from %s" % (field.name, name)
@@ -835,9 +834,13 @@ static int obj2ast_object(PyObject* obj, PyObject** out, PyArena* arena)
 {
     if (obj == Py_None)
         obj = NULL;
-    if (obj)
-        PyArena_AddPyObject(arena, obj);
-    Py_XINCREF(obj);
+    if (obj) {
+        if (PyArena_AddPyObject(arena, obj) < 0) {
+            *out = NULL;
+            return -1;
+        }
+        Py_INCREF(obj);
+    }
     *out = obj;
     return 0;
 }
@@ -1007,7 +1010,7 @@ def has_sequence(types, doing_specialization):
 
 
 class StaticVisitor(PickleVisitor):
-    CODE = '''Very simple, always emit this static code.  Overide CODE'''
+    CODE = '''Very simple, always emit this static code.  Override CODE'''
 
     def visit(self, object):
         self.emit(self.CODE, 0, reflow=False)
@@ -1147,10 +1150,14 @@ PyObject* PyAST_mod2obj(mod_ty t)
 mod_ty PyAST_obj2mod(PyObject* ast, PyArena* arena, int mode)
 {
     mod_ty res;
-    PyObject *req_type[] = {(PyObject*)Module_type, (PyObject*)Expression_type,
-                            (PyObject*)Interactive_type};
+    PyObject *req_type[3];
     char *req_name[] = {"Module", "Expression", "Interactive"};
     int isinstance;
+
+    req_type[0] = (PyObject*)Module_type;
+    req_type[1] = (PyObject*)Expression_type;
+    req_type[2] = (PyObject*)Interactive_type;
+
     assert(0 <= mode && mode <= 2);
 
     init_types();

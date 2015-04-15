@@ -28,6 +28,12 @@ probably additional platforms, as long as OpenSSL is installed on that platform.
    operating system socket APIs.  The installed version of OpenSSL may also
    cause variations in behavior.
 
+.. warning::
+   Don't use this module without reading the :ref:`ssl-security`.  Doing so
+   may lead to a false sense of security, as the default settings of the
+   ssl module are not necessarily appropriate for your application.
+
+
 This section documents the objects and functions in the ``ssl`` module; for more
 general information about TLS, SSL, and certificates, the reader is referred to
 the documents in the "See Also" section at the bottom.
@@ -135,13 +141,16 @@ instead.
 
    Takes an instance ``sock`` of :class:`socket.socket`, and returns an instance
    of :class:`ssl.SSLSocket`, a subtype of :class:`socket.socket`, which wraps
-   the underlying socket in an SSL context.  For client-side sockets, the
-   context construction is lazy; if the underlying socket isn't connected yet,
-   the context construction will be performed after :meth:`connect` is called on
-   the socket.  For server-side sockets, if the socket has no remote peer, it is
-   assumed to be a listening socket, and the server-side SSL wrapping is
-   automatically performed on client connections accepted via the :meth:`accept`
-   method.  :func:`wrap_socket` may raise :exc:`SSLError`.
+   the underlying socket in an SSL context.  ``sock`` must be a
+   :data:`~socket.SOCK_STREAM` socket; other socket types are unsupported.
+
+   For client-side sockets, the context construction is lazy; if the
+   underlying socket isn't connected yet, the context construction will be
+   performed after :meth:`connect` is called on the socket.  For
+   server-side sockets, if the socket has no remote peer, it is assumed
+   to be a listening socket, and the server-side SSL wrapping is
+   automatically performed on client connections accepted via the
+   :meth:`accept` method.  :func:`wrap_socket` may raise :exc:`SSLError`.
 
    The ``keyfile`` and ``certfile`` parameters specify optional files which
    contain a certificate to be used to identify the local side of the
@@ -239,7 +248,7 @@ Random generation
 .. function:: RAND_pseudo_bytes(num)
 
    Returns (bytes, is_cryptographic): bytes are *num* pseudo-random bytes,
-   is_cryptographic is True if the bytes generated are cryptographically
+   is_cryptographic is ``True`` if the bytes generated are cryptographically
    strong. Raises an :class:`SSLError` if the operation is not supported by the
    current RAND method.
 
@@ -252,8 +261,8 @@ Random generation
 
 .. function:: RAND_status()
 
-   Returns True if the SSL pseudo-random number generator has been seeded with
-   'enough' randomness, and False otherwise.  You can use :func:`ssl.RAND_egd`
+   Returns ``True`` if the SSL pseudo-random number generator has been seeded with
+   'enough' randomness, and ``False`` otherwise.  You can use :func:`ssl.RAND_egd`
    and :func:`ssl.RAND_add` to increase the randomness of the pseudo-random
    number generator.
 
@@ -283,10 +292,10 @@ Certificate handling
    Verify that *cert* (in decoded format as returned by
    :meth:`SSLSocket.getpeercert`) matches the given *hostname*.  The rules
    applied are those for checking the identity of HTTPS servers as outlined
-   in :rfc:`2818`, except that IP addresses are not currently supported.
-   In addition to HTTPS, this function should be suitable for checking the
-   identity of servers in various SSL-based protocols such as FTPS, IMAPS,
-   POPS and others.
+   in :rfc:`2818` and :rfc:`6125`, except that IP addresses are not currently
+   supported. In addition to HTTPS, this function should be suitable for
+   checking the identity of servers in various SSL-based protocols such as
+   FTPS, IMAPS, POPS and others.
 
    :exc:`CertificateError` is raised on failure. On success, the function
    returns nothing::
@@ -300,6 +309,13 @@ Certificate handling
       ssl.CertificateError: hostname 'example.org' doesn't match 'example.com'
 
    .. versionadded:: 3.2
+
+   .. versionchanged:: 3.3.3
+      The function now follows :rfc:`6125`, section 6.4.3 and does neither
+      match multiple wildcards (e.g. ``*.*.com`` or ``*a*.example.org``) nor
+      a wildcard inside an internationalized domain names (IDN) fragment.
+      IDN A-labels such as ``www*.xn--pthon-kva.org`` are still supported,
+      but ``x*.python.org`` no longer matches ``xn--tda.python.org``.
 
 .. function:: cert_time_to_seconds(timestring)
 
@@ -573,7 +589,7 @@ SSL sockets also have the following additional methods and attributes:
    If there is no certificate for the peer on the other end of the connection,
    returns ``None``.
 
-   If the parameter ``binary_form`` is :const:`False`, and a certificate was
+   If the ``binary_form`` parameter is :const:`False`, and a certificate was
    received from the peer, this method returns a :class:`dict` instance.  If the
    certificate was not validated, the dict is empty.  If the certificate was
    validated, it returns a dict with several keys, amongst them ``subject``
@@ -607,16 +623,23 @@ SSL sockets also have the following additional methods and attributes:
        'version': 3}
 
    .. note::
+
       To validate a certificate for a particular service, you can use the
       :func:`match_hostname` function.
 
    If the ``binary_form`` parameter is :const:`True`, and a certificate was
    provided, this method returns the DER-encoded form of the entire certificate
    as a sequence of bytes, or :const:`None` if the peer did not provide a
-   certificate.  This return value is independent of validation; if validation
-   was required (:const:`CERT_OPTIONAL` or :const:`CERT_REQUIRED`), it will have
-   been validated, but if :const:`CERT_NONE` was used to establish the
-   connection, the certificate, if present, will not have been validated.
+   certificate.  Whether the peer provides a certificate depends on the SSL
+   socket's role:
+
+   * for a client SSL socket, the server will always provide a certificate,
+     regardless of whether validation was required;
+
+   * for a server SSL socket, the client will only provide a certificate
+     when requested by the server; therefore :meth:`getpeercert` will return
+     :const:`None` if you used :const:`CERT_NONE` (rather than
+     :const:`CERT_OPTIONAL` or :const:`CERT_REQUIRED`).
 
    .. versionchanged:: 3.2
       The returned dictionary includes additional items such as ``issuer``
@@ -767,7 +790,7 @@ to speed up repeated connections from the same clients.
 
 .. method:: SSLContext.set_npn_protocols(protocols)
 
-   Specify which protocols the socket should avertise during the SSL/TLS
+   Specify which protocols the socket should advertise during the SSL/TLS
    handshake. It should be a list of strings, like ``['http/1.1', 'spdy/2']``,
    ordered by preference. The selection of a protocol will happen during the
    handshake, and will play out according to the `NPN draft specification
@@ -817,7 +840,10 @@ to speed up repeated connections from the same clients.
       server_hostname=None)
 
    Wrap an existing Python socket *sock* and return an :class:`SSLSocket`
-   object.  The SSL socket is tied to the context, its settings and
+   object.  *sock* must be a :data:`~socket.SOCK_STREAM` socket; other socket
+   types are unsupported.
+
+   The returned SSL socket is tied to the context, its settings and
    certificates.  The parameters *server_side*, *do_handshake_on_connect*
    and *suppress_ragged_eofs* have the same meaning as in the top-level
    :func:`wrap_socket` function.
@@ -1293,14 +1319,25 @@ format <http://www.openssl.org/docs/apps/ciphers.html#CIPHER_LIST_FORMAT>`_.
 If you want to check which ciphers are enabled by a given cipher list,
 use the ``openssl ciphers`` command on your system.
 
+Multi-processing
+^^^^^^^^^^^^^^^^
+
+If using this module as part of a multi-processed application (using,
+for example the :mod:`multiprocessing` or :mod:`concurrent.futures` modules),
+be aware that OpenSSL's internal random number generator does not properly
+handle forked processes.  Applications must change the PRNG state of the
+parent process if they use any SSL feature with :func:`os.fork`.  Any
+successful call of :func:`~ssl.RAND_add`, :func:`~ssl.RAND_bytes` or
+:func:`~ssl.RAND_pseudo_bytes` is sufficient.
+
 
 .. seealso::
 
    Class :class:`socket.socket`
-            Documentation of underlying :mod:`socket` class
+       Documentation of underlying :mod:`socket` class
 
-   `TLS (Transport Layer Security) and SSL (Secure Socket Layer) <http://www3.rad.com/networks/applications/secure/tls.htm>`_
-      Debby Koren
+   `SSL/TLS Strong Encryption: An Introduction <http://httpd.apache.org/docs/trunk/en/ssl/ssl_intro.html>`_
+       Intro from the Apache webserver documentation
 
    `RFC 1422: Privacy Enhancement for Internet Electronic Mail: Part II: Certificate-Based Key Management <http://www.ietf.org/rfc/rfc1422>`_
        Steve Kent

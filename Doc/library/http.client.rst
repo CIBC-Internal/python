@@ -169,8 +169,8 @@ The following exceptions are raised as appropriate:
    A subclass of :exc:`HTTPException`.  Raised if a server responds with a HTTP
    status code that we don't understand.
 
-The constants defined in this module are:
 
+The constants defined in this module are:
 
 .. data:: HTTP_PORT
 
@@ -451,11 +451,25 @@ HTTPConnection Objects
 
 .. method:: HTTPConnection.set_tunnel(host, port=None, headers=None)
 
-   Set the host and the port for HTTP Connect Tunnelling. Normally used when it
-   is required to a HTTPS Connection through a proxy server.
+   Set the host and the port for HTTP Connect Tunnelling. This allows running
+   the connection through a proxy server.
 
-   The headers argument should be a mapping of extra HTTP headers to send
-   with the CONNECT request.
+   The host and port arguments specify the endpoint of the tunneled connection
+   (i.e. the address included in the CONNECT request, *not* the address of the
+   proxy server).
+
+   The headers argument should be a mapping of extra HTTP headers to send with
+   the CONNECT request.
+
+   For example, to tunnel through a HTTPS proxy server running locally on port
+   8080, we would pass the address of the proxy to the :class:`HTTPSConnection`
+   constructor, and the address of the host that we eventually want to reach to
+   the :meth:`~HTTPConnection.set_tunnel` method::
+
+      >>> import http.client
+      >>> conn = http.client.HTTPSConnection("localhost", 8080)
+      >>> conn.set_tunnel("www.python.org")
+      >>> conn.request("HEAD","/index.html")
 
    .. versionadded:: 3.2
 
@@ -573,7 +587,7 @@ statement.
 
 .. attribute:: HTTPResponse.closed
 
-   Is True if the stream is closed.
+   Is ``True`` if the stream is closed.
 
 Examples
 --------
@@ -649,7 +663,7 @@ request using http.client::
     >>> conn = http.client.HTTPConnection("localhost", 8080)
     >>> conn.request("PUT", "/file", BODY)
     >>> response = conn.getresponse()
-    >>> print(resp.status, response.reason)
+    >>> print(response.status, response.reason)
     200, OK
 
 .. _httpmessage-objects:

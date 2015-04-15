@@ -15,6 +15,7 @@ from xml.sax.expatreader import create_parser
 from xml.sax.handler import feature_namespaces
 from xml.sax.xmlreader import InputSource, AttributesImpl, AttributesNSImpl
 from io import BytesIO, StringIO
+import codecs
 import os.path
 import shutil
 from test import support
@@ -318,6 +319,24 @@ class XmlgenTest:
 
         self.assertEqual(result.getvalue(), self.xml("<doc> </doc>"))
 
+    def test_xmlgen_encoding_bytes(self):
+        encodings = ('iso-8859-15', 'utf-8', 'utf-8-sig',
+                     'utf-16', 'utf-16be', 'utf-16le',
+                     'utf-32', 'utf-32be', 'utf-32le')
+        for encoding in encodings:
+            result = self.ioclass()
+            gen = XMLGenerator(result, encoding=encoding)
+
+            gen.startDocument()
+            gen.startElement("doc", {"a": '\u20ac'})
+            gen.characters("\u20ac".encode(encoding))
+            gen.ignorableWhitespace(" ".encode(encoding))
+            gen.endElement("doc")
+            gen.endDocument()
+
+            self.assertEqual(result.getvalue(),
+                self.xml('<doc a="\u20ac">\u20ac </doc>', encoding=encoding))
+
     def test_xmlgen_ns(self):
         result = self.ioclass()
         gen = XMLGenerator(result)
@@ -538,6 +557,38 @@ class WriterXmlgenTest(BytesXmlgenTest):
         def getvalue(self):
             return b''.join(self)
 
+class StreamWriterXmlgenTest(XmlgenTest, unittest.TestCase):
+    def ioclass(self):
+        raw = BytesIO()
+        writer = codecs.getwriter('ascii')(raw, 'xmlcharrefreplace')
+        writer.getvalue = raw.getvalue
+        return writer
+
+    def xml(self, doc, encoding='iso-8859-1'):
+        return ('<?xml version="1.0" encoding="%s"?>\n%s' %
+                (encoding, doc)).encode('ascii', 'xmlcharrefreplace')
+
+class StreamReaderWriterXmlgenTest(XmlgenTest, unittest.TestCase):
+    fname = support.TESTFN + '-codecs'
+
+    def ioclass(self):
+        writer = codecs.open(self.fname, 'w', encoding='ascii',
+                             errors='xmlcharrefreplace', buffering=0)
+        def cleanup():
+            writer.close()
+            support.unlink(self.fname)
+        self.addCleanup(cleanup)
+        def getvalue():
+            # Windows will not let use reopen without first closing
+            writer.close()
+            with open(writer.name, 'rb') as f:
+                return f.read()
+        writer.getvalue = getvalue
+        return writer
+
+    def xml(self, doc, encoding='iso-8859-1'):
+        return ('<?xml version="1.0" encoding="%s"?>\n%s' %
+                (encoding, doc)).encode('ascii', 'xmlcharrefreplace')
 
 start = b'<?xml version="1.0" encoding="iso-8859-1"?>\n'
 
@@ -946,6 +997,8 @@ def test_main():
                  StringXmlgenTest,
                  BytesXmlgenTest,
                  WriterXmlgenTest,
+                 StreamWriterXmlgenTest,
+                 StreamReaderWriterXmlgenTest,
                  ExpatReaderTest,
                  ErrorReportingTest,
                  XmlReaderTest)

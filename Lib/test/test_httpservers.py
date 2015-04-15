@@ -249,6 +249,9 @@ class SimpleHTTPServerTestCase(BaseTestCase):
         #constructs the path relative to the root directory of the HTTPServer
         response = self.request(self.tempdir_name + '/test')
         self.check_status_and_reason(response, 200, data=self.data)
+        # check for trailing "/" which should return 404. See Issue17324
+        response = self.request(self.tempdir_name + '/test/')
+        self.check_status_and_reason(response, 404)
         response = self.request(self.tempdir_name + '/')
         self.check_status_and_reason(response, 200)
         response = self.request(self.tempdir_name)
@@ -321,9 +324,13 @@ class CGIHTTPServerTestCase(BaseTestCase):
         self.cwd = os.getcwd()
         self.parent_dir = tempfile.mkdtemp()
         self.cgi_dir = os.path.join(self.parent_dir, 'cgi-bin')
+        self.cgi_child_dir = os.path.join(self.cgi_dir, 'child-dir')
         os.mkdir(self.cgi_dir)
+        os.mkdir(self.cgi_child_dir)
+        self.nocgi_path = None
         self.file1_path = None
         self.file2_path = None
+        self.file3_path = None
 
         # The shebang line should be pure ASCII: use symlink if possible.
         # See issue #7668.
@@ -342,6 +349,11 @@ class CGIHTTPServerTestCase(BaseTestCase):
             self.tearDown()
             self.skipTest("Python executable path is not encodable to utf-8")
 
+        self.nocgi_path = os.path.join(self.parent_dir, 'nocgi.py')
+        with open(self.nocgi_path, 'w') as fp:
+            fp.write(cgi_file1 % self.pythonexe)
+        os.chmod(self.nocgi_path, 0o777)
+
         self.file1_path = os.path.join(self.cgi_dir, 'file1.py')
         with open(self.file1_path, 'w', encoding='utf-8') as file1:
             file1.write(cgi_file1 % self.pythonexe)
@@ -352,6 +364,11 @@ class CGIHTTPServerTestCase(BaseTestCase):
             file2.write(cgi_file2 % self.pythonexe)
         os.chmod(self.file2_path, 0o777)
 
+        self.file3_path = os.path.join(self.cgi_child_dir, 'file3.py')
+        with open(self.file3_path, 'w', encoding='utf-8') as file3:
+            file3.write(cgi_file1 % self.pythonexe)
+        os.chmod(self.file3_path, 0o777)
+
         os.chdir(self.parent_dir)
 
     def tearDown(self):
@@ -359,10 +376,15 @@ class CGIHTTPServerTestCase(BaseTestCase):
             os.chdir(self.cwd)
             if self.pythonexe != sys.executable:
                 os.remove(self.pythonexe)
+            if self.nocgi_path:
+                os.remove(self.nocgi_path)
             if self.file1_path:
                 os.remove(self.file1_path)
             if self.file2_path:
                 os.remove(self.file2_path)
+            if self.file3_path:
+                os.remove(self.file3_path)
+            os.rmdir(self.cgi_child_dir)
             os.rmdir(self.cgi_dir)
             os.rmdir(self.parent_dir)
         finally:
@@ -415,6 +437,10 @@ class CGIHTTPServerTestCase(BaseTestCase):
         self.assertEqual((b'Hello World' + self.linesep, 'text/html', 200),
             (res.read(), res.getheader('Content-type'), res.status))
 
+    def test_issue19435(self):
+        res = self.request('///////////nocgi.py/../cgi-bin/nothere.sh')
+        self.assertEqual(res.status, 404)
+
     def test_post(self):
         params = urllib.parse.urlencode(
             {'spam' : 1, 'eggs' : 'python', 'bacon' : 123456})
@@ -448,6 +474,16 @@ class CGIHTTPServerTestCase(BaseTestCase):
         self.assertEqual((b'Hello World' + self.linesep, 'text/html', 200),
                 (res.read(), res.getheader('Content-type'), res.status))
         self.assertEqual(os.environ['SERVER_SOFTWARE'], signature)
+
+    def test_urlquote_decoding_in_cgi_check(self):
+        res = self.request('/cgi-bin%2ffile1.py')
+        self.assertEqual((b'Hello World' + self.linesep, 'text/html', 200),
+                (res.read(), res.getheader('Content-type'), res.status))
+
+    def test_nested_cgi_path_issue21323(self):
+        res = self.request('/cgi-bin/child-dir/file3.py')
+        self.assertEqual((b'Hello World' + self.linesep, 'text/html', 200),
+                (res.read(), res.getheader('Content-type'), res.status))
 
 
 class SocketlessRequestHandler(SimpleHTTPRequestHandler):
@@ -516,7 +552,7 @@ class BaseHTTPRequestHandlerTestCase(unittest.TestCase):
 
     def verify_http_server_response(self, response):
         match = self.HTTPResponseMatch.search(response)
-        self.assertTrue(match is not None)
+        self.assertIsNotNone(match)
 
     def test_http_1_1(self):
         result = self.send_typical_request(b'GET / HTTP/1.1\r\n\r\n')
@@ -548,7 +584,8 @@ class BaseHTTPRequestHandlerTestCase(unittest.TestCase):
     def test_with_continue_1_1(self):
         result = self.send_typical_request(b'GET / HTTP/1.1\r\nExpect: 100-continue\r\n\r\n')
         self.assertEqual(result[0], b'HTTP/1.1 100 Continue\r\n')
-        self.assertEqual(result[1], b'HTTP/1.1 200 OK\r\n')
+        self.assertEqual(result[1], b'\r\n')
+        self.assertEqual(result[2], b'HTTP/1.1 200 OK\r\n')
         self.verify_expected_headers(result[2:-1])
         self.verify_get_called()
         self.assertEqual(result[-1], b'<html><body>Data</body></html>\r\n')
@@ -616,7 +653,8 @@ class BaseHTTPRequestHandlerTestCase(unittest.TestCase):
         self.assertNotEqual(_readAndReseek(output), b'')
         result = _readAndReseek(output).split(b'\r\n')
         self.assertEqual(result[0], b'HTTP/1.1 100 Continue')
-        self.assertEqual(result[1], b'HTTP/1.1 200 OK')
+        self.assertEqual(result[1], b'')
+        self.assertEqual(result[2], b'HTTP/1.1 200 OK')
 
     def test_with_continue_rejected(self):
         usual_handler = self.handler        # Save to avoid breaking any subsequent tests.

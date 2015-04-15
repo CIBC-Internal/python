@@ -693,8 +693,7 @@ typedef struct {
 static void
 path_cleanup(path_t *path) {
     if (path->cleanup) {
-        Py_DECREF(path->cleanup);
-        path->cleanup = NULL;
+        Py_CLEAR(path->cleanup);
     }
 }
 
@@ -1085,11 +1084,7 @@ win32_get_reparse_tag(HANDLE reparse_point_handle, ULONG *reparse_tag)
 #endif /* MS_WINDOWS */
 
 /* Return a dictionary corresponding to the POSIX environment table */
-
-// disable check for shared library, since static build needs to call _NSGetEnviron() too
-// CMake build defines WITH_NEXT_FRAMEWORK for OS X, so additional check not required
-//#if defined(WITH_NEXT_FRAMEWORK) || (defined(__APPLE__) && defined(Py_ENABLE_SHARED))
-#if defined(WITH_NEXT_FRAMEWORK)
+#if defined(WITH_NEXT_FRAMEWORK) || (defined(__APPLE__) && defined(Py_ENABLE_SHARED))
 /* On Darwin/MacOSX a shared library or framework has no access to
 ** environ directly, we must obtain it with _NSGetEnviron(). See also
 ** man environ(7).
@@ -1117,8 +1112,7 @@ convertenviron(void)
     d = PyDict_New();
     if (d == NULL)
         return NULL;
-//#if defined(WITH_NEXT_FRAMEWORK) || (defined(__APPLE__) && defined(Py_ENABLE_SHARED))
-#if defined(WITH_NEXT_FRAMEWORK)
+#if defined(WITH_NEXT_FRAMEWORK) || (defined(__APPLE__) && defined(Py_ENABLE_SHARED))
     if (environ == NULL)
         environ = *_NSGetEnviron();
 #endif
@@ -1747,7 +1741,7 @@ win32_xstat_impl(const char *path, struct win32_stat *result,
         /* FILE_FLAG_BACKUP_SEMANTICS is required to open a directory */
         /* FILE_FLAG_OPEN_REPARSE_POINT does not follow the symlink.
            Because of this, calls like GetFinalPathNameByHandle will return
-           the symlink path agin and not the actual final path. */
+           the symlink path again and not the actual final path. */
         FILE_ATTRIBUTE_NORMAL|FILE_FLAG_BACKUP_SEMANTICS|
             FILE_FLAG_OPEN_REPARSE_POINT,
         NULL);
@@ -1843,7 +1837,7 @@ win32_xstat_impl_w(const wchar_t *path, struct win32_stat *result,
         /* FILE_FLAG_BACKUP_SEMANTICS is required to open a directory */
         /* FILE_FLAG_OPEN_REPARSE_POINT does not follow the symlink.
            Because of this, calls like GetFinalPathNameByHandle will return
-           the symlink path agin and not the actual final path. */
+           the symlink path again and not the actual final path. */
         FILE_ATTRIBUTE_NORMAL|FILE_FLAG_BACKUP_SEMANTICS|
             FILE_FLAG_OPEN_REPARSE_POINT,
         NULL);
@@ -2966,7 +2960,7 @@ posix_chflags(PyObject *self, PyObject *args, PyObject *kwargs)
     unsigned long flags;
     int follow_symlinks = 1;
     int result;
-    PyObject *return_value;
+    PyObject *return_value = NULL;
     static char *keywords[] = {"path", "flags", "follow_symlinks", NULL};
 
     memset(&path, 0, sizeof(path));
@@ -3448,7 +3442,9 @@ posix_listdir(PyObject *self, PyObject *args, PyObject *kwargs)
     path_t path;
     PyObject *list = NULL;
     static char *keywords[] = {"path", NULL};
+#ifdef HAVE_FDOPENDIR
     int fd = -1;
+#endif /* HAVE_FDOPENDIR */
 
 #if defined(MS_WINDOWS) && !defined(HAVE_OPENDIR)
     PyObject *v;
@@ -3737,6 +3733,13 @@ exit:
 
     if (dirp == NULL) {
         list = path_error("listdir", &path);
+#ifdef HAVE_FDOPENDIR
+        if (fd != -1) {
+            Py_BEGIN_ALLOW_THREADS
+            close(fd);
+            Py_END_ALLOW_THREADS
+        }
+#endif /* HAVE_FDOPENDIR */
         goto exit;
     }
     if ((list = PyList_New(0)) == NULL) {
@@ -3779,8 +3782,10 @@ exit:
 exit:
     if (dirp != NULL) {
         Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_FDOPENDIR
         if (fd > -1)
             rewinddir(dirp);
+#endif /* HAVE_FDOPENDIR */
         closedir(dirp);
         Py_END_ALLOW_THREADS
     }
@@ -4519,7 +4524,7 @@ posix_uname(PyObject *self, PyObject *noargs)
 
 #define SET(i, field) \
     { \
-    PyObject *o = PyUnicode_DecodeASCII(field, strlen(field), NULL); \
+    PyObject *o = PyUnicode_DecodeFSDefault(field); \
     if (!o) { \
         Py_DECREF(value); \
         return NULL; \
@@ -4756,6 +4761,7 @@ posix_utime(PyObject *self, PyObject *args, PyObject *kwargs)
     PyObject *return_value = NULL;
 
     memset(&path, 0, sizeof(path));
+    memset(&utime, 0, sizeof(utime_t));
 #if UTIME_HAVE_FD
     path.allow_fd = 1;
 #endif
@@ -4780,6 +4786,8 @@ posix_utime(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     if (times && (times != Py_None)) {
+        time_t a_sec, m_sec;
+        long a_nsec, m_nsec;
         if (!PyTuple_CheckExact(times) || (PyTuple_Size(times) != 2)) {
             PyErr_SetString(PyExc_TypeError,
                          "utime: 'times' must be either"
@@ -4788,11 +4796,15 @@ posix_utime(PyObject *self, PyObject *args, PyObject *kwargs)
         }
         utime.now = 0;
         if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(times, 0),
-                                     &utime.atime_s, &utime.atime_ns) == -1 ||
+                                     &a_sec, &a_nsec) == -1 ||
             _PyTime_ObjectToTimespec(PyTuple_GET_ITEM(times, 1),
-                                     &utime.mtime_s, &utime.mtime_ns) == -1) {
+                                     &m_sec, &m_nsec) == -1) {
             goto exit;
         }
+        utime.atime_s = a_sec;
+        utime.atime_ns = a_nsec;
+        utime.mtime_s = m_sec;
+        utime.mtime_ns = m_nsec;
     }
     else if (ns) {
         if (!PyTuple_CheckExact(ns) || (PyTuple_Size(ns) != 2)) {
@@ -6116,7 +6128,7 @@ posix_openpty(PyObject *self, PyObject *noargs)
     slave_fd = open(slave_name, O_RDWR | O_NOCTTY); /* open slave */
     if (slave_fd < 0)
         return posix_error();
-#if defined(HAVE_STROPTS_H) && !defined(__CYGWIN__) && !defined(HAVE_DEV_PTC)
+#if !defined(__CYGWIN__) && !defined(HAVE_DEV_PTC)
     ioctl(slave_fd, I_PUSH, "ptem"); /* push ptem */
     ioctl(slave_fd, I_PUSH, "ldterm"); /* push ldterm */
 #ifndef __hpux
@@ -6318,6 +6330,34 @@ posix_getgroups(PyObject *self, PyObject *noargs)
     gid_t* alt_grouplist = grouplist;
     int n;
 
+#ifdef __APPLE__
+    /* Issue #17557: As of OS X 10.8, getgroups(2) no longer raises EINVAL if
+     * there are more groups than can fit in grouplist.  Therefore, on OS X
+     * always first call getgroups with length 0 to get the actual number
+     * of groups.
+     */
+    n = getgroups(0, NULL);
+    if (n < 0) {
+        return posix_error();
+    } else if (n <= MAX_GROUPS) {
+        /* groups will fit in existing array */
+        alt_grouplist = grouplist;
+    } else {
+        alt_grouplist = PyMem_Malloc(n * sizeof(gid_t));
+        if (alt_grouplist == NULL) {
+            errno = EINVAL;
+            return posix_error();
+        }
+    }
+
+    n = getgroups(n, alt_grouplist);
+    if (n == -1) {
+        if (alt_grouplist != grouplist) {
+            PyMem_Free(alt_grouplist);
+        }
+        return posix_error();
+    }
+#else
     n = getgroups(MAX_GROUPS, grouplist);
     if (n < 0) {
         if (errno == EINVAL) {
@@ -6344,6 +6384,8 @@ posix_getgroups(PyObject *self, PyObject *noargs)
             return posix_error();
         }
     }
+#endif
+
     result = PyList_New(n);
     if (result != NULL) {
         int i;
@@ -7199,6 +7241,124 @@ check_CreateSymbolicLink()
     return (Py_CreateSymbolicLinkW && Py_CreateSymbolicLinkA);
 }
 
+void _dirnameW(WCHAR *path) {
+    /* Remove the last portion of the path */
+
+    WCHAR *ptr;
+
+    /* walk the path from the end until a backslash is encountered */
+    for(ptr = path + wcslen(path); ptr != path; ptr--)
+    {
+        if(*ptr == *L"\\" || *ptr == *L"/") {
+            break;
+        }
+    }
+    *ptr = 0;
+}
+
+void _dirnameA(char *path) {
+    /* Remove the last portion of the path */
+
+    char *ptr;
+
+    /* walk the path from the end until a backslash is encountered */
+    for(ptr = path + strlen(path); ptr != path; ptr--)
+    {
+        if(*ptr == '\\' || *ptr == '/') {
+            break;
+        }
+    }
+    *ptr = 0;
+}
+
+int _is_absW(WCHAR *path) {
+    /* Is this path absolute? */
+
+    return path[0] == L'\\' || path[0] == L'/' || path[1] == L':';
+
+}
+
+int _is_absA(char *path) {
+    /* Is this path absolute? */
+
+    return path[0] == '\\' || path[0] == '/' || path[1] == ':';
+
+}
+
+void _joinW(WCHAR *dest_path, const WCHAR *root, const WCHAR *rest) {
+    /* join root and rest with a backslash */
+    int root_len;
+
+    if(_is_absW(rest)) {
+        wcscpy(dest_path, rest);
+        return;
+    }
+
+    root_len = wcslen(root);
+
+    wcscpy(dest_path, root);
+    if(root_len) {
+        dest_path[root_len] = *L"\\";
+        root_len += 1;
+    }
+    wcscpy(dest_path+root_len, rest);
+}
+
+void _joinA(char *dest_path, const char *root, const char *rest) {
+    /* join root and rest with a backslash */
+    int root_len;
+
+    if(_is_absA(rest)) {
+        strcpy(dest_path, rest);
+        return;
+    }
+
+    root_len = strlen(root);
+
+    strcpy(dest_path, root);
+    if(root_len) {
+        dest_path[root_len] = '\\';
+        root_len += 1;
+    }
+    strcpy(dest_path+root_len, rest);
+}
+
+int _check_dirW(WCHAR *src, WCHAR *dest)
+{
+    /* Return True if the path at src relative to dest is a directory */
+    WIN32_FILE_ATTRIBUTE_DATA src_info;
+    WCHAR dest_parent[MAX_PATH];
+    WCHAR src_resolved[MAX_PATH] = L"";
+
+    /* dest_parent = os.path.dirname(dest) */
+    wcscpy(dest_parent, dest);
+    _dirnameW(dest_parent);
+    /* src_resolved = os.path.join(dest_parent, src) */
+    _joinW(src_resolved, dest_parent, src);
+    return (
+        GetFileAttributesExW(src_resolved, GetFileExInfoStandard, &src_info)
+        && src_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+    );
+}
+
+int _check_dirA(char *src, char *dest)
+{
+    /* Return True if the path at src relative to dest is a directory */
+    WIN32_FILE_ATTRIBUTE_DATA src_info;
+    char dest_parent[MAX_PATH];
+    char src_resolved[MAX_PATH] = "";
+
+    /* dest_parent = os.path.dirname(dest) */
+    strcpy(dest_parent, dest);
+    _dirnameW(dest_parent);
+    /* src_resolved = os.path.join(dest_parent, src) */
+    _joinW(src_resolved, dest_parent, src);
+    return (
+        GetFileAttributesExA(src_resolved, GetFileExInfoStandard, &src_info)
+        && src_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+    );
+}
+
 #endif
 
 static PyObject *
@@ -7255,13 +7415,20 @@ posix_symlink(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
 #ifdef MS_WINDOWS
+
     Py_BEGIN_ALLOW_THREADS
-    if (dst.wide)
+    if (dst.wide) {
+        /* if src is a directory, ensure target_is_directory==1 */
+        target_is_directory |= _check_dirW(src.wide, dst.wide);
         result = Py_CreateSymbolicLinkW(dst.wide, src.wide,
                                         target_is_directory);
-    else
+    }
+    else {
+        /* if src is a directory, ensure target_is_directory==1 */
+        target_is_directory |= _check_dirA(src.narrow, dst.narrow);
         result = Py_CreateSymbolicLinkA(dst.narrow, src.narrow,
                                         target_is_directory);
+    }
     Py_END_ALLOW_THREADS
 
     if (!result) {
@@ -7677,8 +7844,12 @@ PyDoc_STRVAR(posix_close__doc__,
 "close(fd)\n\n\
 Close a file descriptor (for low level IO).");
 
+/*
+The underscore at end of function name avoids a name clash with the libc
+function posix_close.
+*/
 static PyObject *
-posix_close(PyObject *self, PyObject *args)
+posix_close_(PyObject *self, PyObject *args)
 {
     int fd, res;
     if (!PyArg_ParseTuple(args, "i:close", &fd))
@@ -7837,7 +8008,7 @@ posix_lseek(PyObject *self, PyObject *args)
 
 
 PyDoc_STRVAR(posix_read__doc__,
-"read(fd, buffersize) -> string\n\n\
+"read(fd, buffersize) -> bytes\n\n\
 Read a file descriptor.");
 
 static PyObject *
@@ -7882,14 +8053,14 @@ iov_setup(struct iovec **iov, Py_buffer **buf, PyObject *seq, int cnt, int type)
     *iov = PyMem_New(struct iovec, cnt);
     if (*iov == NULL) {
         PyErr_NoMemory();
-        return total;
+        return -1;
     }
 
     *buf = PyMem_New(Py_buffer, cnt);
     if (*buf == NULL) {
         PyMem_Del(*iov);
         PyErr_NoMemory();
-        return total;
+        return -1;
     }
 
     for (i = 0; i < cnt; i++) {
@@ -7914,7 +8085,7 @@ fail:
         PyBuffer_Release(&(*buf)[j]);
     }
     PyMem_Del(*buf);
-    return 0;
+    return -1;
 }
 
 static void
@@ -7932,9 +8103,12 @@ iov_cleanup(struct iovec *iov, Py_buffer *buf, int cnt)
 #ifdef HAVE_READV
 PyDoc_STRVAR(posix_readv__doc__,
 "readv(fd, buffers) -> bytesread\n\n\
-Read from a file descriptor into a number of writable buffers. buffers\n\
-is an arbitrary sequence of writable buffers.\n\
-Returns the total number of bytes read.");
+Read from a file descriptor fd into a number of mutable, bytes-like\n\
+objects (\"buffers\").  readv will transfer data into each buffer\n\
+until it is full and then move on to the next buffer in the sequence\n\
+to hold the rest of the data.\n\n\
+readv returns the total number of bytes read (which may be less than\n\
+the total capacity of all the buffers.");
 
 static PyObject *
 posix_readv(PyObject *self, PyObject *args)
@@ -7954,7 +8128,7 @@ posix_readv(PyObject *self, PyObject *args)
     }
     cnt = PySequence_Size(seq);
 
-    if (!iov_setup(&iov, &buf, seq, cnt, PyBUF_WRITABLE))
+    if (iov_setup(&iov, &buf, seq, cnt, PyBUF_WRITABLE) < 0)
         return NULL;
 
     Py_BEGIN_ALLOW_THREADS
@@ -7962,6 +8136,9 @@ posix_readv(PyObject *self, PyObject *args)
     Py_END_ALLOW_THREADS
 
     iov_cleanup(iov, buf, cnt);
+    if (n < 0)
+        return posix_error();
+
     return PyLong_FromSsize_t(n);
 }
 #endif
@@ -8007,8 +8184,8 @@ posix_pread(PyObject *self, PyObject *args)
 #endif
 
 PyDoc_STRVAR(posix_write__doc__,
-"write(fd, string) -> byteswritten\n\n\
-Write a string to a file descriptor.");
+"write(fd, data) -> byteswritten\n\n\
+Write bytes to a file descriptor.");
 
 static PyObject *
 posix_write(PyObject *self, PyObject *args)
@@ -8086,8 +8263,8 @@ posix_sendfile(PyObject *self, PyObject *args, PyObject *kwdict)
             Py_ssize_t i = 0; /* Avoid uninitialized warning */
             sf.hdr_cnt = PySequence_Size(headers);
             if (sf.hdr_cnt > 0 &&
-                !(i = iov_setup(&(sf.headers), &hbuf,
-                                headers, sf.hdr_cnt, PyBUF_SIMPLE)))
+                (i = iov_setup(&(sf.headers), &hbuf,
+                                headers, sf.hdr_cnt, PyBUF_SIMPLE)) < 0)
                 return NULL;
 #ifdef __APPLE__
             sbytes += i;
@@ -8103,8 +8280,8 @@ posix_sendfile(PyObject *self, PyObject *args, PyObject *kwdict)
             Py_ssize_t i = 0; /* Avoid uninitialized warning */
             sf.trl_cnt = PySequence_Size(trailers);
             if (sf.trl_cnt > 0 &&
-                !(i = iov_setup(&(sf.trailers), &tbuf,
-                                trailers, sf.trl_cnt, PyBUF_SIMPLE)))
+                (i = iov_setup(&(sf.trailers), &tbuf,
+                                trailers, sf.trl_cnt, PyBUF_SIMPLE)) < 0)
                 return NULL;
 #ifdef __APPLE__
             sbytes += i;
@@ -8294,9 +8471,10 @@ posix_pipe2(PyObject *self, PyObject *arg)
 #ifdef HAVE_WRITEV
 PyDoc_STRVAR(posix_writev__doc__,
 "writev(fd, buffers) -> byteswritten\n\n\
-Write the contents of buffers to a file descriptor, where buffers is an\n\
-arbitrary sequence of buffers.\n\
-Returns the total bytes written.");
+Write the contents of *buffers* to file descriptor *fd*. *buffers*\n\
+must be a sequence of bytes-like objects.\n\n\
+writev writes the contents of each object to the file descriptor\n\
+and returns the total number of bytes written.");
 
 static PyObject *
 posix_writev(PyObject *self, PyObject *args)
@@ -8315,7 +8493,7 @@ posix_writev(PyObject *self, PyObject *args)
     }
     cnt = PySequence_Size(seq);
 
-    if (!iov_setup(&iov, &buf, seq, cnt, PyBUF_SIMPLE)) {
+    if (iov_setup(&iov, &buf, seq, cnt, PyBUF_SIMPLE) < 0) {
         return NULL;
     }
 
@@ -8324,6 +8502,9 @@ posix_writev(PyObject *self, PyObject *args)
     Py_END_ALLOW_THREADS
 
     iov_cleanup(iov, buf, cnt);
+    if (res < 0)
+        return posix_error();
+
     return PyLong_FromSsize_t(res);
 }
 #endif
@@ -10624,8 +10805,11 @@ posix_listxattr(PyObject *self, PyObject *args, PyObject *kwargs)
         Py_END_ALLOW_THREADS;
 
         if (length < 0) {
-            if (errno == ERANGE)
+            if (errno == ERANGE) {
+                PyMem_FREE(buffer);
+                buffer = NULL;
                 continue;
+            }
             path_error("listxattr", &path);
             break;
         }
@@ -11081,7 +11265,7 @@ static PyMethodDef posix_methods[] = {
     {"open",            (PyCFunction)posix_open,\
                         METH_VARARGS | METH_KEYWORDS,
                         posix_open__doc__},
-    {"close",           posix_close, METH_VARARGS, posix_close__doc__},
+    {"close",           posix_close_, METH_VARARGS, posix_close__doc__},
     {"closerange",      posix_closerange, METH_VARARGS, posix_closerange__doc__},
     {"device_encoding", device_encoding, METH_VARARGS, device_encoding__doc__},
     {"dup",             posix_dup, METH_VARARGS, posix_dup__doc__},
@@ -11686,7 +11870,7 @@ all_ins(PyObject *d)
     if (ins(d, "SCHED_FIFO", (long)SCHED_FIFO)) return -1;
     if (ins(d, "SCHED_RR", (long)SCHED_RR)) return -1;
 #ifdef SCHED_SPORADIC
-    if (ins(d, "SCHED_SPORADIC", (long)SCHED_SPORADIC) return -1;
+    if (ins(d, "SCHED_SPORADIC", (long)SCHED_SPORADIC)) return -1;
 #endif
 #ifdef SCHED_BATCH
     if (ins(d, "SCHED_BATCH", (long)SCHED_BATCH)) return -1;
@@ -11792,6 +11976,10 @@ static char *have_functions[] = {
 
 #ifdef HAVE_FCHOWN
     "HAVE_FCHOWN",
+#endif
+
+#ifdef HAVE_FCHOWNAT
+    "HAVE_FCHOWNAT",
 #endif
 
 #ifdef HAVE_FEXECVE

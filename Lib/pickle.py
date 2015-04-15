@@ -728,9 +728,18 @@ class _Pickler:
 
         self.memoize(obj)
 
+    def save_type(self, obj):
+        if obj is type(None):
+            return self.save_reduce(type, (None,), obj=obj)
+        elif obj is type(NotImplemented):
+            return self.save_reduce(type, (NotImplemented,), obj=obj)
+        elif obj is type(...):
+            return self.save_reduce(type, (...,), obj=obj)
+        return self.save_global(obj)
+
     dispatch[FunctionType] = save_global
     dispatch[BuiltinFunctionType] = save_global
-    dispatch[type] = save_global
+    dispatch[type] = save_type
 
 # Pickling helpers
 
@@ -951,7 +960,7 @@ class _Unpickler:
         rep = orig[:-1]
         for q in (b'"', b"'"): # double or single quote
             if rep.startswith(q):
-                if not rep.endswith(q):
+                if len(rep) < 2 or not rep.endswith(q):
                     raise ValueError("insecure string pickle")
                 rep = rep[len(q):-len(q)]
                 break
@@ -1208,8 +1217,14 @@ class _Unpickler:
     def load_appends(self):
         stack = self.stack
         mark = self.marker()
-        list = stack[mark - 1]
-        list.extend(stack[mark + 1:])
+        list_obj = stack[mark - 1]
+        items = stack[mark + 1:]
+        if isinstance(list_obj, list):
+            list_obj.extend(items)
+        else:
+            append = list_obj.append
+            for item in items:
+                append(item)
         del stack[mark:]
     dispatch[APPENDS[0]] = load_appends
 
@@ -1264,7 +1279,7 @@ class _Unpickler:
         raise _Stop(value)
     dispatch[STOP[0]] = load_stop
 
-# Encode/decode longs.
+# Encode/decode ints.
 
 def encode_long(x):
     r"""Encode a long to a two's complement little-endian binary string.
@@ -1297,7 +1312,7 @@ def encode_long(x):
     return result
 
 def decode_long(data):
-    r"""Decode a long from a two's complement little-endian binary string.
+    r"""Decode an int from a two's complement little-endian binary string.
 
     >>> decode_long(b'')
     0

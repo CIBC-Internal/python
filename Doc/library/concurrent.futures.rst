@@ -40,7 +40,7 @@ Executor Objects
 
     .. method:: map(func, *iterables, timeout=None)
 
-       Equivalent to ``map(func, *iterables)`` except *func* is executed
+       Equivalent to :func:`map(func, *iterables) <map>` except *func* is executed
        asynchronously and several calls to *func* may be made concurrently.  The
        returned iterator raises a :exc:`TimeoutError` if
        :meth:`~iterator.__next__` is called and the result isn't available
@@ -346,6 +346,8 @@ Module Functions
    *return_when* indicates when this function should return.  It must be one of
    the following constants:
 
+   .. tabularcolumns:: |l|L|
+
    +-----------------------------+----------------------------------------+
    | Constant                    | Description                            |
    +=============================+========================================+
@@ -366,7 +368,8 @@ Module Functions
 
    Returns an iterator over the :class:`Future` instances (possibly created by
    different :class:`Executor` instances) given by *fs* that yields futures as
-   they complete (finished or were cancelled).  Any futures that completed
+   they complete (finished or were cancelled). Any futures given by *fs* that
+   are duplicated will be returned once. Any futures that completed
    before :func:`as_completed` is called will be yielded first.  The returned
    iterator raises a :exc:`TimeoutError` if :meth:`~iterator.__next__` is
    called and the result isn't available after *timeout* seconds from the

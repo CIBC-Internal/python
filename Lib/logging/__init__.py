@@ -1,4 +1,4 @@
-# Copyright 2001-2012 by Vinay Sajip. All Rights Reserved.
+# Copyright 2001-2013 by Vinay Sajip. All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and its
 # documentation for any purpose and without fee is hereby granted,
@@ -18,7 +18,7 @@
 Logging package for Python. Based on PEP 282 and comments thereto in
 comp.lang.python.
 
-Copyright (C) 2001-2012 Vinay Sajip. All Rights Reserved.
+Copyright (C) 2001-2013 Vinay Sajip. All Rights Reserved.
 
 To use, simply 'import logging' and log away!
 """
@@ -388,10 +388,12 @@ class StringTemplateStyle(PercentStyle):
     def format(self, record):
         return self._tpl.substitute(**record.__dict__)
 
+BASIC_FORMAT = "%(levelname)s:%(name)s:%(message)s"
+
 _STYLES = {
-    '%': PercentStyle,
-    '{': StrFormatStyle,
-    '$': StringTemplateStyle
+    '%': (PercentStyle, BASIC_FORMAT),
+    '{': (StrFormatStyle, '{levelname}:{name}:{message}'),
+    '$': (StringTemplateStyle, '${levelname}:${name}:${message}'),
 }
 
 class Formatter(object):
@@ -456,7 +458,7 @@ class Formatter(object):
         if style not in _STYLES:
             raise ValueError('Style must be one of: %s' % ','.join(
                              _STYLES.keys()))
-        self._style = _STYLES[style](fmt)
+        self._style = _STYLES[style][0](fmt)
         self._fmt = self._style._fmt
         self.datefmt = datefmt
 
@@ -957,6 +959,7 @@ class FileHandler(StreamHandler):
         self.baseFilename = os.path.abspath(filename)
         self.mode = mode
         self.encoding = encoding
+        self.delay = delay
         if delay:
             #We don't open the stream, but we still need to call the
             #Handler constructor to set level, formatter, lock etc.
@@ -975,8 +978,10 @@ class FileHandler(StreamHandler):
                 self.flush()
                 if hasattr(self.stream, "close"):
                     self.stream.close()
-                StreamHandler.close(self)
                 self.stream = None
+            # Issue #19523: call unconditionally to
+            # prevent a handler leak when delay is set
+            StreamHandler.close(self)
         finally:
             self.release()
 
@@ -1626,8 +1631,6 @@ Logger.manager = Manager(Logger.root)
 # Configuration classes and functions
 #---------------------------------------------------------------------------
 
-BASIC_FORMAT = "%(levelname)s:%(name)s:%(message)s"
-
 def basicConfig(**kwargs):
     """
     Do basic configuration for the logging system.
@@ -1701,9 +1704,12 @@ def basicConfig(**kwargs):
                     stream = kwargs.get("stream")
                     h = StreamHandler(stream)
                 handlers = [h]
-            fs = kwargs.get("format", BASIC_FORMAT)
             dfs = kwargs.get("datefmt", None)
             style = kwargs.get("style", '%')
+            if style not in _STYLES:
+                raise ValueError('Style must be one of: %s' % ','.join(
+                                 _STYLES.keys()))
+            fs = kwargs.get("format", _STYLES[style][1])
             fmt = Formatter(fs, dfs, style)
             for h in handlers:
                 if h.formatter is None:

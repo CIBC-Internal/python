@@ -248,8 +248,11 @@ _Py_Mangle(PyObject *privateobj, PyObject *ident)
     }
     plen -= ipriv;
 
-    assert(1 <= PY_SSIZE_T_MAX - nlen);
-    assert(1 + nlen <= PY_SSIZE_T_MAX - plen);
+    if (plen + nlen >= PY_SSIZE_T_MAX - 1) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "private identifier too large to be mangled");
+        return NULL;
+    }
 
     maxchar = PyUnicode_MAX_CHAR_VALUE(ident);
     if (PyUnicode_MAX_CHAR_VALUE(privateobj) > maxchar)
@@ -1010,7 +1013,7 @@ compiler_add_o(struct compiler *c, PyObject *dict, PyObject *o)
     Py_ssize_t arg;
     double d;
 
-    /* necessary to make sure types aren't coerced (e.g., int and long) */
+    /* necessary to make sure types aren't coerced (e.g., float and complex) */
     /* _and_ to distinguish 0.0 from -0.0 e.g. on IEEE platforms */
     if (PyFloat_Check(o)) {
         d = PyFloat_AS_DOUBLE(o);
@@ -2143,13 +2146,13 @@ compiler_try_except(struct compiler *c, stmt_ty s)
 
             /*
               try:
-              # body
+                  # body
               except type as name:
-              try:
-              # body
-              finally:
-              name = None
-              del name
+                  try:
+                      # body
+                  finally:
+                      name = None
+                      del name
             */
 
             /* second try: */

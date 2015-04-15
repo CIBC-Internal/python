@@ -225,7 +225,7 @@ class TimeRE(dict):
         """Convert a list to a regex string for matching a directive.
 
         Want possible matching values to be from longest to shortest.  This
-        prevents the possibility of a match occuring for a value that also
+        prevents the possibility of a match occurring for a value that also
         a substring of a larger value that should have matched (e.g., 'abc'
         matching when 'abcdef' should have been the match).
 
@@ -326,10 +326,10 @@ def _strptime(data_string, format="%a %b %d %H:%M:%S %Y"):
                     bad_directive = "%"
                 del err
                 raise ValueError("'%s' is a bad directive in format '%s'" %
-                                    (bad_directive, format))
+                                    (bad_directive, format)) from None
             # IndexError only occurs when the format string is "%"
             except IndexError:
-                raise ValueError("stray %% in format '%s'" % format)
+                raise ValueError("stray %% in format '%s'" % format) from None
             _regex_cache[format] = format_regex
     found = format_regex.match(data_string)
     if not found:

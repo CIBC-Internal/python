@@ -49,7 +49,7 @@ the standard audio interface for Linux and recent versions of FreeBSD.
       the official documentation for the OSS C API
 
    The module defines a large number of constants supplied by the OSS device
-   driver; see ``<sys/soundcard.h>`` on either Linux or FreeBSD for a listing .
+   driver; see ``<sys/soundcard.h>`` on either Linux or FreeBSD for a listing.
 
 :mod:`ossaudiodev` defines the following variables and functions:
 
@@ -169,11 +169,11 @@ and (read-only) attributes:
    be used in a :keyword:`with` statement.
 
 
-The following methods each map to exactly one :func:`ioctl` system call.  The
+The following methods each map to exactly one :c:func:`ioctl` system call.  The
 correspondence is obvious: for example, :meth:`setfmt` corresponds to the
 ``SNDCTL_DSP_SETFMT`` ioctl, and :meth:`sync` to ``SNDCTL_DSP_SYNC`` (this can
 be useful when consulting the OSS documentation).  If the underlying
-:func:`ioctl` fails, they all raise :exc:`OSError`.
+:c:func:`ioctl` fails, they all raise :exc:`OSError`.
 
 
 .. method:: oss_audio_device.nonblock()
@@ -302,7 +302,7 @@ simple calculations.
 
       fmt = dsp.setfmt(fmt)
       channels = dsp.channels(channels)
-      rate = dsp.rate(channels)
+      rate = dsp.rate(rate)
 
 
 .. method:: oss_audio_device.bufsize()

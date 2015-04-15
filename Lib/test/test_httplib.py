@@ -51,8 +51,8 @@ class EPipeSocket(FakeSocket):
     def close(self):
         pass
 
-class NoEOFStringIO(io.BytesIO):
-    """Like StringIO, but raises AssertionError on EOF.
+class NoEOFBytesIO(io.BytesIO):
+    """Like BytesIO, but raises AssertionError on EOF.
 
     This is used below to test that http.client doesn't try to read
     more from the underlying file than it should.
@@ -132,7 +132,7 @@ class HeaderTests(TestCase):
         conn.sock = FakeSocket(None)
         conn.putrequest('GET','/')
         conn.putheader('Content-length', 42)
-        self.assertTrue(b'Content-length: 42' in conn._buffer)
+        self.assertIn(b'Content-length: 42', conn._buffer)
 
     def test_ipv6host_header(self):
         # Default host header on IPv6 transaction should wrapped by [] if
@@ -162,6 +162,9 @@ class BasicTest(TestCase):
         sock = FakeSocket(body)
         resp = client.HTTPResponse(sock)
         resp.begin()
+        self.assertEqual(resp.read(0), b'')  # Issue #20007
+        self.assertFalse(resp.isclosed())
+        self.assertFalse(resp.closed)
         self.assertEqual(resp.read(), b"Text")
         self.assertTrue(resp.isclosed())
         self.assertFalse(resp.closed)
@@ -324,7 +327,7 @@ class BasicTest(TestCase):
             'HTTP/1.1 200 OK\r\n'
             'Content-Length: 14432\r\n'
             '\r\n',
-            NoEOFStringIO)
+            NoEOFBytesIO)
         resp = client.HTTPResponse(sock, method="HEAD")
         resp.begin()
         if resp.read():
@@ -337,13 +340,22 @@ class BasicTest(TestCase):
             'HTTP/1.1 200 OK\r\n'
             'Content-Length: 14432\r\n'
             '\r\n',
-            NoEOFStringIO)
+            NoEOFBytesIO)
         resp = client.HTTPResponse(sock, method="HEAD")
         resp.begin()
         b = bytearray(5)
         if resp.readinto(b) != 0:
             self.fail("Did not expect response from HEAD request")
         self.assertEqual(bytes(b), b'\x00'*5)
+
+    def test_too_many_headers(self):
+        headers = '\r\n'.join('Header%d: foo' % i
+                              for i in range(client._MAXHEADERS + 1)) + '\r\n'
+        text = ('HTTP/1.1 200 OK\r\n' + headers)
+        s = FakeSocket(text)
+        r = client.HTTPResponse(s)
+        self.assertRaisesRegex(client.HTTPException,
+                               r"got more than \d+ headers", r.begin)
 
     def test_send_file(self):
         expected = (b'GET /foo HTTP/1.1\r\nHost: example.com\r\n'
@@ -370,6 +382,27 @@ class BasicTest(TestCase):
         sock.data = b''
         conn.send(io.BytesIO(expected))
         self.assertEqual(expected, sock.data)
+
+    def test_send_updating_file(self):
+        def data():
+            yield 'data'
+            yield None
+            yield 'data_two'
+
+        class UpdatingFile():
+            mode = 'r'
+            d = data()
+            def read(self, blocksize=-1):
+                return self.d.__next__()
+
+        expected = b'data'
+
+        conn = client.HTTPConnection('example.com')
+        sock = FakeSocket("")
+        conn.sock = sock
+        conn.send(UpdatingFile())
+        self.assertEqual(sock.data, expected)
+
 
     def test_send_iter(self):
         expected = b'GET /foo HTTP/1.1\r\nHost: example.com\r\n' \
@@ -666,7 +699,7 @@ class TimeoutTest(TestCase):
         # and into the socket.
 
         # default -- use global socket timeout
-        self.assertTrue(socket.getdefaulttimeout() is None)
+        self.assertIsNone(socket.getdefaulttimeout())
         socket.setdefaulttimeout(30)
         try:
             httpConn = client.HTTPConnection(HOST, TimeoutTest.PORT)
@@ -677,7 +710,7 @@ class TimeoutTest(TestCase):
         httpConn.close()
 
         # no timeout -- do not use global socket default
-        self.assertTrue(socket.getdefaulttimeout() is None)
+        self.assertIsNone(socket.getdefaulttimeout())
         socket.setdefaulttimeout(30)
         try:
             httpConn = client.HTTPConnection(HOST, TimeoutTest.PORT,

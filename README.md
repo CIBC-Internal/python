@@ -1,8 +1,8 @@
-This is Python version 3.3.1
+This is Python version 3.3.6
 ============================
 
 Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-2012, 2013 Python Software Foundation.  All rights reserved.
+2012, 2013, 2014 Python Software Foundation.  All rights reserved.
 
 Python 3.x is a new version of the language, which is incompatible with the 2.x
 line of releases.  The language is mostly the same, but many details, especially
@@ -75,6 +75,13 @@ It can also be downloaded in many formats for faster access.  The documentation
 is downloadable in HTML, PDF, and reStructuredText formats; the latter version
 is primarily for documentation authors, translators, and people with special
 formatting requirements.
+
+If you would like to contribute to the development of Python, relevant
+documentation is available at:
+
+    http://docs.python.org/devguide/
+
+For information about building Python's documentation, refer to Doc/README.txt.
 
 
 Converting From Python 2.x to 3.x
@@ -167,8 +174,8 @@ See PEP 398 for release details: http://www.python.org/dev/peps/pep-0398/
 Copyright and License Information
 ---------------------------------
 
-Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-Python Software Foundation.  All rights reserved.
+Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
+2012, 2013, 2014 Python Software Foundation.  All rights reserved.
 
 Copyright (c) 2000 BeOpen.com.  All rights reserved.
 
@@ -188,10 +195,7 @@ All trademarks referenced herein are property of their respective holders.
 
 SCI Modifications
 -----------------
-
-* CMake based-build
-* Python scripts are archived in pythonlib.zip file.
+    
+* Python scripts are archived in pythonlib.zip file. 
   * Created using command run in Lib directory (on OS X):
-    zip ../pythonlib.zip *
-* Source file modifications (see file logs):
-  * Modules/posixmodule.c
+    zip -r ../pythonlib.zip *

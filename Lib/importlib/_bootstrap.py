@@ -471,21 +471,19 @@ def _get_sourcefile(bytecode_path):
     """
     if len(bytecode_path) == 0:
         return None
-    rest, _, extension = bytecode_path.rparition('.')
-    if not rest or extension.lower()[-3:-1] != '.py':
+    rest, _, extension = bytecode_path.rpartition('.')
+    if not rest or extension.lower()[-3:-1] != 'py':
         return bytecode_path
-
     try:
         source_path = source_from_cache(bytecode_path)
     except (NotImplementedError, ValueError):
-        source_path = bytcode_path[-1:]
+        source_path = bytecode_path[:-1]
+    return source_path if _path_isfile(source_path) else bytecode_path
 
-    return source_path if _path_isfile(source_stats) else bytecode_path
 
-
-def _verbose_message(message, *args):
+def _verbose_message(message, *args, verbosity=1):
     """Print the message to stderr if -v/PYTHONVERBOSE is turned on."""
-    if sys.flags.verbose:
+    if sys.flags.verbose >= verbosity:
         if not message.startswith(('#', 'import ')):
             message = '# ' + message
         print(message.format(*args), file=sys.stderr)
@@ -783,7 +781,7 @@ class WindowsRegistryFinder:
             _os.stat(filepath)
         except OSError:
             return None
-        for loader, suffixes, _ in _get_supported_file_loaders():
+        for loader, suffixes in _get_supported_file_loaders():
             if filepath.endswith(tuple(suffixes)):
                 return loader(fullname, filepath)
 
@@ -813,6 +811,7 @@ class _LoaderBasics:
         raw_size = data[8:12]
         if magic != _MAGIC_BYTES:
             msg = 'bad magic number in {!r}: {!r}'.format(fullname, magic)
+            _verbose_message(msg)
             raise ImportError(msg, name=fullname, path=bytecode_path)
         elif len(raw_timestamp) != 4:
             message = 'bad timestamp in {}'.format(fullname)
@@ -1328,12 +1327,12 @@ class FileFinder:
 
     """
 
-    def __init__(self, path, *details):
+    def __init__(self, path, *loader_details):
         """Initialize with the path to search on and a variable number of
         2-tuples containing the loader and the file suffixes the loader
         recognizes."""
         loaders = []
-        for loader, suffixes in details:
+        for loader, suffixes in loader_details:
             loaders.extend((suffix, loader) for suffix in suffixes)
         self._loaders = loaders
         # Base (directory) path
@@ -1382,11 +1381,13 @@ class FileFinder:
                     is_namespace = True
         # Check for a file w/ a proper suffix exists.
         for suffix, loader in self._loaders:
+            full_path = _path_join(self.path, tail_module + suffix)
+            _verbose_message('trying {}'.format(full_path), verbosity=2)
             if cache_module + suffix in cache:
-                full_path = _path_join(self.path, tail_module + suffix)
                 if _path_isfile(full_path):
                     return (loader(fullname, full_path), [])
         if is_namespace:
+            _verbose_message('possible namespace for {}'.format(base_path))
             return (None, [base_path])
         return (None, [])
 
@@ -1642,7 +1643,7 @@ def _calc___package__(globals):
 def _get_supported_file_loaders():
     """Returns a list of file-based module loaders.
 
-    Each item is a tuple (loader, suffixes, allow_packages).
+    Each item is a tuple (loader, suffixes).
     """
     extensions = ExtensionFileLoader, _imp.extension_suffixes()
     source = SourceFileLoader, SOURCE_SUFFIXES

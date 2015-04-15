@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 #
 # Copyright (c) 2008-2012 Stefan Krah. All rights reserved.
 #
@@ -891,7 +889,7 @@ def test_ternary(method, prec, exp_range, restricted_range, itr, stat):
 def test_format(method, prec, exp_range, restricted_range, itr, stat):
     """Iterate the __format__ method through many test cases."""
     for op in all_unary(prec, exp_range, itr):
-        fmt1 = rand_format(chr(random.randrange(32, 128)), 'EeGgn')
+        fmt1 = rand_format(chr(random.randrange(0, 128)), 'EeGgn')
         fmt2 = rand_locale()
         for fmt in (fmt1, fmt2):
             fmtop = (op[0], fmt)
@@ -904,7 +902,7 @@ def test_format(method, prec, exp_range, restricted_range, itr, stat):
             except VerifyError as err:
                 log(err)
     for op in all_unary(prec, 9999, itr):
-        fmt1 = rand_format(chr(random.randrange(32, 128)), 'Ff%')
+        fmt1 = rand_format(chr(random.randrange(0, 128)), 'Ff%')
         fmt2 = rand_locale()
         for fmt in (fmt1, fmt2):
             fmtop = (op[0], fmt)

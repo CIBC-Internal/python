@@ -269,8 +269,8 @@ Miscellaneous options
 
 .. cmdoption:: -u
 
-   Force the binary layer of the stdin, stdout and stderr streams (which is
-   available as their ``buffer`` attribute) to be unbuffered.  The text I/O
+   Force the binary layer of the stdout and stderr streams (which is
+   available as their ``buffer`` attribute) to be unbuffered. The text I/O
    layer will still be line-buffered if writing to the console, or
    block-buffered if redirected to a non-interactive file.
 
@@ -358,12 +358,15 @@ Miscellaneous options
 .. cmdoption:: -X
 
    Reserved for various implementation-specific options.  CPython currently
-   defines just one, you can use ``-X faulthander`` to enable
-   :data:`faulthandler`. It also allows to pass arbitrary values and retrieve
+   defines just one, you can use ``-X faulthandler`` to enable
+   :mod:`faulthandler`. It also allows to pass arbitrary values and retrieve
    them through the :data:`sys._xoptions` dictionary.
 
    .. versionchanged:: 3.2
       It is now allowed to pass :option:`-X` with CPython.
+
+   .. versionadded:: 3.3
+      The ``-X faulthandler`` option.
 
 
 Options you shouldn't use
@@ -558,6 +561,8 @@ conflict.
    :const:`SIGABRT`, :const:`SIGBUS` and :const:`SIGILL` signals to dump the
    Python traceback.  This is equivalent to :option:`-X` ``faulthandler``
    option.
+
+   .. versionadded:: 3.3
 
 
 Debug-mode variables

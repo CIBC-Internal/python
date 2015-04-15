@@ -275,7 +275,17 @@ class Message:
         Optional charset sets the message's default character set.  See
         set_charset() for details.
         """
-        self._payload = payload
+        if hasattr(payload, 'encode'):
+            if charset is None:
+                self._payload = payload
+                return
+            if not isinstance(charset, Charset):
+                charset = Charset(charset)
+            payload = payload.encode(charset.output_charset)
+        if hasattr(payload, 'decode'):
+            self._payload = payload.decode('ascii', 'surrogateescape')
+        else:
+            self._payload = payload
         if charset is not None:
             self.set_charset(charset)
 
@@ -314,7 +324,16 @@ class Message:
             try:
                 cte(self)
             except TypeError:
-                self._payload = charset.body_encode(self._payload)
+                # This 'if' is for backward compatibility, it allows unicode
+                # through even though that won't work correctly if the
+                # message is serialized.
+                payload = self._payload
+                if payload:
+                    try:
+                        payload = payload.encode('ascii', 'surrogateescape')
+                    except UnicodeError:
+                        payload = payload.encode(charset.output_charset)
+                self._payload = charset.body_encode(payload)
                 self.add_header('Content-Transfer-Encoding', cte)
 
     def get_charset(self):
@@ -634,7 +653,7 @@ class Message:
         If your application doesn't care whether the parameter was RFC 2231
         encoded, it can turn the return value into a string as follows:
 
-            param = msg.get_param('foo')
+            rawparam = msg.get_param('foo')
             param = email.utils.collapse_rfc2231_value(rawparam)
 
         """

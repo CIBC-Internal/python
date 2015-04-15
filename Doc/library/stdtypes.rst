@@ -339,8 +339,8 @@ Notes:
       pair: C; language
 
    Conversion from floating point to integer may round or truncate
-   as in C; see functions :func:`floor` and :func:`ceil` in the :mod:`math` module
-   for well-defined conversions.
+   as in C; see functions :func:`math.floor` and :func:`math.ceil` for
+   well-defined conversions.
 
 (4)
    float also accepts the strings "nan" and "inf" with an optional prefix "+"
@@ -519,9 +519,8 @@ class`. In addition, it provides one more method:
         >>> int.from_bytes([255, 0, 0], byteorder='big')
         16711680
 
-    The argument *bytes* must either support the buffer protocol or be an
-    iterable producing bytes. :class:`bytes` and :class:`bytearray` are
-    examples of built-in objects that support the buffer protocol.
+    The argument *bytes* must either be a :term:`bytes-like object` or an
+    iterable producing bytes.
 
     The *byteorder* argument determines the byte order used to represent the
     integer.  If *byteorder* is ``"big"``, the most significant byte is at the
@@ -632,7 +631,7 @@ efficiency across a variety of numeric types (including :class:`int`,
 :class:`float`, :class:`decimal.Decimal` and :class:`fractions.Fraction`)
 Python's hash for numeric types is based on a single mathematical function
 that's defined for any rational number, and hence applies to all instances of
-:class:`int` and :class:`fraction.Fraction`, and all finite instances of
+:class:`int` and :class:`fractions.Fraction`, and all finite instances of
 :class:`float` and :class:`decimal.Decimal`.  Essentially, this function is
 given by reduction modulo ``P`` for a fixed prime ``P``.  The value of ``P`` is
 made available to Python as the :attr:`modulus` attribute of
@@ -752,7 +751,7 @@ support:
    iterators for those iteration types.  (An example of an object supporting
    multiple forms of iteration would be a tree structure which supports both
    breadth-first and depth-first traversal.)  This method corresponds to the
-   :attr:`tp_iter` slot of the type structure for Python objects in the Python/C
+   :c:member:`~PyTypeObject.tp_iter` slot of the type structure for Python objects in the Python/C
    API.
 
 The iterator objects themselves are required to support the following two
@@ -763,7 +762,7 @@ methods, which together form the :dfn:`iterator protocol`:
 
    Return the iterator object itself.  This is required to allow both containers
    and iterators to be used with the :keyword:`for` and :keyword:`in` statements.
-   This method corresponds to the :attr:`tp_iter` slot of the type structure for
+   This method corresponds to the :c:member:`~PyTypeObject.tp_iter` slot of the type structure for
    Python objects in the Python/C API.
 
 
@@ -771,7 +770,7 @@ methods, which together form the :dfn:`iterator protocol`:
 
    Return the next item from the container.  If there are no further items, raise
    the :exc:`StopIteration` exception.  This method corresponds to the
-   :attr:`tp_iternext` slot of the type structure for Python objects in the
+   :c:member:`~PyTypeObject.tp_iternext` slot of the type structure for Python objects in the
    Python/C API.
 
 Python defines several iterator objects to support iteration over general and
@@ -872,11 +871,11 @@ operations have the same priority as the corresponding numeric operations.
 +--------------------------+--------------------------------+----------+
 | ``max(s)``               | largest item of *s*            |          |
 +--------------------------+--------------------------------+----------+
-| ``s.index(x[, i[, j]])`` | index of the first occurence   | \(8)     |
+| ``s.index(x[, i[, j]])`` | index of the first occurrence  | \(8)     |
 |                          | of *x* in *s* (at or after     |          |
 |                          | index *i* and before index *j*)|          |
 +--------------------------+--------------------------------+----------+
-| ``s.count(x)``           | total number of occurences of  |          |
+| ``s.count(x)``           | total number of occurrences of |          |
 |                          | *x* in *s*                     |          |
 +--------------------------+--------------------------------+----------+
 
@@ -1150,6 +1149,9 @@ application).
       fail, the entire sort operation will fail (and the list will likely be left
       in a partially modified state).
 
+      :meth:`sort` accepts two arguments that can only be passed by keyword
+      (:ref:`keyword-only arguments <keyword-only_parameter>`):
+
       *key* specifies a function of one argument that is used to extract a
       comparison key from each list element (for example, ``key=str.lower``).
       The key corresponding to each item in the list is calculated once and
@@ -1304,7 +1306,7 @@ The advantage of the :class:`range` type over a regular :class:`list` or
 only stores the ``start``, ``stop`` and ``step`` values, calculating individual
 items and subranges as needed).
 
-Range objects implement the :class:`collections.Sequence` ABC, and provide
+Range objects implement the :class:`collections.abc.Sequence` ABC, and provide
 features such as containment tests, element index lookup, slicing and
 support for negative indices (see :ref:`typesseq`):
 
@@ -1327,9 +1329,9 @@ support for negative indices (see :ref:`typesseq`):
 Testing range objects for equality with ``==`` and ``!=`` compares
 them as sequences.  That is, two range objects are considered equal if
 they represent the same sequence of values.  (Note that two range
-objects that compare equal might have different :attr:`start`,
-:attr:`stop` and :attr:`step` attributes, for example ``range(0) ==
-range(2, 1, 3)`` or ``range(0, 3, 2) == range(0, 4, 2)``.)
+objects that compare equal might have different :attr:`~range.start`,
+:attr:`~range.stop` and :attr:`~range.step` attributes, for example
+``range(0) == range(2, 1, 3)`` or ``range(0, 3, 2) == range(0, 4, 2)``.)
 
 .. versionchanged:: 3.2
    Implement the Sequence ABC.
@@ -1343,7 +1345,8 @@ range(2, 1, 3)`` or ``range(0, 3, 2) == range(0, 4, 2)``.)
    object identity).
 
 .. versionadded:: 3.3
-   The :attr:`start`, :attr:`stop` and :attr:`step` attributes.
+   The :attr:`~range.start`, :attr:`~range.stop` and :attr:`~range.step`
+   attributes.
 
 
 .. index::
@@ -1417,10 +1420,9 @@ multiple fragments.
       single: bytes; str (built-in class)
 
    If at least one of *encoding* or *errors* is given, *object* should be a
-   :class:`bytes` or :class:`bytearray` object, or more generally any object
-   that supports the :ref:`buffer protocol <bufferobjects>`.  In this case, if
-   *object* is a :class:`bytes` (or :class:`bytearray`) object, then
-   ``str(bytes, encoding, errors)`` is equivalent to
+   :term:`bytes-like object` (e.g. :class:`bytes` or :class:`bytearray`).  In
+   this case, if *object* is a :class:`bytes` (or :class:`bytearray`) object,
+   then ``str(bytes, encoding, errors)`` is equivalent to
    :meth:`bytes.decode(encoding, errors) <bytes.decode>`.  Otherwise, the bytes
    object underlying the buffer object is obtained before calling
    :meth:`bytes.decode`.  See :ref:`binaryseq` and
@@ -1526,11 +1528,23 @@ expression support in the :mod:`re` module).
 
 .. method:: str.expandtabs([tabsize])
 
-   Return a copy of the string where all tab characters are replaced by zero or
-   more spaces, depending on the current column and the given tab size.  The
-   column number is reset to zero after each newline occurring in the string.
-   If *tabsize* is not given, a tab size of ``8`` characters is assumed.  This
-   doesn't understand other non-printing characters or escape sequences.
+   Return a copy of the string where all tab characters are replaced by one or
+   more spaces, depending on the current column and the given tab size.  Tab
+   positions occur every *tabsize* characters (default is 8, giving tab
+   positions at columns 0, 8, 16 and so on).  To expand the string, the current
+   column is set to zero and the string is examined character by character.  If
+   the character is a tab (``\t``), one or more space characters are inserted
+   in the result until the current column is equal to the next tab position.
+   (The tab character itself is not copied.)  If the character is a newline
+   (``\n``) or return (``\r``), it is copied and the current column is reset to
+   zero.  Any other character is copied unchanged and the current column is
+   incremented by one regardless of how the character is represented when
+   printed.
+
+      >>> '01\t012\t0123\t01234'.expandtabs()
+      '01      012     0123    01234'
+      >>> '01\t012\t0123\t01234'.expandtabs(4)
+      '01  012 0123    01234'
 
 
 .. method:: str.find(sub[, start[, end]])
@@ -1569,7 +1583,7 @@ expression support in the :mod:`re` module).
 .. method:: str.format_map(mapping)
 
    Similar to ``str.format(**mapping)``, except that ``mapping`` is
-   used directly and not copied to a :class:`dict` .  This is useful
+   used directly and not copied to a :class:`dict`.  This is useful
    if for example ``mapping`` is a dict subclass:
 
    >>> class Default(dict):
@@ -2288,7 +2302,7 @@ in the range 0 to 255 (inclusive) as well as bytes and byte array sequences.
    (inclusive) as their first argument.
 
 
-Each bytes and bytearray instance provides a :meth:`decode` convenience
+Each bytes and bytearray instance provides a :meth:`~bytes.decode` convenience
 method that is the inverse of :meth:`str.encode`:
 
 .. method:: bytes.decode(encoding="utf-8", errors="strict")
@@ -2795,11 +2809,11 @@ other sequence-like behavior.
 
 There are currently two built-in set types, :class:`set` and :class:`frozenset`.
 The :class:`set` type is mutable --- the contents can be changed using methods
-like :meth:`add` and :meth:`remove`.  Since it is mutable, it has no hash value
-and cannot be used as either a dictionary key or as an element of another set.
-The :class:`frozenset` type is immutable and :term:`hashable` --- its contents cannot be
-altered after it is created; it can therefore be used as a dictionary key or as
-an element of another set.
+like :meth:`~set.add` and :meth:`~set.remove`.  Since it is mutable, it has no
+hash value and cannot be used as either a dictionary key or as an element of
+another set.  The :class:`frozenset` type is immutable and :term:`hashable` ---
+its contents cannot be altered after it is created; it can therefore be used as
+a dictionary key or as an element of another set.
 
 Non-empty sets (not frozensets) can be created by placing a comma-separated list
 of elements within braces, for example: ``{'jack', 'sjoerd'}``, in addition to the
@@ -2811,9 +2825,10 @@ The constructors for both classes work the same:
            frozenset([iterable])
 
    Return a new set or frozenset object whose elements are taken from
-   *iterable*.  The elements of a set must be hashable.  To represent sets of
-   sets, the inner sets must be :class:`frozenset` objects.  If *iterable* is
-   not specified, a new empty set is returned.
+   *iterable*.  The elements of a set must be :term:`hashable`.  To
+   represent sets of sets, the inner sets must be :class:`frozenset`
+   objects.  If *iterable* is not specified, a new empty set is
+   returned.
 
    Instances of :class:`set` and :class:`frozenset` provide the following
    operations:
@@ -2832,7 +2847,7 @@ The constructors for both classes work the same:
 
    .. method:: isdisjoint(other)
 
-      Return True if the set has no elements in common with *other*.  Sets are
+      Return ``True`` if the set has no elements in common with *other*.  Sets are
       disjoint if and only if their intersection is the empty set.
 
    .. method:: issubset(other)
@@ -2898,8 +2913,8 @@ The constructors for both classes work the same:
    based on their members.  For example, ``set('abc') == frozenset('abc')``
    returns ``True`` and so does ``set('abc') in set([frozenset('abc')])``.
 
-   The subset and equality comparisons do not generalize to a complete ordering
-   function.  For example, any two disjoint sets are not equal and are not
+   The subset and equality comparisons do not generalize to a total ordering
+   function.  For example, any two nonempty disjoint sets are not equal and are not
    subsets of each other, so *all* of the following return ``False``: ``a<b``,
    ``a==b``, or ``a>b``.
 
@@ -3339,12 +3354,12 @@ statement is not, strictly speaking, an operation on a module object; ``import
 foo`` does not require a module object named *foo* to exist, rather it requires
 an (external) *definition* for a module named *foo* somewhere.)
 
-A special attribute of every module is :attr:`__dict__`. This is the dictionary
-containing the module's symbol table. Modifying this dictionary will actually
-change the module's symbol table, but direct assignment to the :attr:`__dict__`
-attribute is not possible (you can write ``m.__dict__['a'] = 1``, which defines
-``m.a`` to be ``1``, but you can't write ``m.__dict__ = {}``).  Modifying
-:attr:`__dict__` directly is not recommended.
+A special attribute of every module is :attr:`~object.__dict__`. This is the
+dictionary containing the module's symbol table. Modifying this dictionary will
+actually change the module's symbol table, but direct assignment to the
+:attr:`__dict__` attribute is not possible (you can write
+``m.__dict__['a'] = 1``, which defines ``m.a`` to be ``1``, but you can't write
+``m.__dict__ = {}``).  Modifying :attr:`__dict__` directly is not recommended.
 
 Modules built into the interpreter are written like this: ``<module 'sys'
 (built-in)>``.  If loaded from a file, they are written as ``<module 'os' from
@@ -3579,7 +3594,7 @@ types, where they are relevant.  Some of these are not reported by the
 
    This method can be overridden by a metaclass to customize the method
    resolution order for its instances.  It is called at class instantiation, and
-   its result is stored in :attr:`__mro__`.
+   its result is stored in :attr:`~class.__mro__`.
 
 
 .. method:: class.__subclasses__

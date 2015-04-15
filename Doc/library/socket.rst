@@ -18,7 +18,7 @@ platforms.
 
 The Python interface is a straightforward transliteration of the Unix system
 call and library interface for sockets to Python's object-oriented style: the
-:func:`socket` function returns a :dfn:`socket object` whose methods implement
+:func:`.socket` function returns a :dfn:`socket object` whose methods implement
 the various socket system calls.  Parameter types are somewhat higher-level than
 in the C interface: as with :meth:`read` and :meth:`write` operations on Python
 files, buffer allocation on receive operations is automatic, and buffer length
@@ -138,8 +138,11 @@ generalization of this based on timeouts is supported through
 Module contents
 ---------------
 
-The module :mod:`socket` exports the following constants and functions:
+The module :mod:`socket` exports the following elements.
 
+
+Exceptions
+^^^^^^^^^^
 
 .. exception:: error
 
@@ -186,12 +189,16 @@ The module :mod:`socket` exports the following constants and functions:
    .. versionchanged:: 3.3
       This class was made a subclass of :exc:`OSError`.
 
+
+Constants
+^^^^^^^^^
+
 .. data:: AF_UNIX
           AF_INET
           AF_INET6
 
    These constants represent the address (and protocol) families, used for the
-   first argument to :func:`socket`.  If the :const:`AF_UNIX` constant is not
+   first argument to :func:`.socket`.  If the :const:`AF_UNIX` constant is not
    defined then this protocol is unsupported.  More constants may be available
    depending on the system.
 
@@ -203,7 +210,7 @@ The module :mod:`socket` exports the following constants and functions:
           SOCK_SEQPACKET
 
    These constants represent the socket types, used for the second argument to
-   :func:`socket`.  More constants may be available depending on the system.
+   :func:`.socket`.  More constants may be available depending on the system.
    (Only :const:`SOCK_STREAM` and :const:`SOCK_DGRAM` appear to be generally
    useful.)
 
@@ -275,7 +282,7 @@ The module :mod:`socket` exports the following constants and functions:
           RCVALL_*
 
    Constants for Windows' WSAIoctl(). The constants are used as arguments to the
-   :meth:`ioctl` method of socket objects.
+   :meth:`~socket.socket.ioctl` method of socket objects.
 
 
 .. data:: TIPC_*
@@ -288,6 +295,43 @@ The module :mod:`socket` exports the following constants and functions:
 
    This constant contains a boolean value which indicates if IPv6 is supported on
    this platform.
+
+
+Functions
+^^^^^^^^^
+
+Creating sockets
+''''''''''''''''
+
+The following functions all create :ref:`socket objects <socket-objects>`.
+
+
+.. function:: socket([family[, type[, proto]]])
+
+   Create a new socket using the given address family, socket type and protocol
+   number.  The address family should be :const:`AF_INET` (the default),
+   :const:`AF_INET6`, :const:`AF_UNIX`, :const:`AF_CAN` or :const:`AF_RDS`. The
+   socket type should be :const:`SOCK_STREAM` (the default),
+   :const:`SOCK_DGRAM`, :const:`SOCK_RAW` or perhaps one of the other ``SOCK_``
+   constants. The protocol number is usually zero and may be omitted in that
+   case or :const:`CAN_RAW` in case the address family is :const:`AF_CAN`.
+
+   .. versionchanged:: 3.3
+      The AF_CAN family was added.
+      The AF_RDS family was added.
+
+
+.. function:: socketpair([family[, type[, proto]]])
+
+   Build a pair of connected socket objects using the given address family, socket
+   type, and protocol number.  Address family, socket type, and protocol number are
+   as for the :func:`.socket` function above. The default family is :const:`AF_UNIX`
+   if defined on the platform; otherwise, the default is :const:`AF_INET`.
+   Availability: Unix.
+
+   .. versionchanged:: 3.2
+      The returned socket objects now support the whole socket API, rather
+      than a subset.
 
 
 .. function:: create_connection(address[, timeout[, source_address]])
@@ -316,6 +360,40 @@ The module :mod:`socket` exports the following constants and functions:
       support for the :keyword:`with` statement was added.
 
 
+.. function:: fromfd(fd, family, type[, proto])
+
+   Duplicate the file descriptor *fd* (an integer as returned by a file object's
+   :meth:`fileno` method) and build a socket object from the result.  Address
+   family, socket type and protocol number are as for the :func:`.socket` function
+   above. The file descriptor should refer to a socket, but this is not checked ---
+   subsequent operations on the object may fail if the file descriptor is invalid.
+   This function is rarely needed, but can be used to get or set socket options on
+   a socket passed to a program as standard input or output (such as a server
+   started by the Unix inet daemon).  The socket is assumed to be in blocking mode.
+
+
+.. function:: fromshare(data)
+
+   Instantiate a socket from data obtained from the :meth:`socket.share`
+   method.  The socket is assumed to be in blocking mode.
+
+   Availability: Windows.
+
+   .. versionadded:: 3.3
+
+
+.. data:: SocketType
+
+   This is a Python type object that represents the socket object type. It is the
+   same as ``type(socket(...))``.
+
+
+Other functions
+'''''''''''''''
+
+The :mod:`socket` module also offers various network-related services:
+
+
 .. function:: getaddrinfo(host, port, family=0, type=0, proto=0, flags=0)
 
    Translate the *host*/*port* argument into a sequence of 5-tuples that contain
@@ -338,7 +416,7 @@ The module :mod:`socket` exports the following constants and functions:
    ``(family, type, proto, canonname, sockaddr)``
 
    In these tuples, *family*, *type*, *proto* are all integers and are
-   meant to be passed to the :func:`socket` function.  *canonname* will be
+   meant to be passed to the :func:`.socket` function.  *canonname* will be
    a string representing the canonical name of the *host* if
    :const:`AI_CANONNAME` is part of the *flags* argument; else *canonname*
    will be empty.  *sockaddr* is a tuple describing a socket address, whose
@@ -356,7 +434,7 @@ The module :mod:`socket` exports the following constants and functions:
        (10, 1, 6, '', ('2001:888:2000:d::a2', 80, 0, 0))]
 
    .. versionchanged:: 3.2
-      parameters can now be passed as single keyword arguments.
+      parameters can now be passed using keyword arguments.
 
 .. function:: getfqdn([name])
 
@@ -425,7 +503,7 @@ The module :mod:`socket` exports the following constants and functions:
 .. function:: getprotobyname(protocolname)
 
    Translate an Internet protocol name (for example, ``'icmp'``) to a constant
-   suitable for passing as the (optional) third argument to the :func:`socket`
+   suitable for passing as the (optional) third argument to the :func:`.socket`
    function.  This is usually only needed for sockets opened in "raw" mode
    (:const:`SOCK_RAW`); for the normal socket modes, the correct protocol is chosen
    automatically if the protocol is omitted or zero.
@@ -443,46 +521,6 @@ The module :mod:`socket` exports the following constants and functions:
    Translate an Internet port number and protocol name to a service name for that
    service.  The optional protocol name, if given, should be ``'tcp'`` or
    ``'udp'``, otherwise any protocol will match.
-
-
-.. function:: socket([family[, type[, proto]]])
-
-   Create a new socket using the given address family, socket type and protocol
-   number.  The address family should be :const:`AF_INET` (the default),
-   :const:`AF_INET6`, :const:`AF_UNIX`, :const:`AF_CAN` or :const:`AF_RDS`. The
-   socket type should be :const:`SOCK_STREAM` (the default),
-   :const:`SOCK_DGRAM`, :const:`SOCK_RAW` or perhaps one of the other ``SOCK_``
-   constants. The protocol number is usually zero and may be omitted in that
-   case or :const:`CAN_RAW` in case the address family is :const:`AF_CAN`.
-
-   .. versionchanged:: 3.3
-      The AF_CAN family was added.
-      The AF_RDS family was added.
-
-
-.. function:: socketpair([family[, type[, proto]]])
-
-   Build a pair of connected socket objects using the given address family, socket
-   type, and protocol number.  Address family, socket type, and protocol number are
-   as for the :func:`socket` function above. The default family is :const:`AF_UNIX`
-   if defined on the platform; otherwise, the default is :const:`AF_INET`.
-   Availability: Unix.
-
-   .. versionchanged:: 3.2
-      The returned socket objects now support the whole socket API, rather
-      than a subset.
-
-
-.. function:: fromfd(fd, family, type[, proto])
-
-   Duplicate the file descriptor *fd* (an integer as returned by a file object's
-   :meth:`fileno` method) and build a socket object from the result.  Address
-   family, socket type and protocol number are as for the :func:`socket` function
-   above. The file descriptor should refer to a socket, but this is not checked ---
-   subsequent operations on the object may fail if the file descriptor is invalid.
-   This function is rarely needed, but can be used to get or set socket options on
-   a socket passed to a program as standard input or output (such as a server
-   started by the Unix inet daemon).  The socket is assumed to be in blocking mode.
 
 
 .. function:: ntohl(x)
@@ -680,29 +718,14 @@ The module :mod:`socket` exports the following constants and functions:
    .. versionadded:: 3.3
 
 
-.. function:: fromshare(data)
-
-   Instantiate a socket from data obtained from :meth:`~socket.share`.
-   The socket is assumed to be in blocking mode.
-
-   Availability: Windows.
-
-   .. versionadded:: 3.3
-
-
-.. data:: SocketType
-
-   This is a Python type object that represents the socket object type. It is the
-   same as ``type(socket(...))``.
-
-
 .. _socket-objects:
 
 Socket Objects
 --------------
 
-Socket objects have the following methods.  Except for :meth:`makefile` these
-correspond to Unix system calls applicable to sockets.
+Socket objects have the following methods.  Except for
+:meth:`~socket.makefile`, these correspond to Unix system calls applicable
+to sockets.
 
 
 .. method:: socket.accept()
@@ -721,11 +744,18 @@ correspond to Unix system calls applicable to sockets.
 
 .. method:: socket.close()
 
-   Close the socket.  All future operations on the socket object will fail. The
-   remote end will receive no more data (after queued data is flushed). Sockets are
-   automatically closed when they are garbage-collected.
+   Mark the socket closed.  The underlying system resource (e.g. a file
+   descriptor) is also closed when all file objects from :meth:`makefile()`
+   are closed.  Once that happens, all future operations on the socket
+   object will fail. The remote end will receive no more data (after
+   queued data is flushed).
+
+   Sockets are automatically closed when they are garbage-collected, but
+   it is recommended to :meth:`close` them explicitly, or to use a
+   :keyword:`with` statement around them.
 
    .. note::
+
       :meth:`close()` releases the resource associated with a connection but
       does not necessarily close the connection immediately.  If you want
       to close the connection in a timely fashion, call :meth:`shutdown()`
@@ -829,10 +859,13 @@ correspond to Unix system calls applicable to sockets.
    type depends on the arguments given to :meth:`makefile`.  These arguments are
    interpreted the same way as by the built-in :func:`open` function.
 
-   Closing the file object won't close the socket unless there are no remaining
-   references to the socket.  The socket must be in blocking mode; it can have
-   a timeout, but the file object's internal buffer may end up in a inconsistent
-   state if a timeout occurs.
+   The socket must be in blocking mode; it can have a timeout, but the file
+   object's internal buffer may end up in a inconsistent state if a timeout
+   occurs.
+
+   Closing the file object returned by :meth:`makefile` won't close the
+   original socket unless all other file objects have been closed and
+   :meth:`socket.close` has been called on the socket object.
 
    .. note::
 
@@ -1096,14 +1129,14 @@ correspond to Unix system calls applicable to sockets.
 
 .. method:: socket.share(process_id)
 
-    :platform: Windows
+   Duplicate a socket and prepare it for sharing with a target process.  The
+   target process must be provided with *process_id*.  The resulting bytes object
+   can then be passed to the target process using some form of interprocess
+   communication and the socket can be recreated there using :func:`fromshare`.
+   Once this method has been called, it is safe to close the socket since
+   the operating system has already duplicated it for the target process.
 
-    Duplacet a socket and prepare it for sharing with a target process.  The
-    target process must be provided with *process_id*.  The resulting bytes object
-    can then be passed to the target process using some form of interprocess
-    communication and the socket can be recreated there using :func:`fromshare`.
-    Once this method has been called, it is safe to close the socket since
-    the operating system has already duplicated it for the target process.
+   Availability: Windows.
 
    .. versionadded:: 3.3
 
@@ -1192,10 +1225,10 @@ Example
 
 Here are four minimal example programs using the TCP/IP protocol: a server that
 echoes all data that it receives back (servicing only one client), and a client
-using it.  Note that a server must perform the sequence :func:`socket`,
+using it.  Note that a server must perform the sequence :func:`.socket`,
 :meth:`~socket.bind`, :meth:`~socket.listen`, :meth:`~socket.accept` (possibly
 repeating the :meth:`~socket.accept` to service more than one client), while a
-client only needs the sequence :func:`socket`, :meth:`~socket.connect`.  Also
+client only needs the sequence :func:`.socket`, :meth:`~socket.connect`.  Also
 note that the server does not :meth:`~socket.sendall`/:meth:`~socket.recv` on
 the socket it is listening on but on the new socket returned by
 :meth:`~socket.accept`.
@@ -1405,4 +1438,3 @@ the :data:`SO_REUSEADDR` flag tells the kernel to reuse a local socket in
    details of socket semantics.  For Unix, refer to the manual pages; for Windows,
    see the WinSock (or Winsock 2) specification.  For IPv6-ready APIs, readers may
    want to refer to :rfc:`3493` titled Basic Socket Interface Extensions for IPv6.
-

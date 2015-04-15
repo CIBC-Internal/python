@@ -139,7 +139,7 @@ PyDoc_STRVAR(range_doc,
 "range(stop) -> range object\n\
 range(start, stop[, step]) -> range object\n\
 \n\
-Returns a virtual sequence of numbers from start to stop by step.");
+Return a virtual sequence of numbers from start to stop by step.");
 
 static void
 range_dealloc(rangeobject *r)
@@ -865,14 +865,14 @@ static PyObject * range_iter(PyObject *seq);
 static PyObject * range_reverse(PyObject *seq);
 
 PyDoc_STRVAR(reverse_doc,
-"Returns a reverse iterator.");
+"Return a reverse iterator.");
 
 PyDoc_STRVAR(count_doc,
 "rangeobject.count(value) -> integer -- return number of occurrences of value");
 
 PyDoc_STRVAR(index_doc,
 "rangeobject.index(value, [start, [stop]]) -> integer -- return index of value.\n"
-"Raises ValueError if the value is not present.");
+"Raise ValueError if the value is not present.");
 
 static PyMethodDef range_methods[] = {
     {"__reversed__",    (PyCFunction)range_reverse, METH_NOARGS, reverse_doc},
@@ -933,7 +933,7 @@ PyTypeObject PyRange_Type = {
 /*********************** range Iterator **************************/
 
 /* There are 2 types of iterators, one for C longs, the other for
-   Python longs (ie, PyObjects).  This should make iteration fast
+   Python ints (ie, PyObjects).  This should make iteration fast
    in the normal case, but possible for any numeric value.
 */
 
@@ -1000,10 +1000,11 @@ rangeiter_setstate(rangeiterobject *r, PyObject *state)
     long index = PyLong_AsLong(state);
     if (index == -1 && PyErr_Occurred())
         return NULL;
-    if (index < 0 || index >= r->len) {
-        PyErr_SetString(PyExc_ValueError, "index out of range");
-        return NULL;
-    }
+    /* silently clip the index value */
+    if (index < 0)
+        index = 0;
+    else if (index > r->len)
+        index = r->len; /* exhausted iterator */
     r->index = index;
     Py_RETURN_NONE;
 }
@@ -1178,6 +1179,28 @@ longrangeiter_reduce(longrangeiterobject *r)
 static PyObject *
 longrangeiter_setstate(longrangeiterobject *r, PyObject *state)
 {
+    int cmp;
+   
+    /* clip the value */
+    PyObject *zero = PyLong_FromLong(0);
+    if (zero == NULL)
+        return NULL;
+    cmp = PyObject_RichCompareBool(state, zero, Py_LT);
+    if (cmp > 0) {
+        Py_CLEAR(r->index);
+        r->index = zero;
+        Py_RETURN_NONE;
+    }
+    Py_DECREF(zero);
+    if (cmp < 0)
+        return NULL;
+
+    cmp = PyObject_RichCompareBool(r->len, state, Py_LT);
+    if (cmp < 0)
+        return NULL;
+    if (cmp > 0)
+        state = r->len;
+    
     Py_CLEAR(r->index);
     r->index = state;
     Py_INCREF(r->index);

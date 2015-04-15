@@ -39,6 +39,11 @@
 #include "memory.h"
 
 
+#if MPD_MAJOR_VERSION != 2
+  #error "libmpdec major version 2 required"
+#endif
+
+
 /*
  * Type sizes with assertions in mpdecimal.h and pyport.h:
  *    sizeof(size_t) == sizeof(Py_ssize_t)
@@ -3009,18 +3014,24 @@ convert_op_cmp(PyObject **vcmp, PyObject **wcmp, PyObject *v, PyObject *w,
             *wcmp = Py_NotImplemented;
         }
     }
-    else if (PyObject_IsInstance(w, Rational)) {
-        *wcmp = numerator_as_decimal(w, context);
-        if (*wcmp && !mpd_isspecial(MPD(v))) {
-            *vcmp = multiply_by_denominator(v, w, context);
-            if (*vcmp == NULL) {
-                Py_CLEAR(*wcmp);
+    else {
+        int is_rational = PyObject_IsInstance(w, Rational);
+        if (is_rational < 0) {
+            *wcmp = NULL;
+        }
+        else if (is_rational > 0) {
+            *wcmp = numerator_as_decimal(w, context);
+            if (*wcmp && !mpd_isspecial(MPD(v))) {
+                *vcmp = multiply_by_denominator(v, w, context);
+                if (*vcmp == NULL) {
+                    Py_CLEAR(*wcmp);
+                }
             }
         }
-    }
-    else {
-        Py_INCREF(Py_NotImplemented);
-        *wcmp = Py_NotImplemented;
+        else {
+            Py_INCREF(Py_NotImplemented);
+            *wcmp = Py_NotImplemented;
+        }
     }
 
     if (*wcmp == NULL || *wcmp == Py_NotImplemented) {
@@ -3096,6 +3107,30 @@ dec_repr(PyObject *dec)
     return res;
 }
 
+/* Return a duplicate of src, copy embedded null characters. */
+static char *
+dec_strdup(const char *src, Py_ssize_t size)
+{
+    char *dest = PyMem_Malloc(size+1);
+    if (dest == NULL) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    memcpy(dest, src, size);
+    dest[size] = '\0';
+    return dest;
+}
+
+static void
+dec_replace_fillchar(char *dest)
+{
+     while (*dest != '\0') {
+         if (*dest == '\xff') *dest = '\0';
+         dest++;
+     }
+}
+
 /* Convert decimal_point or thousands_sep, which may be multibyte or in
    the range [128, 255], to a UTF8 string. */
 static PyObject *
@@ -3131,13 +3166,14 @@ dec_format(PyObject *dec, PyObject *args)
     PyObject *dot = NULL;
     PyObject *sep = NULL;
     PyObject *grouping = NULL;
-    PyObject *fmt = NULL;
     PyObject *fmtarg;
     PyObject *context;
     mpd_spec_t spec;
-    char *decstring= NULL;
+    char *fmt;
+    char *decstring = NULL;
     uint32_t status = 0;
-    size_t n;
+    int replace_fillchar = 0;
+    Py_ssize_t size;
 
 
     CURRENT_CONTEXT(context);
@@ -3146,9 +3182,19 @@ dec_format(PyObject *dec, PyObject *args)
     }
 
     if (PyUnicode_Check(fmtarg)) {
-        fmt = PyUnicode_AsUTF8String(fmtarg);
+        fmt = PyUnicode_AsUTF8AndSize(fmtarg, &size);
         if (fmt == NULL) {
             return NULL;
+        }
+        if (size > 0 && fmt[0] == '\0') {
+            /* NUL fill character: must be replaced with a valid UTF-8 char
+               before calling mpd_parse_fmt_str(). */
+            replace_fillchar = 1;
+            fmt = dec_strdup(fmt, size);
+            if (fmt == NULL) {
+                return NULL;
+            }
+            fmt[0] = '_';
         }
     }
     else {
@@ -3157,12 +3203,19 @@ dec_format(PyObject *dec, PyObject *args)
         return NULL;
     }
 
-    if (!mpd_parse_fmt_str(&spec, PyBytes_AS_STRING(fmt),
-                           CtxCaps(context))) {
+    if (!mpd_parse_fmt_str(&spec, fmt, CtxCaps(context))) {
         PyErr_SetString(PyExc_ValueError,
             "invalid format string");
         goto finish;
     }
+    if (replace_fillchar) {
+        /* In order to avoid clobbering parts of UTF-8 thousands separators or
+           decimal points when the substitution is reversed later, the actual
+           placeholder must be an invalid UTF-8 byte. */
+        spec.fill[0] = '\xff';
+        spec.fill[1] = '\0';
+    }
+
     if (override) {
         /* Values for decimal_point, thousands_sep and grouping can
            be explicitly specified in the override dict. These values
@@ -3199,7 +3252,7 @@ dec_format(PyObject *dec, PyObject *args)
         }
     }
     else {
-        n = strlen(spec.dot);
+        size_t n = strlen(spec.dot);
         if (n > 1 || (n == 1 && !isascii((uchar)spec.dot[0]))) {
             /* fix locale dependent non-ascii characters */
             dot = dotsep_as_utf8(spec.dot);
@@ -3231,14 +3284,19 @@ dec_format(PyObject *dec, PyObject *args)
         }
         goto finish;
     }
-    result = PyUnicode_DecodeUTF8(decstring, strlen(decstring), NULL);
+    size = strlen(decstring);
+    if (replace_fillchar) {
+        dec_replace_fillchar(decstring);
+    }
+
+    result = PyUnicode_DecodeUTF8(decstring, size, NULL);
 
 
 finish:
     Py_XDECREF(grouping);
     Py_XDECREF(sep);
     Py_XDECREF(dot);
-    Py_XDECREF(fmt);
+    if (replace_fillchar) PyMem_Free(fmt);
     if (decstring) mpd_free(decstring);
     return result;
 }
@@ -3870,9 +3928,6 @@ nm_mpd_qdivmod(PyObject *v, PyObject *w)
     return ret;
 }
 
-static mpd_uint_t data_zero[1] = {0};
-static const mpd_t zero = {MPD_STATIC|MPD_CONST_DATA, 0, 1, 1, 1, data_zero};
-
 static PyObject *
 nm_mpd_qpow(PyObject *base, PyObject *exp, PyObject *mod)
 {
@@ -4423,10 +4478,10 @@ _dec_hash(PyDecObject *v)
             goto malloc_error;
         }
         else {
-            PyErr_SetString(PyExc_RuntimeError,
-                "dec_hash: internal error: please report");
+            PyErr_SetString(PyExc_RuntimeError, /* GCOV_NOT_REACHED */
+                "dec_hash: internal error: please report"); /* GCOV_NOT_REACHED */
         }
-        result = -1;
+        result = -1; /* GCOV_NOT_REACHED */
     }
 
 
@@ -5577,7 +5632,7 @@ PyInit__decimal(void)
         }
 
         if (base == NULL) {
-            goto error;
+            goto error; /* GCOV_NOT_REACHED */
         }
 
         ASSIGN_PTR(cm->ex, PyErr_NewException((char *)cm->fqname, base, NULL));
@@ -5609,7 +5664,7 @@ PyInit__decimal(void)
             base = PyTuple_Pack(1, signal_map[0].ex);
         }
         if (base == NULL) {
-            goto error;
+            goto error; /* GCOV_NOT_REACHED */
         }
 
         ASSIGN_PTR(cm->ex, PyErr_NewException((char *)cm->fqname, base, NULL));
@@ -5677,7 +5732,8 @@ PyInit__decimal(void)
     }
 
     /* Add specification version number */
-    CHECK_INT(PyModule_AddStringConstant(m, "__version__", " 1.70"));
+    CHECK_INT(PyModule_AddStringConstant(m, "__version__", "1.70"));
+    CHECK_INT(PyModule_AddStringConstant(m, "__libmpdec_version__", mpd_version()));
 
 
     return m;

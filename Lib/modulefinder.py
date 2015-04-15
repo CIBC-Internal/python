@@ -287,7 +287,7 @@ class ModuleFinder:
             if fp.read(4) != imp.get_magic():
                 self.msgout(2, "raise ImportError: Bad magic number", pathname)
                 raise ImportError("Bad magic number in %s" % pathname)
-            fp.read(4)
+            fp.read(8)  # Skip mtime and size.
             co = marshal.load(fp)
         else:
             co = None
@@ -332,30 +332,6 @@ class ModuleFinder:
                         fullname = name + "." + sub
                         self._add_badmodule(fullname, caller)
 
-    def scan_opcodes(self, co,
-                     unpack = struct.unpack):
-        # Scan the code, and yield 'interesting' opcode combinations
-        # Version for Python 2.4 and older
-        code = co.co_code
-        names = co.co_names
-        consts = co.co_consts
-        while code:
-            c = code[0]
-            if c in STORE_OPS:
-                oparg, = unpack('<H', code[1:3])
-                yield "store", (names[oparg],)
-                code = code[3:]
-                continue
-            if c == LOAD_CONST and code[3] == IMPORT_NAME:
-                oparg_1, oparg_2 = unpack('<xHxH', code[:6])
-                yield "import", (consts[oparg_1], names[oparg_2])
-                code = code[6:]
-                continue
-            if c >= HAVE_ARGUMENT:
-                code = code[3:]
-            else:
-                code = code[1:]
-
     def scan_opcodes_25(self, co,
                      unpack = struct.unpack):
         # Scan the code, and yield 'interesting' opcode combinations
@@ -387,10 +363,7 @@ class ModuleFinder:
 
     def scan_code(self, co, m):
         code = co.co_code
-        if sys.version_info >= (2, 5):
-            scanner = self.scan_opcodes_25
-        else:
-            scanner = self.scan_opcodes
+        scanner = self.scan_opcodes_25
         for what, args in scanner(co):
             if what == "store":
                 name, = args
@@ -509,7 +482,7 @@ class ModuleFinder:
         # Print modules that may be missing, but then again, maybe not...
         if maybe:
             print()
-            print("Submodules thay appear to be missing, but could also be", end=' ')
+            print("Submodules that appear to be missing, but could also be", end=' ')
             print("global names in the parent package:")
             for name in maybe:
                 mods = sorted(self.badmodules[name].keys())

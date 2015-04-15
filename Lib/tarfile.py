@@ -281,6 +281,12 @@ def filemode(mode):
                   DeprecationWarning, 2)
     return stat.filemode(mode)
 
+def _safe_print(s):
+    encoding = getattr(sys.stdout, 'encoding', None)
+    if encoding is not None:
+        s = s.encode(encoding, 'backslashreplace').decode(encoding)
+    print(s, end=' ')
+
 
 class TarError(Exception):
     """Base exception."""
@@ -289,7 +295,7 @@ class ExtractError(TarError):
     """General exception for extract errors."""
     pass
 class ReadError(TarError):
-    """Exception for unreadble tar archives."""
+    """Exception for unreadable tar archives."""
     pass
 class CompressionError(TarError):
     """Exception for unavailable compression methods."""
@@ -1429,10 +1435,11 @@ class TarFile(object):
            can be determined, `mode' is overridden by `fileobj's mode.
            `fileobj' is not closed, when TarFile is closed.
         """
-        if len(mode) > 1 or mode not in "raw":
+        modes = {"r": "rb", "a": "r+b", "w": "wb"}
+        if mode not in modes:
             raise ValueError("mode must be 'r', 'a' or 'w'")
         self.mode = mode
-        self._mode = {"r": "rb", "a": "r+b", "w": "wb"}[mode]
+        self._mode = modes[mode]
 
         if not fileobj:
             if self.mode == "a" and not os.path.exists(name):
@@ -1588,7 +1595,7 @@ class TarFile(object):
             filemode = filemode or "r"
             comptype = comptype or "tar"
 
-            if filemode not in "rw":
+            if filemode not in ("r", "w"):
                 raise ValueError("mode must be 'r' or 'w'")
 
             stream = _Stream(name, filemode, comptype, fileobj, bufsize)
@@ -1600,7 +1607,7 @@ class TarFile(object):
             t._extfileobj = False
             return t
 
-        elif mode in "aw":
+        elif mode in ("a", "w"):
             return cls.taropen(name, mode, fileobj, **kwargs)
 
         raise ValueError("undiscernible mode")
@@ -1609,7 +1616,7 @@ class TarFile(object):
     def taropen(cls, name, mode="r", fileobj=None, **kwargs):
         """Open uncompressed tar archive name for reading or writing.
         """
-        if len(mode) > 1 or mode not in "raw":
+        if mode not in ("r", "a", "w"):
             raise ValueError("mode must be 'r', 'a' or 'w'")
         return cls(name, mode, fileobj, **kwargs)
 
@@ -1618,7 +1625,7 @@ class TarFile(object):
         """Open gzip compressed tar archive name for reading or writing.
            Appending is not allowed.
         """
-        if len(mode) > 1 or mode not in "rw":
+        if mode not in ("r", "w"):
             raise ValueError("mode must be 'r' or 'w'")
 
         try:
@@ -1627,21 +1634,24 @@ class TarFile(object):
         except (ImportError, AttributeError):
             raise CompressionError("gzip module is not available")
 
-        extfileobj = fileobj is not None
         try:
             fileobj = gzip.GzipFile(name, mode + "b", compresslevel, fileobj)
-            t = cls.taropen(name, mode, fileobj, **kwargs)
-        except IOError:
-            if not extfileobj and fileobj is not None:
-                fileobj.close()
-            if fileobj is None:
-                raise
-            raise ReadError("not a gzip file")
-        except:
-            if not extfileobj and fileobj is not None:
-                fileobj.close()
+        except OSError:
+            if fileobj is not None and mode == 'r':
+                raise ReadError("not a gzip file")
             raise
-        t._extfileobj = extfileobj
+
+        try:
+            t = cls.taropen(name, mode, fileobj, **kwargs)
+        except OSError:
+            fileobj.close()
+            if mode == 'r':
+                raise ReadError("not a gzip file")
+            raise
+        except:
+            fileobj.close()
+            raise
+        t._extfileobj = False
         return t
 
     @classmethod
@@ -1649,7 +1659,7 @@ class TarFile(object):
         """Open bzip2 compressed tar archive name for reading or writing.
            Appending is not allowed.
         """
-        if len(mode) > 1 or mode not in "rw":
+        if mode not in ("r", "w"):
             raise ValueError("mode must be 'r' or 'w'.")
 
         try:
@@ -1664,7 +1674,12 @@ class TarFile(object):
             t = cls.taropen(name, mode, fileobj, **kwargs)
         except (IOError, EOFError):
             fileobj.close()
-            raise ReadError("not a bzip2 file")
+            if mode == 'r':
+                raise ReadError("not a bzip2 file")
+            raise
+        except:
+            fileobj.close()
+            raise
         t._extfileobj = False
         return t
 
@@ -1687,7 +1702,12 @@ class TarFile(object):
             t = cls.taropen(name, mode, fileobj, **kwargs)
         except (lzma.LZMAError, EOFError):
             fileobj.close()
-            raise ReadError("not an lzma file")
+            if mode == 'r':
+                raise ReadError("not an lzma file")
+            raise
+        except:
+            fileobj.close()
+            raise
         t._extfileobj = False
         return t
 
@@ -1856,24 +1876,24 @@ class TarFile(object):
 
         for tarinfo in self:
             if verbose:
-                print(stat.filemode(tarinfo.mode), end=' ')
-                print("%s/%s" % (tarinfo.uname or tarinfo.uid,
-                                 tarinfo.gname or tarinfo.gid), end=' ')
+                _safe_print(stat.filemode(tarinfo.mode))
+                _safe_print("%s/%s" % (tarinfo.uname or tarinfo.uid,
+                                       tarinfo.gname or tarinfo.gid))
                 if tarinfo.ischr() or tarinfo.isblk():
-                    print("%10s" % ("%d,%d" \
-                                    % (tarinfo.devmajor, tarinfo.devminor)), end=' ')
+                    _safe_print("%10s" %
+                            ("%d,%d" % (tarinfo.devmajor, tarinfo.devminor)))
                 else:
-                    print("%10d" % tarinfo.size, end=' ')
-                print("%d-%02d-%02d %02d:%02d:%02d" \
-                      % time.localtime(tarinfo.mtime)[:6], end=' ')
+                    _safe_print("%10d" % tarinfo.size)
+                _safe_print("%d-%02d-%02d %02d:%02d:%02d" \
+                            % time.localtime(tarinfo.mtime)[:6])
 
-            print(tarinfo.name + ("/" if tarinfo.isdir() else ""), end=' ')
+            _safe_print(tarinfo.name + ("/" if tarinfo.isdir() else ""))
 
             if verbose:
                 if tarinfo.issym():
-                    print("->", tarinfo.linkname, end=' ')
+                    _safe_print("-> " + tarinfo.linkname)
                 if tarinfo.islnk():
-                    print("link to", tarinfo.linkname, end=' ')
+                    _safe_print("link to " + tarinfo.linkname)
             print()
 
     def add(self, name, arcname=None, recursive=True, exclude=None, *, filter=None):
@@ -2398,16 +2418,18 @@ class TarIter:
         # Fix for SF #1100429: Under rare circumstances it can
         # happen that getmembers() is called during iteration,
         # which will cause TarIter to stop prematurely.
-        if not self.tarfile._loaded:
+
+        if self.index == 0 and self.tarfile.firstmember is not None:
+            tarinfo = self.tarfile.next()
+        elif self.index < len(self.tarfile.members):
+            tarinfo = self.tarfile.members[self.index]
+        elif not self.tarfile._loaded:
             tarinfo = self.tarfile.next()
             if not tarinfo:
                 self.tarfile._loaded = True
                 raise StopIteration
         else:
-            try:
-                tarinfo = self.tarfile.members[self.index]
-            except IndexError:
-                raise StopIteration
+            raise StopIteration
         self.index += 1
         return tarinfo
 

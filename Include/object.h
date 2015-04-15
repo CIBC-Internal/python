@@ -482,6 +482,7 @@ PyAPI_FUNC(PyObject *) PyType_GenericNew(PyTypeObject *,
                                                PyObject *, PyObject *);
 #ifndef Py_LIMITED_API
 PyAPI_FUNC(PyObject *) _PyType_Lookup(PyTypeObject *, PyObject *);
+PyAPI_FUNC(PyObject *) _PyType_LookupId(PyTypeObject *, _Py_Identifier *);
 PyAPI_FUNC(PyObject *) _PyObject_LookupSpecial(PyObject *, _Py_Identifier *);
 PyAPI_FUNC(PyTypeObject *) _PyType_CalculateMetaclass(PyTypeObject *, PyObject *);
 #endif
@@ -829,6 +830,9 @@ they can have object code that is not dependent on Python compilation flags.
 */
 PyAPI_FUNC(void) Py_IncRef(PyObject *);
 PyAPI_FUNC(void) Py_DecRef(PyObject *);
+
+PyAPI_DATA(PyTypeObject) _PyNone_Type;
+PyAPI_DATA(PyTypeObject) _PyNotImplemented_Type;
 
 /*
 _Py_NoneStruct is an object of undefined type which can be used in contexts

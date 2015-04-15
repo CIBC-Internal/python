@@ -387,8 +387,8 @@ static PyTypeObject Unpickler_Type;
 
 
 /*************************************************************************
- A custom hashtable mapping void* to longs. This is used by the pickler for
- memoization. Using a custom hashtable rather than PyDict allows us to skip
+ A custom hashtable mapping void* to Python ints. This is used by the pickler
+ for memoization. Using a custom hashtable rather than PyDict allows us to skip
  a bunch of unnecessary object creation. This makes a huge performance
  difference. */
 
@@ -1581,8 +1581,8 @@ save_long(PicklerObject *self, PyObject *obj)
          * need another byte even if there aren't any leftovers:
          * the most-significant bit of the most-significant byte
          * acts like a sign bit, and it's usually got a sense
-         * opposite of the one we need.  The exception is longs
-         * of the form -(2**(8*j-1)) for j > 0.  Such a long is
+         * opposite of the one we need.  The exception is ints
+         * of the form -(2**(8*j-1)) for j > 0.  Such an int is
          * its own 256's-complement, so has the right sign bit
          * even without the extra byte.  That's a pain to check
          * for in advance, though, so we always grab an extra
@@ -1591,7 +1591,7 @@ save_long(PicklerObject *self, PyObject *obj)
         nbytes = (nbits >> 3) + 1;
         if (nbytes > 0x7fffffffL) {
             PyErr_SetString(PyExc_OverflowError,
-                            "long too large to pickle");
+                            "int too large to pickle");
             goto error;
         }
         repr = PyBytes_FromStringAndSize(NULL, (Py_ssize_t)nbytes);
@@ -1603,7 +1603,7 @@ save_long(PicklerObject *self, PyObject *obj)
                                 1 /* little endian */ , 1 /* signed */ );
         if (i < 0)
             goto error;
-        /* If the long is negative, this may be a byte more than
+        /* If the int is negative, this may be a byte more than
          * needed.  This is so iff the MSB is all redundant sign
          * bits.
          */
@@ -2836,6 +2836,36 @@ save_notimplemented(PicklerObject *self, PyObject *obj)
 }
 
 static int
+save_singleton_type(PicklerObject *self, PyObject *obj, PyObject *singleton)
+{
+    PyObject *reduce_value;
+    int status;
+
+    reduce_value = Py_BuildValue("O(O)", &PyType_Type, singleton);
+    if (reduce_value == NULL) {
+        return -1;
+    }
+    status = save_reduce(self, reduce_value, obj);
+    Py_DECREF(reduce_value);
+    return status;
+}
+
+static int
+save_type(PicklerObject *self, PyObject *obj)
+{
+    if (obj == (PyObject *)&_PyNone_Type) {
+        return save_singleton_type(self, obj, Py_None);
+    }
+    else if (obj == (PyObject *)&PyEllipsis_Type) {
+        return save_singleton_type(self, obj, Py_Ellipsis);
+    }
+    else if (obj == (PyObject *)&_PyNotImplemented_Type) {
+        return save_singleton_type(self, obj, Py_NotImplemented);
+    }
+    return save_global(self, obj, NULL);
+}
+
+static int
 save_pers(PicklerObject *self, PyObject *obj, PyObject *func)
 {
     PyObject *pid = NULL;
@@ -2958,7 +2988,7 @@ save_reduce(PicklerObject *self, PyObject *args, PyObject *obj)
     if (listitems == Py_None)
         listitems = NULL;
     else if (!PyIter_Check(listitems)) {
-        PyErr_Format(PicklingError, "Fourth element of tuple"
+        PyErr_Format(PicklingError, "fourth element of the tuple "
                      "returned by __reduce__ must be an iterator, not %s",
                      Py_TYPE(listitems)->tp_name);
         return -1;
@@ -2967,7 +2997,7 @@ save_reduce(PicklerObject *self, PyObject *args, PyObject *obj)
     if (dictitems == Py_None)
         dictitems = NULL;
     else if (!PyIter_Check(dictitems)) {
-        PyErr_Format(PicklingError, "Fifth element of tuple"
+        PyErr_Format(PicklingError, "fifth element of the tuple "
                      "returned by __reduce__ must be an iterator, not %s",
                      Py_TYPE(dictitems)->tp_name);
         return -1;
@@ -3189,7 +3219,7 @@ save(PicklerObject *self, PyObject *obj, int pers_save)
         goto done;
     }
     else if (type == &PyType_Type) {
-        status = save_global(self, obj, NULL);
+        status = save_type(self, obj);
         goto done;
     }
     else if (type == &PyFunction_Type) {
@@ -3917,7 +3947,7 @@ load_int(UnpicklerObject *self)
 
     if (errno || (*endptr != '\n' && *endptr != '\0')) {
         /* Hm, maybe we've got something long.  Let's try reading
-         * it as a Python long object. */
+         * it as a Python int object. */
         errno = 0;
         /* XXX: Same thing about the base here. */
         value = PyLong_FromString(s, NULL, 0);
@@ -4171,7 +4201,7 @@ load_string(UnpicklerObject *self)
 
     if ((len = _Unpickler_Readline(self, &s)) < 0)
         return -1;
-    if (len < 3)
+    if (len < 2)
         return bad_readline();
     if ((s = strdup(s)) == NULL) {
         PyErr_NoMemory();
@@ -4179,14 +4209,14 @@ load_string(UnpicklerObject *self)
     }
 
     /* Strip outermost quotes */
-    while (s[len - 1] <= ' ')
+    while (len > 0 && s[len - 1] <= ' ')
         len--;
-    if (s[0] == '"' && s[len - 1] == '"') {
+    if (len > 1 && s[0] == '"' && s[len - 1] == '"') {
         s[len - 1] = '\0';
         p = s + 1;
         len -= 2;
     }
-    else if (s[0] == '\'' && s[len - 1] == '\'') {
+    else if (len > 1 && s[0] == '\'' && s[len - 1] == '\'') {
         s[len - 1] = '\0';
         p = s + 1;
         len -= 2;
@@ -4665,7 +4695,7 @@ load_persid(UnpicklerObject *self)
     if (self->pers_func) {
         if ((len = _Unpickler_Readline(self, &s)) < 0)
             return -1;
-        if (len < 2)
+        if (len < 1)
             return bad_readline();
 
         pid = PyBytes_FromStringAndSize(s, len - 1);
@@ -4816,9 +4846,10 @@ load_binget(UnpicklerObject *self)
     value = _Unpickler_MemoGet(self, idx);
     if (value == NULL) {
         PyObject *key = PyLong_FromSsize_t(idx);
-        if (!PyErr_Occurred())
+        if (key != NULL) {
             PyErr_SetObject(PyExc_KeyError, key);
-        Py_DECREF(key);
+            Py_DECREF(key);
+        }
         return -1;
     }
 
@@ -4841,9 +4872,10 @@ load_long_binget(UnpicklerObject *self)
     value = _Unpickler_MemoGet(self, idx);
     if (value == NULL) {
         PyObject *key = PyLong_FromSsize_t(idx);
-        if (!PyErr_Occurred())
+        if (key != NULL) {
             PyErr_SetObject(PyExc_KeyError, key);
-        Py_DECREF(key);
+            Py_DECREF(key);
+        }
         return -1;
     }
 
@@ -5039,11 +5071,13 @@ do_append(UnpicklerObject *self, Py_ssize_t x)
             if (result == NULL) {
                 Pdata_clear(self->stack, i + 1);
                 Py_SIZE(self->stack) = x;
+                Py_DECREF(append_func);
                 return -1;
             }
             Py_DECREF(result);
         }
         Py_SIZE(self->stack) = x;
+        Py_DECREF(append_func);
     }
 
     return 0;
@@ -5929,6 +5963,11 @@ Unpickler_set_memo(UnpicklerObject *self, PyObject *obj)
             idx = PyLong_AsSsize_t(key);
             if (idx == -1 && PyErr_Occurred())
                 goto error;
+            if (idx < 0) {
+                PyErr_SetString(PyExc_ValueError,
+                                "memo key must be positive integers.");
+                goto error;
+            }
             if (_Unpickler_MemoPut(self, idx, value) < 0)
                 goto error;
         }

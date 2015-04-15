@@ -240,7 +240,7 @@ PyDoc_STRVAR(exit_doc,
 \n\
 Exit the interpreter by raising SystemExit(status).\n\
 If the status is omitted or None, it defaults to zero (i.e., success).\n\
-If the status is numeric, it will be used as the system exit status.\n\
+If the status is an integer, it will be used as the system exit status.\n\
 If it is another kind of object, it will be printed and the system\n\
 exit status will be one (i.e., failure)."
 );
@@ -395,8 +395,7 @@ trace_trampoline(PyObject *self, PyFrameObject *frame,
     result = call_trampoline(tstate, callback, frame, what, arg);
     if (result == NULL) {
         PyEval_SetTrace(NULL, NULL);
-        Py_XDECREF(frame->f_trace);
-        frame->f_trace = NULL;
+        Py_CLEAR(frame->f_trace);
         return -1;
     }
     if (result != Py_None) {
@@ -747,6 +746,10 @@ sys_getwindowsversion(PyObject *self)
     PyStructSequence_SET_ITEM(version, pos++, PyLong_FromLong(ver.wSuiteMask));
     PyStructSequence_SET_ITEM(version, pos++, PyLong_FromLong(ver.wProductType));
 
+    if (PyErr_Occurred()) {
+        Py_DECREF(version);
+        return NULL;
+    }
     return version;
 }
 
@@ -1404,6 +1407,7 @@ make_flags(void)
 #undef SetFlag
 
     if (PyErr_Occurred()) {
+        Py_DECREF(seq);
         return NULL;
     }
     return seq;
@@ -1856,10 +1860,11 @@ sys_update_path(int argc, wchar_t **argv)
             if (q == NULL)
                 argv0 = link; /* argv0 without path */
             else {
-                /* Must make a copy */
-                wcscpy(argv0copy, argv0);
+                /* Must make a copy, argv0copy has room for 2 * MAXPATHLEN */
+                wcsncpy(argv0copy, argv0, MAXPATHLEN);
                 q = wcsrchr(argv0copy, SEP);
-                wcscpy(q+1, link);
+                wcsncpy(q+1, link, MAXPATHLEN);
+                q[MAXPATHLEN + 1] = L'\0';
                 argv0 = argv0copy;
             }
         }
@@ -1894,7 +1899,7 @@ sys_update_path(int argc, wchar_t **argv)
 #else /* All other filename syntaxes */
     if (_HAVE_SCRIPT_ARGUMENT(argc, argv)) {
 #if defined(HAVE_REALPATH)
-        if (_Py_wrealpath(argv0, fullpath, PATH_MAX)) {
+        if (_Py_wrealpath(argv0, fullpath, Py_ARRAY_LENGTH(fullpath))) {
             argv0 = fullpath;
         }
 #endif

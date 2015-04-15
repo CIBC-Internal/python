@@ -8,8 +8,8 @@ import weakref
 import errno
 
 from test.support import (TESTFN, captured_output, check_impl_detail,
-                          cpython_only, gc_collect, run_unittest, no_tracing,
-                          unlink)
+                          check_warnings, cpython_only, gc_collect,
+                          no_tracing, run_unittest, unlink)
 
 class NaiveException(Exception):
     def __init__(self, x):
@@ -147,6 +147,19 @@ class ExceptionTests(unittest.TestCase):
 
         ckmsg(s, "'continue' not properly in loop")
         ckmsg("continue\n", "'continue' not properly in loop")
+
+    def testSyntaxErrorOffset(self):
+        def check(src, lineno, offset):
+            with self.assertRaises(SyntaxError) as cm:
+                compile(src, '<fragment>', 'exec')
+            self.assertEqual(cm.exception.lineno, lineno)
+            self.assertEqual(cm.exception.offset, offset)
+
+        check('def fact(x):\n\treturn x!\n', 2, 10)
+        check('1 +\n', 1, 4)
+        check('def spam():\n  print(1)\n print(2)', 3, 10)
+        check('Python = "Python" +', 1, 20)
+        check('Python = "\u1e54\xfd\u0163\u0125\xf2\xf1" +', 1, 20)
 
     @cpython_only
     def testSettingException(self):
@@ -819,6 +832,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertIn("maximum recursion depth exceeded", str(v))
 
 
+    @cpython_only
     def test_MemoryError(self):
         # PyErr_NoMemory always raises the same exception instance.
         # Check that the traceback is not doubled.
@@ -877,6 +891,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertEqual(error5.a, 1)
         self.assertEqual(error5.__doc__, "")
 
+    @cpython_only
     def test_memory_error_cleanup(self):
         # Issue #5437: preallocated MemoryError instances should not keep
         # traceback objects alive.
@@ -947,9 +962,10 @@ class ImportErrorTests(unittest.TestCase):
 
     def test_non_str_argument(self):
         # Issue #15778
-        arg = b'abc'
-        exc = ImportError(arg)
-        self.assertEqual(str(arg), str(exc))
+        with check_warnings(('', BytesWarning), quiet=True):
+            arg = b'abc'
+            exc = ImportError(arg)
+            self.assertEqual(str(arg), str(exc))
 
 
 def test_main():

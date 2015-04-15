@@ -109,7 +109,10 @@ int pysqlite_connection_init(pysqlite_Connection* self, PyObject* args, PyObject
         Py_INCREF(isolation_level);
     }
     self->isolation_level = NULL;
-    pysqlite_connection_set_isolation_level(self, isolation_level);
+    if (pysqlite_connection_set_isolation_level(self, isolation_level) < 0) {
+        Py_DECREF(isolation_level);
+        return -1;
+    }
     Py_DECREF(isolation_level);
 
     self->statement_cache = (pysqlite_Cache*)PyObject_CallFunction((PyObject*)&pysqlite_CacheType, "Oi", self, cached_statements);
@@ -715,6 +718,9 @@ error:
 #ifdef WITH_THREAD
     PyGILState_Release(threadstate);
 #endif
+    /* explicit return to avoid a compilation error if WITH_THREAD
+       is not defined */
+    return;
 }
 
 static void _pysqlite_drop_unused_statement_references(pysqlite_Connection* self)

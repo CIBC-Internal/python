@@ -906,7 +906,9 @@ PyDoc_STRVAR(math_ceil_doc,
              "This is the smallest integral value >= x.");
 
 FUNC2(copysign, copysign,
-      "copysign(x, y)\n\nReturn x with the sign of y.")
+      "copysign(x, y)\n\nReturn a float with the magnitude (absolute value) "
+      "of x but the sign \nof y. On platforms that support signed zeros, "
+      "copysign(1.0, -0.0) \nreturns -1.0.\n")
 FUNC1(cos, cos, 0,
       "cos(x)\n\nReturn the cosine of x (measured in radians).")
 FUNC1(cosh, cosh, 1,
@@ -1535,8 +1537,7 @@ math_ldexp(PyObject *self, PyObject *args)
     }
     else {
         PyErr_SetString(PyExc_TypeError,
-                        "Expected an int or long as second argument "
-                        "to ldexp.");
+                        "Expected an int as second argument to ldexp.");
         return NULL;
     }
 
@@ -1598,19 +1599,19 @@ PyDoc_STRVAR(math_modf_doc,
 "Return the fractional and integer parts of x.  Both results carry the sign\n"
 "of x and are floats.");
 
-/* A decent logarithm is easy to compute even for huge longs, but libm can't
+/* A decent logarithm is easy to compute even for huge ints, but libm can't
    do that by itself -- loghelper can.  func is log or log10, and name is
-   "log" or "log10".  Note that overflow of the result isn't possible: a long
+   "log" or "log10".  Note that overflow of the result isn't possible: an int
    can contain no more than INT_MAX * SHIFT bits, so has value certainly less
    than 2**(2**64 * 2**16) == 2**2**80, and log2 of that is 2**80, which is
    small enough to fit in an IEEE single.  log and log10 are even smaller.
-   However, intermediate overflow is possible for a long if the number of bits
-   in that long is larger than PY_SSIZE_T_MAX. */
+   However, intermediate overflow is possible for an int if the number of bits
+   in that int is larger than PY_SSIZE_T_MAX. */
 
 static PyObject*
 loghelper(PyObject* arg, double (*func)(double), char *funcname)
 {
-    /* If it is long, do it ourselves. */
+    /* If it is int, do it ourselves. */
     if (PyLong_Check(arg)) {
         double x, result;
         Py_ssize_t e;

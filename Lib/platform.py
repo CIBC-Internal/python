@@ -129,6 +129,10 @@ except AttributeError:
         # Standard Unix uses /dev/null
         DEV_NULL = '/dev/null'
 
+# Directory to search for configuration information on Unix.
+# Constant used by test_platform to test linux_distribution().
+_UNIXCONFDIR = '/etc'
+
 ### Platform specific APIs
 
 _libc_search = re.compile(b'(__libc_init)'
@@ -230,7 +234,7 @@ def _dist_try_harder(distname,version,id):
                 return 'OpenLinux',pkg[1],id
 
     if os.path.isdir('/usr/lib/setup'):
-        # Check for slackware verson tag file (thanks to Greg Andruk)
+        # Check for slackware version tag file (thanks to Greg Andruk)
         verfiles = os.listdir('/usr/lib/setup')
         for n in range(len(verfiles)-1, -1, -1):
             if verfiles[n][:14] != 'slack-version-':
@@ -282,7 +286,7 @@ def _parse_release_file(firstline):
     if m is not None:
         return tuple(m.groups())
 
-    # Unkown format... take the first two words
+    # Unknown format... take the first two words
     l = firstline.strip().split()
     if l:
         version = l[0]
@@ -315,7 +319,7 @@ def linux_distribution(distname='', version='', id='',
 
     """
     try:
-        etc = os.listdir('/etc')
+        etc = os.listdir(_UNIXCONFDIR)
     except os.error:
         # Probably not a Unix system
         return distname,version,id
@@ -331,7 +335,8 @@ def linux_distribution(distname='', version='', id='',
         return _dist_try_harder(distname,version,id)
 
     # Read the first line
-    with open('/etc/'+file, 'r') as f:
+    with open(os.path.join(_UNIXCONFDIR, file), 'r',
+              encoding='utf-8', errors='surrogateescape') as f:
         firstline = f.readline()
     _distname, _version, _id = _parse_release_file(firstline)
 
@@ -720,7 +725,7 @@ def mac_ver(release='',versioninfo=('','',''),machine=''):
         versioninfo, machine) with versioninfo being a tuple (version,
         dev_stage, non_release_version).
 
-        Entries which cannot be determined are set to the paramter values
+        Entries which cannot be determined are set to the parameter values
         which default to ''. All tuple entries are strings.
     """
 
@@ -1248,6 +1253,14 @@ _ironpython_sys_version_parser = re.compile(
     '(?: \(([\d\.]+)\))?'
     ' on (.NET [\d\.]+)', re.ASCII)
 
+# IronPython covering 2.6 and 2.7
+_ironpython26_sys_version_parser = re.compile(
+    r'([\d.]+)\s*'
+    '\(IronPython\s*'
+    '[\d.]+\s*'
+    '\(([\d.]+)\) on ([\w.]+ [\d.]+(?: \(\d+-bit\))?)\)'
+)
+
 _pypy_sys_version_parser = re.compile(
     r'([\w.+]+)\s*'
     '\(#?([^,]+),\s*([\w ]+),\s*([\w :]+)\)\s*'
@@ -1285,19 +1298,24 @@ def _sys_version(sys_version=None):
         return result
 
     # Parse it
-    if sys_version[:10] == 'IronPython':
+    if 'IronPython' in sys_version:
         # IronPython
         name = 'IronPython'
-        match = _ironpython_sys_version_parser.match(sys_version)
+        if sys_version.startswith('IronPython'):
+            match = _ironpython_sys_version_parser.match(sys_version)
+        else:
+            match = _ironpython26_sys_version_parser.match(sys_version)
+
         if match is None:
             raise ValueError(
                 'failed to parse IronPython sys.version: %s' %
                 repr(sys_version))
+
         version, alt_version, compiler = match.groups()
         buildno = ''
         builddate = ''
 
-    elif sys.platform[:4] == 'java':
+    elif sys.platform.startswith('java'):
         # Jython
         name = 'Jython'
         match = _sys_version_parser.match(sys_version)

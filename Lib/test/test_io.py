@@ -32,7 +32,6 @@ import time
 import unittest
 import warnings
 import weakref
-import _testcapi
 from collections import deque, UserList
 from itertools import cycle, count
 from test import support
@@ -421,14 +420,9 @@ class IOTest(unittest.TestCase):
         # a long time to build the >2GB file and takes >2GB of disk space
         # therefore the resource must be enabled to run this test.
         if sys.platform[:3] == 'win' or sys.platform == 'darwin':
-            if not support.is_resource_enabled("largefile"):
-                print("\nTesting large file ops skipped on %s." % sys.platform,
-                      file=sys.stderr)
-                print("It requires %d bytes and a long time." % self.LARGE,
-                      file=sys.stderr)
-                print("Use 'regrtest.py -u largefile test_io' to run it.",
-                      file=sys.stderr)
-                return
+            support.requires(
+                'largefile',
+                'test requires %s bytes and a long time to run' % self.LARGE)
         with self.open(support.TESTFN, "w+b", 0) as f:
             self.large_file_ops(f)
         with self.open(support.TESTFN, "w+b") as f:
@@ -698,6 +692,7 @@ class CommonBufferedTests:
 
         self.assertEqual(42, bufio.fileno())
 
+    @unittest.skip('test having existential crisis')
     def test_no_fileno(self):
         # XXX will we always have fileno() function? If so, kill
         # this test. Else, write it.
@@ -850,6 +845,16 @@ class BufferedReaderTest(unittest.TestCase, CommonBufferedTests):
         rawio = self.MockRawIO([b"abc"])
         bufio.__init__(rawio)
         self.assertEqual(b"abc", bufio.read())
+
+    def test_uninitialized(self):
+        bufio = self.tp.__new__(self.tp)
+        del bufio
+        bufio = self.tp.__new__(self.tp)
+        self.assertRaisesRegex((ValueError, AttributeError),
+                               'uninitialized|has no attribute',
+                               bufio.read, 0)
+        bufio.__init__(self.MockRawIO())
+        self.assertEqual(bufio.read(0), b'')
 
     def test_read(self):
         for arg in (None, 7):
@@ -1100,6 +1105,16 @@ class BufferedWriterTest(unittest.TestCase, CommonBufferedTests):
         self.assertEqual(3, bufio.write(b"ghi"))
         bufio.flush()
         self.assertEqual(b"".join(rawio._write_stack), b"abcghi")
+
+    def test_uninitialized(self):
+        bufio = self.tp.__new__(self.tp)
+        del bufio
+        bufio = self.tp.__new__(self.tp)
+        self.assertRaisesRegex((ValueError, AttributeError),
+                               'uninitialized|has no attribute',
+                               bufio.write, b'')
+        bufio.__init__(self.MockRawIO())
+        self.assertEqual(bufio.write(b''), 0)
 
     def test_detach_flush(self):
         raw = self.MockRawIO()
@@ -1384,6 +1399,20 @@ class BufferedRWPairTest(unittest.TestCase):
         pair = self.tp(self.MockRawIO(), self.MockRawIO())
         self.assertFalse(pair.closed)
 
+    def test_uninitialized(self):
+        pair = self.tp.__new__(self.tp)
+        del pair
+        pair = self.tp.__new__(self.tp)
+        self.assertRaisesRegex((ValueError, AttributeError),
+                               'uninitialized|has no attribute',
+                               pair.read, 0)
+        self.assertRaisesRegex((ValueError, AttributeError),
+                               'uninitialized|has no attribute',
+                               pair.write, b'')
+        pair.__init__(self.MockRawIO(), self.MockRawIO())
+        self.assertEqual(pair.read(0), b'')
+        self.assertEqual(pair.write(b''), 0)
+
     def test_detach(self):
         pair = self.tp(self.MockRawIO(), self.MockRawIO())
         self.assertRaises(self.UnsupportedOperation, pair.detach)
@@ -1495,6 +1524,12 @@ class BufferedRWPairTest(unittest.TestCase):
         pair = self.tp(SelectableIsAtty(True), SelectableIsAtty(True))
         self.assertTrue(pair.isatty())
 
+    def test_weakref_clearing(self):
+        brw = self.tp(self.MockRawIO(), self.MockRawIO())
+        ref = weakref.ref(brw)
+        brw = None
+        ref = None # Shouldn't segfault.
+
 class CBufferedRWPairTest(BufferedRWPairTest):
     tp = io.BufferedRWPair
 
@@ -1509,6 +1544,10 @@ class BufferedRandomTest(BufferedReaderTest, BufferedWriterTest):
     def test_constructor(self):
         BufferedReaderTest.test_constructor(self)
         BufferedWriterTest.test_constructor(self)
+
+    def test_uninitialized(self):
+        BufferedReaderTest.test_uninitialized(self)
+        BufferedWriterTest.test_uninitialized(self)
 
     def test_read_and_write(self):
         raw = self.MockRawIO((b"asdf", b"ghjk"))
@@ -1922,6 +1961,15 @@ class TextIOWrapperTest(unittest.TestCase):
         self.assertRaises(TypeError, t.__init__, b, newline=42)
         self.assertRaises(ValueError, t.__init__, b, newline='xyzzy')
 
+    def test_non_text_encoding_codecs_are_rejected(self):
+        # Ensure the constructor complains if passed a codec that isn't
+        # marked as a text encoding
+        # http://bugs.python.org/issue20404
+        r = self.BytesIO()
+        b = self.BufferedWriter(r)
+        with self.assertRaisesRegex(LookupError, "is not a text encoding"):
+            self.TextIOWrapper(b, encoding="hex_codec")
+
     def test_detach(self):
         r = self.BytesIO()
         b = self.BufferedWriter(r)
@@ -1981,8 +2029,10 @@ class TextIOWrapperTest(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old_environ)
 
-    # Issue 15989
+    @support.cpython_only
     def test_device_encoding(self):
+        # Issue 15989
+        import _testcapi
         b = self.BytesIO()
         b.fileno = lambda: _testcapi.INT_MAX + 1
         self.assertRaises(OverflowError, self.TextIOWrapper, b)
@@ -2572,15 +2622,22 @@ class TextIOWrapperTest(unittest.TestCase):
 
     def test_illegal_decoder(self):
         # Issue #17106
+        # Bypass the early encoding check added in issue 20404
+        def _make_illegal_wrapper():
+            quopri = codecs.lookup("quopri_codec")
+            quopri._is_text_encoding = True
+            try:
+                t = self.TextIOWrapper(self.BytesIO(b'aaaaaa'),
+                                       newline='\n', encoding="quopri_codec")
+            finally:
+                quopri._is_text_encoding = False
+            return t
         # Crash when decoder returns non-string
-        t = self.TextIOWrapper(self.BytesIO(b'aaaaaa'), newline='\n',
-                               encoding='quopri_codec')
+        t = _make_illegal_wrapper()
         self.assertRaises(TypeError, t.read, 1)
-        t = self.TextIOWrapper(self.BytesIO(b'aaaaaa'), newline='\n',
-                               encoding='quopri_codec')
+        t = _make_illegal_wrapper()
         self.assertRaises(TypeError, t.readline)
-        t = self.TextIOWrapper(self.BytesIO(b'aaaaaa'), newline='\n',
-                               encoding='quopri_codec')
+        t = _make_illegal_wrapper()
         self.assertRaises(TypeError, t.read)
 
 
@@ -3018,9 +3075,20 @@ class MiscIOTest(unittest.TestCase):
 
 class CMiscIOTest(MiscIOTest):
     io = io
+    shutdown_error = "RuntimeError: could not find io module state"
+
+    def test_readinto_buffer_overflow(self):
+        # Issue #18025
+        class BadReader(self.io.BufferedIOBase):
+            def read(self, n=-1):
+                return b'x' * 10**6
+        bufio = BadReader()
+        b = bytearray(2)
+        self.assertRaises(ValueError, bufio.readinto, b)
 
 class PyMiscIOTest(MiscIOTest):
     io = pyio
+    shutdown_error = "LookupError: unknown encoding: ascii"
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX signals required for this test.')
@@ -3061,7 +3129,7 @@ class SignalsTest(unittest.TestCase):
             # The buffered IO layer must check for pending signal
             # handlers, which in this case will invoke alarm_interrupt().
             self.assertRaises(ZeroDivisionError,
-                        wio.write, item * (support.PIPE_MAX_SIZE // len(item)))
+                        wio.write, item * (support.PIPE_MAX_SIZE // len(item) + 1))
             t.join()
             # We got one byte, get another one and check that it isn't a
             # repeat of the first one.
@@ -3160,7 +3228,7 @@ class SignalsTest(unittest.TestCase):
         select = support.import_module("select")
         # A quantity that exceeds the buffer size of an anonymous pipe's
         # write end.
-        N = 1024 * 1024
+        N = support.PIPE_MAX_SIZE
         r, w = os.pipe()
         fdopen_kwargs["closefd"] = False
         # We need a separate thread to read from the pipe and allow the

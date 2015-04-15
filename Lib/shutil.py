@@ -53,7 +53,7 @@ class ReadError(EnvironmentError):
     """Raised when an archive cannot be read"""
 
 class RegistryError(Exception):
-    """Raised when a registery operation with the archiving
+    """Raised when a registry operation with the archiving
     and unpacking registeries fails"""
 
 
@@ -195,7 +195,7 @@ def copystat(src, dst, *, follow_symlinks=True):
         #   * follow_symlinks=False,
         #   * lchown() is unavailable, and
         #   * either
-        #       * fchownat() is unvailable or
+        #       * fchownat() is unavailable or
         #       * fchownat() doesn't implement AT_SYMLINK_NOFOLLOW.
         #         (it returned ENOSUP.)
         # therefore we're out of options--we simply cannot chown the
@@ -484,7 +484,8 @@ rmtree.avoids_symlink_attacks = _use_fd_functions
 def _basename(path):
     # A basename() variant which first strips the trailing slash, if present.
     # Thus we always get the last component of the path, even for directories.
-    return os.path.basename(path.rstrip(os.path.sep))
+    sep = os.path.sep + (os.path.altsep or '')
+    return os.path.basename(path.rstrip(sep))
 
 def move(src, dst):
     """Recursively move a file or directory to another location. This is
@@ -680,17 +681,15 @@ def _make_zipfile(base_name, base_dir, verbose=0, dry_run=0, logger=None):
                         zip_filename, base_dir)
 
         if not dry_run:
-            zip = zipfile.ZipFile(zip_filename, "w",
-                                  compression=zipfile.ZIP_DEFLATED)
-
-            for dirpath, dirnames, filenames in os.walk(base_dir):
-                for name in filenames:
-                    path = os.path.normpath(os.path.join(dirpath, name))
-                    if os.path.isfile(path):
-                        zip.write(path, path)
-                        if logger is not None:
-                            logger.info("adding '%s'", path)
-            zip.close()
+            with zipfile.ZipFile(zip_filename, "w",
+                                 compression=zipfile.ZIP_DEFLATED) as zf:
+                for dirpath, dirnames, filenames in os.walk(base_dir):
+                    for name in filenames:
+                        path = os.path.normpath(os.path.join(dirpath, name))
+                        if os.path.isfile(path):
+                            zf.write(path, path)
+                            if logger is not None:
+                                logger.info("adding '%s'", path)
 
     return zip_filename
 
@@ -984,7 +983,7 @@ elif os.name == 'nt':
     def disk_usage(path):
         """Return disk usage statistics about the given path.
 
-        Returned valus is a named tuple with attributes 'total', 'used' and
+        Returned values is a named tuple with attributes 'total', 'used' and
         'free', which are the amount of total, used and free space, in bytes.
         """
         total, free = nt._getdiskusage(path)
@@ -1091,7 +1090,11 @@ def which(cmd, mode=os.F_OK | os.X_OK, path=None):
             return cmd
         return None
 
-    path = (path or os.environ.get("PATH", os.defpath)).split(os.pathsep)
+    if path is None:
+        path = os.environ.get("PATH", os.defpath)
+    if not path:
+        return None
+    path = path.split(os.pathsep)
 
     if sys.platform == "win32":
         # The current directory takes precedence on Windows.

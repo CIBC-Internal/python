@@ -573,6 +573,104 @@ class TestExitStack(unittest.TestCase):
         self.assertIsInstance(inner_exc, ValueError)
         self.assertIsInstance(inner_exc.__context__, ZeroDivisionError)
 
+    def test_exit_exception_non_suppressing(self):
+        # http://bugs.python.org/issue19092
+        def raise_exc(exc):
+            raise exc
+
+        def suppress_exc(*exc_details):
+            return True
+
+        try:
+            with ExitStack() as stack:
+                stack.callback(lambda: None)
+                stack.callback(raise_exc, IndexError)
+        except Exception as exc:
+            self.assertIsInstance(exc, IndexError)
+        else:
+            self.fail("Expected IndexError, but no exception was raised")
+
+        try:
+            with ExitStack() as stack:
+                stack.callback(raise_exc, KeyError)
+                stack.push(suppress_exc)
+                stack.callback(raise_exc, IndexError)
+        except Exception as exc:
+            self.assertIsInstance(exc, KeyError)
+        else:
+            self.fail("Expected KeyError, but no exception was raised")
+
+    def test_exit_exception_with_correct_context(self):
+        # http://bugs.python.org/issue20317
+        @contextmanager
+        def gets_the_context_right(exc):
+            try:
+                yield
+            finally:
+                raise exc
+
+        exc1 = Exception(1)
+        exc2 = Exception(2)
+        exc3 = Exception(3)
+        exc4 = Exception(4)
+
+        # The contextmanager already fixes the context, so prior to the
+        # fix, ExitStack would try to fix it *again* and get into an
+        # infinite self-referential loop
+        try:
+            with ExitStack() as stack:
+                stack.enter_context(gets_the_context_right(exc4))
+                stack.enter_context(gets_the_context_right(exc3))
+                stack.enter_context(gets_the_context_right(exc2))
+                raise exc1
+        except Exception as exc:
+            self.assertIs(exc, exc4)
+            self.assertIs(exc.__context__, exc3)
+            self.assertIs(exc.__context__.__context__, exc2)
+            self.assertIs(exc.__context__.__context__.__context__, exc1)
+            self.assertIsNone(
+                       exc.__context__.__context__.__context__.__context__)
+
+    def test_exit_exception_with_existing_context(self):
+        # Addresses a lack of test coverage discovered after checking in a
+        # fix for issue 20317 that still contained debugging code.
+        def raise_nested(inner_exc, outer_exc):
+            try:
+                raise inner_exc
+            finally:
+                raise outer_exc
+        exc1 = Exception(1)
+        exc2 = Exception(2)
+        exc3 = Exception(3)
+        exc4 = Exception(4)
+        exc5 = Exception(5)
+        try:
+            with ExitStack() as stack:
+                stack.callback(raise_nested, exc4, exc5)
+                stack.callback(raise_nested, exc2, exc3)
+                raise exc1
+        except Exception as exc:
+            self.assertIs(exc, exc5)
+            self.assertIs(exc.__context__, exc4)
+            self.assertIs(exc.__context__.__context__, exc3)
+            self.assertIs(exc.__context__.__context__.__context__, exc2)
+            self.assertIs(
+                 exc.__context__.__context__.__context__.__context__, exc1)
+            self.assertIsNone(
+                exc.__context__.__context__.__context__.__context__.__context__)
+
+
+
+    def test_body_exception_suppress(self):
+        def suppress_exc(*exc_details):
+            return True
+        try:
+            with ExitStack() as stack:
+                stack.push(suppress_exc)
+                1/0
+        except IndexError as exc:
+            self.fail("Expected no exception, got IndexError")
+
     def test_exit_exception_chaining_suppress(self):
         with ExitStack() as stack:
             stack.push(lambda *exc: True)

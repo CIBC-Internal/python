@@ -1342,7 +1342,8 @@ PyCursesWindow_InsCh(PyCursesWindowObject *self, PyObject *args)
 static PyObject *
 PyCursesWindow_InCh(PyCursesWindowObject *self, PyObject *args)
 {
-    int x, y, rtn;
+    int x, y;
+    unsigned long rtn;
 
     switch (PyTuple_Size(args)) {
     case 0:
@@ -1357,7 +1358,7 @@ PyCursesWindow_InCh(PyCursesWindowObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "inch requires 0 or 2 arguments");
         return NULL;
     }
-    return PyLong_FromLong((long) rtn);
+    return PyLong_FromUnsignedLong(rtn);
 }
 
 static PyObject *
@@ -2261,9 +2262,9 @@ PyCurses_GetWin(PyCursesWindowObject *self, PyObject *stream)
     PyObject *data;
     size_t datalen;
     WINDOW *win;
+    _Py_IDENTIFIER(read);
 
     PyCursesInitialised;
-    _Py_IDENTIFIER(read);
 
     strcpy(fn, "/tmp/py.curses.getwin.XXXXXX");
     fd = mkstemp(fn);
@@ -2930,9 +2931,13 @@ PyCurses_Start_Color(PyObject *self)
     if (code != ERR) {
         initialisedcolors = TRUE;
         c = PyLong_FromLong((long) COLORS);
+        if (c == NULL)
+            return NULL;
         PyDict_SetItemString(ModDict, "COLORS", c);
         Py_DECREF(c);
         cp = PyLong_FromLong((long) COLOR_PAIRS);
+        if (cp == NULL)
+            return NULL;
         PyDict_SetItemString(ModDict, "COLOR_PAIRS", cp);
         Py_DECREF(cp);
         Py_INCREF(Py_None);

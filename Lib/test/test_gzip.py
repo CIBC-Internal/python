@@ -1,4 +1,3 @@
-#! /usr/bin/env python3
 """Test script for the gzip module.
 """
 
@@ -389,20 +388,20 @@ class TestGzip(BaseTest):
             datac = gzip.compress(data)
             self.assertEqual(gzip.decompress(datac), data)
 
-    def test_read_truncated(self):
-        data = data1*50
-        # Drop the CRC (4 bytes) and file size (4 bytes).
-        truncated = gzip.compress(data)[:-8]
-        with gzip.GzipFile(fileobj=io.BytesIO(truncated)) as f:
-            self.assertRaises(EOFError, f.read)
-        with gzip.GzipFile(fileobj=io.BytesIO(truncated)) as f:
-            self.assertEqual(f.read(len(data)), data)
-            self.assertRaises(EOFError, f.read, 1)
-        # Incomplete 10-byte header.
-        for i in range(2, 10):
-            with gzip.GzipFile(fileobj=io.BytesIO(truncated[:i])) as f:
-                self.assertRaises(EOFError, f.read, 1)
+    def test_read_with_extra(self):
+        # Gzip data with an extra field
+        gzdata = (b'\x1f\x8b\x08\x04\xb2\x17cQ\x02\xff'
+                  b'\x05\x00Extra'
+                  b'\x0bI-.\x01\x002\xd1Mx\x04\x00\x00\x00')
+        with gzip.GzipFile(fileobj=io.BytesIO(gzdata)) as f:
+            self.assertEqual(f.read(), b'Test')
 
+    def test_prepend_error(self):
+        # See issue #20875
+        with gzip.open(self.filename, "wb") as f:
+            f.write(data1)
+        with gzip.open(self.filename, "rb") as f:
+            f.fileobj.prepend()
 
 class TestOpen(BaseTest):
     def test_binary_modes(self):

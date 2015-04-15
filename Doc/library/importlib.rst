@@ -1,8 +1,8 @@
-:mod:`importlib` -- An implementation of :keyword:`import`
-==========================================================
+:mod:`importlib` -- The implementation of :keyword:`import`
+===========================================================
 
 .. module:: importlib
-   :synopsis: An implementation of the import machinery.
+   :synopsis: The implementation of the import machinery.
 
 .. moduleauthor:: Brett Cannon <brett@python.org>
 .. sectionauthor:: Brett Cannon <brett@python.org>
@@ -13,17 +13,16 @@
 Introduction
 ------------
 
-The purpose of the :mod:`importlib` package is two-fold. One is to provide an
+The purpose of the :mod:`importlib` package is two-fold. One is to provide the
 implementation of the :keyword:`import` statement (and thus, by extension, the
 :func:`__import__` function) in Python source code. This provides an
 implementation of :keyword:`import` which is portable to any Python
-interpreter. This also provides a reference implementation which is easier to
+interpreter. This also provides an implementation which is easier to
 comprehend than one implemented in a programming language other than Python.
 
 Two, the components to implement :keyword:`import` are exposed in this
 package, making it easier for users to create their own custom objects (known
 generically as an :term:`importer`) to participate in the import process.
-Details on custom importers can be found in :pep:`302`.
 
 .. seealso::
 
@@ -52,6 +51,9 @@ Details on custom importers can be found in :pep:`302`.
 
     :pep:`366`
         Main module explicit relative imports
+
+    :pep:`451`
+        A ModuleSpec Type for the Import System
 
     :pep:`3120`
         Using UTF-8 as the Default Source Encoding
@@ -82,9 +84,12 @@ Functions
     derived from :func:`importlib.__import__`, including requiring the package
     from which an import is occurring to have been previously imported
     (i.e., *package* must already be imported). The most important difference
-    is that :func:`import_module` returns the most nested package or module
-    that was imported (e.g. ``pkg.mod``), while :func:`__import__` returns the
+    is that :func:`import_module` returns the specified package or module
+    (e.g. ``pkg.mod``), while :func:`__import__` returns the
     top-level package or module (e.g. ``pkg``).
+
+    .. versionchanged:: 3.3
+       Parent packages are automatically imported.
 
 .. function:: find_loader(name, path=None)
 
@@ -103,9 +108,9 @@ Functions
 
    Invalidate the internal caches of finders stored at
    :data:`sys.meta_path`. If a finder implements ``invalidate_caches()`` then it
-   will be called to perform the invalidation.  This function may be needed if
-   some modules are installed while your program is running and you expect the
-   program to notice the changes.
+   will be called to perform the invalidation.  This function should be called
+   if any modules are created/installed while your program is running to
+   guarantee all finders will notice the new module's existence.
 
    .. versionadded:: 3.3
 
@@ -182,7 +187,7 @@ ABC hierarchy::
 
    .. versionadded:: 3.3
 
-   .. method:: find_loader(fullname):
+   .. method:: find_loader(fullname)
 
       An abstract method for finding a :term:`loader` for the specified
       module.  Returns a 2-tuple of ``(loader, portion)`` where ``portion``
@@ -194,7 +199,7 @@ ABC hierarchy::
       the empty list then no loader or location for a namespace package were
       found (i.e. failure to find anything for the module).
 
-   .. method:: find_module(fullname):
+   .. method:: find_module(fullname)
 
       A concrete implementation of :meth:`Finder.find_module` which is
       equivalent to ``self.find_loader(fullname)[0]``.
@@ -237,6 +242,10 @@ ABC hierarchy::
         - :attr:`__file__`
             The path to where the module data is stored (not set for built-in
             modules).
+
+        - :attr:`__cached__`
+            The path to where a compiled version of the module is/should be
+            stored (not set when the attribute would be inappropriate).
 
         - :attr:`__path__`
             A list of strings specifying the search path within a
@@ -407,7 +416,8 @@ ABC hierarchy::
         automatically.
 
         When writing to the path fails because the path is read-only
-        (:attr:`errno.EACCES`), do not propagate the exception.
+        (:attr:`errno.EACCES`/:exc:`PermissionError`), do not propagate the
+        exception.
 
     .. method:: get_code(fullname)
 
@@ -668,8 +678,8 @@ find and load modules.
      specified by *fullname* on :data:`sys.path` or, if defined, on
      *path*. For each path entry that is searched,
      :data:`sys.path_importer_cache` is checked. If a non-false object is
-     found then it is used as the :term:`finder` to look for the module
-     being searched for. If no entry is found in
+     found then it is used as the :term:`path entry finder` to look for the
+     module being searched for. If no entry is found in
      :data:`sys.path_importer_cache`, then :data:`sys.path_hooks` is
      searched for a finder for the path entry and, if found, is stored in
      :data:`sys.path_importer_cache` along with being queried about the
@@ -692,6 +702,8 @@ find and load modules.
 
    The *loader_details* argument is a variable number of 2-item tuples each
    containing a loader and a sequence of file suffixes the loader recognizes.
+   The loaders are expected to be callables which accept two arguments of
+   the module's name and the path to the file found.
 
    The finder will cache the directory contents as necessary, making stat calls
    for each module search to verify the cache is not outdated. Because cache
@@ -709,7 +721,7 @@ find and load modules.
 
       The path the finder will search in.
 
-   .. method:: find_module(fullname)
+   .. method:: find_loader(fullname)
 
       Attempt to find the loader to handle *fullname* within :attr:`path`.
 

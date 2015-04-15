@@ -290,7 +290,6 @@ class IBMTestCases(unittest.TestCase):
         global skip_expected
         if skip_expected:
             raise unittest.SkipTest
-            return
         with open(file) as f:
             for line in f:
                 line = line.replace('\r\n', '').replace('\n', '')
@@ -301,7 +300,6 @@ class IBMTestCases(unittest.TestCase):
                     #Exception raised where there shouldn't have been one.
                     self.fail('Exception "'+exception.__class__.__name__ + '" raised on line '+line)
 
-        return
 
     def eval_line(self, s):
         if s.find(' -> ') >= 0 and s[:2] != '--' and not s.startswith('  --'):
@@ -461,7 +459,6 @@ class IBMTestCases(unittest.TestCase):
 
         self.assertEqual(myexceptions, theirexceptions,
               'Incorrect flags set in ' + s + ' -- got ' + str(myexceptions))
-        return
 
     def getexceptions(self):
         return [e for e in Signals[self.decimal] if self.context.flags[e]]
@@ -1021,6 +1018,10 @@ class FormatTest(unittest.TestCase):
             ('/=10', '-45.6', '-/////45.6'),
             ('/=+10', '45.6', '+/////45.6'),
             ('/= 10', '45.6', ' /////45.6'),
+            ('\x00=10', '-inf', '-\x00Infinity'),
+            ('\x00^16', '-inf', '\x00\x00\x00-Infinity\x00\x00\x00\x00'),
+            ('\x00>10', '1.2345', '\x00\x00\x00\x001.2345'),
+            ('\x00<10', '1.2345', '1.2345\x00\x00\x00\x00'),
 
             # thousands separator
             (',', '1234567', '1,234,567'),
@@ -1069,7 +1070,7 @@ class FormatTest(unittest.TestCase):
         try:
             from locale import CHAR_MAX
         except ImportError:
-            return
+            self.skipTest('locale.CHAR_MAX not available')
 
         def make_grouping(lst):
             return ''.join([chr(x) for x in lst]) if self.decimal == C else lst
@@ -1160,8 +1161,12 @@ class FormatTest(unittest.TestCase):
 
         decimal_point = locale.localeconv()['decimal_point']
         thousands_sep = locale.localeconv()['thousands_sep']
-        if decimal_point != '\u066b' or thousands_sep != '\u066c':
-            return
+        if decimal_point != '\u066b':
+            self.skipTest('inappropriate decimal point separator'
+                          '({!a} not {!a})'.format(decimal_point, '\u066b'))
+        if thousands_sep != '\u066c':
+            self.skipTest('inappropriate thousands separator'
+                          '({!a} not {!a})'.format(thousands_sep, '\u066c'))
 
         self.assertEqual(format(Decimal('100000000.123'), 'n'),
                          '100\u066c000\u066c000\u066b123')
@@ -1511,7 +1516,6 @@ def thfunc1(cls):
     cls.assertTrue(c1.flags[Inexact])
     for sig in Overflow, Underflow, DivisionByZero, InvalidOperation:
         cls.assertFalse(c1.flags[sig])
-    return
 
 def thfunc2(cls):
     Decimal = cls.decimal.Decimal
@@ -1556,7 +1560,6 @@ def thfunc2(cls):
     cls.assertTrue(thiscontext.flags[Inexact])
     for sig in Overflow, Underflow, DivisionByZero, InvalidOperation:
         cls.assertFalse(thiscontext.flags[sig])
-    return
 
 class ThreadingTest(unittest.TestCase):
     '''Unit tests for thread local contexts in Decimal.'''
@@ -1598,7 +1601,6 @@ class ThreadingTest(unittest.TestCase):
         DefaultContext.prec = save_prec
         DefaultContext.Emax = save_emax
         DefaultContext.Emin = save_emin
-        return
 
 @unittest.skipUnless(threading, 'threading required')
 class CThreadingTest(ThreadingTest):
@@ -1834,7 +1836,7 @@ class UsabilityTest(unittest.TestCase):
         self.assertIs(max(d1,d2), d2)
         self.assertIs(max(d2,d1), d2)
 
-        #between Decimal and long
+        #between Decimal and int
         self.assertIs(min(d1,l2), d1)
         self.assertIs(min(l2,d1), d1)
         self.assertIs(max(l1,d2), d2)
@@ -4146,6 +4148,7 @@ class CheckAttributes(unittest.TestCase):
         self.assertTrue(P.HAVE_THREADS is True or P.HAVE_THREADS is False)
 
         self.assertEqual(C.__version__, P.__version__)
+        self.assertEqual(C.__libmpdec_version__, P.__libmpdec_version__)
 
         x = dir(C)
         y = [s for s in dir(P) if '__' in s or not s.startswith('_')]
@@ -4520,7 +4523,6 @@ class PyWhitebox(unittest.TestCase):
                 self.assertEqual(d1._sign, b1._sign)
                 self.assertEqual(d1._int, b1._int)
                 self.assertEqual(d1._exp, b1._exp)
-            return
 
         Decimal(d1)
         self.assertEqual(d1._sign, b1._sign)
@@ -5266,7 +5268,7 @@ class CWhitebox(unittest.TestCase):
         try:
             from locale import CHAR_MAX
         except ImportError:
-            return
+            self.skipTest('locale.CHAR_MAX not available')
 
         def make_grouping(lst):
             return ''.join([chr(x) for x in lst])
@@ -5369,6 +5371,19 @@ class CWhitebox(unittest.TestCase):
             x = (1, (0, 1), "N")
             self.assertEqual(str(Decimal(x)), '-sNaN1')
 
+    def test_sizeof(self):
+        Decimal = C.Decimal
+        HAVE_CONFIG_64 = (C.MAX_PREC > 425000000)
+
+        self.assertGreater(Decimal(0).__sizeof__(), 0)
+        if HAVE_CONFIG_64:
+            x = Decimal(10**(19*24)).__sizeof__()
+            y = Decimal(10**(19*25)).__sizeof__()
+            self.assertEqual(y, x+8)
+        else:
+            x = Decimal(10**(9*24)).__sizeof__()
+            y = Decimal(10**(9*25)).__sizeof__()
+            self.assertEqual(y, x+4)
 
 all_tests = [
   CExplicitConstructionTest, PyExplicitConstructionTest,

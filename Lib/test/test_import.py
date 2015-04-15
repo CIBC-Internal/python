@@ -1,5 +1,6 @@
 # We import importlib *ASAP* in order to test #15386
 import importlib
+from importlib._bootstrap import _get_sourcefile
 import builtins
 import imp
 from test.test_importlib.import_ import util as importlib_util
@@ -11,6 +12,7 @@ import random
 import stat
 import sys
 import unittest
+import unittest.mock as mock
 import textwrap
 import errno
 import shutil
@@ -43,6 +45,7 @@ def _ready_to_import(name=None, source=""):
     # sets up a temporary directory and removes it
     # creates the module file
     # temporarily clears the module from sys.modules (if any)
+    # reverts or removes the module when cleaning up
     name = name or "spam"
     with script_helper.temp_dir() as tempdir:
         path = script_helper.make_script(tempdir, name, source)
@@ -54,6 +57,8 @@ def _ready_to_import(name=None, source=""):
         finally:
             if old_module is not None:
                 sys.modules[name] = old_module
+            elif name in sys.modules:
+                del sys.modules[name]
 
 
 class ImportTests(unittest.TestCase):
@@ -259,17 +264,6 @@ class ImportTests(unittest.TestCase):
             if TESTFN in sys.modules:
                 del sys.modules[TESTFN]
 
-    def test_import_name_binding(self):
-        # import x.y.z binds x in the current namespace.
-        import test as x
-        import test.support
-        self.assertIs(x, test, x.__name__)
-        self.assertTrue(hasattr(test.support, "__file__"))
-
-        # import x.y.z as w binds z as w.
-        import test.support as y
-        self.assertIs(y, test.support, y.__name__)
-
     def test_import_by_filename(self):
         path = os.path.abspath(TESTFN)
         encoding = sys.getfilesystemencoding()
@@ -320,6 +314,13 @@ class ImportTests(unittest.TestCase):
             __import__('http', fromlist=['blah'])
         except ImportError:
             self.fail("fromlist must allow bogus names")
+
+    @cpython_only
+    def test_delete_builtins_import(self):
+        args = ["-c", "del __builtins__.__import__; import os"]
+        popen = script_helper.spawn_python(*args)
+        stdout, stderr = popen.communicate()
+        self.assertIn(b"ImportError", stdout)
 
 
 @skip_if_dont_write_bytecode
@@ -854,6 +855,40 @@ class ImportlibBootstrapTests(unittest.TestCase):
         self.assertIs(imp.new_module, mod.new_module)
 
 
+@cpython_only
+class GetSourcefileTests(unittest.TestCase):
+
+    """Test importlib._bootstrap._get_sourcefile() as used by the C API.
+
+    Because of the peculiarities of the need of this function, the tests are
+    knowingly whitebox tests.
+
+    """
+
+    def test_get_sourcefile(self):
+        # Given a valid bytecode path, return the path to the corresponding
+        # source file if it exists.
+        with mock.patch('importlib._bootstrap._path_isfile') as _path_isfile:
+            _path_isfile.return_value = True;
+            path = TESTFN + '.pyc'
+            expect = TESTFN + '.py'
+            self.assertEqual(_get_sourcefile(path), expect)
+
+    def test_get_sourcefile_no_source(self):
+        # Given a valid bytecode path without a corresponding source path,
+        # return the original bytecode path.
+        with mock.patch('importlib._bootstrap._path_isfile') as _path_isfile:
+            _path_isfile.return_value = False;
+            path = TESTFN + '.pyc'
+            self.assertEqual(_get_sourcefile(path), path)
+
+    def test_get_sourcefile_bad_ext(self):
+        # Given a path with an invalid bytecode extension, return the
+        # bytecode path passed as the argument.
+        path = TESTFN + '.bad_ext'
+        self.assertEqual(_get_sourcefile(path), path)
+
+
 class ImportTracebackTests(unittest.TestCase):
 
     def setUp(self):
@@ -1018,7 +1053,7 @@ def test_main(verbose=None):
     run_unittest(ImportTests, PycacheTests, FilePermissionTests,
                  PycRewritingTests, PathsTests, RelativeImportTests,
                  OverridingImportBuiltinTests,
-                 ImportlibBootstrapTests,
+                 ImportlibBootstrapTests, GetSourcefileTests,
                  TestSymbolicallyLinkedPackage,
                  ImportTracebackTests)
 

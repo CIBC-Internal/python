@@ -234,6 +234,18 @@ bad = ['/some/path']
 
 RobotTest(15, doc, good, bad)
 
+# 16. Empty query (issue #17403). Normalizing the url first.
+doc = """
+User-agent: *
+Allow: /some/path?
+Disallow: /another/path?
+"""
+
+good = ['/some/path?']
+bad = ['/another/path?']
+
+RobotTest(16, doc, good, bad)
+
 
 class NetworkTestCase(unittest.TestCase):
 
@@ -263,6 +275,7 @@ class NetworkTestCase(unittest.TestCase):
                 self.skipTest('%s is unavailable' % url)
             self.assertEqual(parser.can_fetch("*", robots_url), False)
 
+    @unittest.skip('does not handle the gzip encoding delivered by pydotorg')
     def testPythonOrg(self):
         support.requires('network')
         with support.transient_internet('www.python.org'):

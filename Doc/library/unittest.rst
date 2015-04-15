@@ -530,7 +530,7 @@ the test unless the passed object has a certain attribute::
    def skipUnlessHasattr(obj, attr):
        if hasattr(obj, attr):
            return lambda func: func
-       return unittest.skip("{0!r} doesn't have {1!r}".format(obj, attr))
+       return unittest.skip("{!r} doesn't have {!r}".format(obj, attr))
 
 The following decorators implement test skipping and expected failures:
 
@@ -551,6 +551,13 @@ The following decorators implement test skipping and expected failures:
 
    Mark the test as an expected failure.  If the test fails when run, the test
    is not counted as a failure.
+
+.. exception:: SkipTest(reason)
+
+   This exception is raised to skip a test.
+
+   Usually you can use :meth:`TestCase.skipTest` or one of the skipping
+   decorators instead of raising this directly.
 
 Skipped tests will not have :meth:`setUp` or :meth:`tearDown` run around them.
 Skipped classes will not have :meth:`setUpClass` or :meth:`tearDownClass` run.
@@ -808,14 +815,14 @@ Test cases
    | :meth:`assertRaises(exc, fun, *args, **kwds)            | ``fun(*args, **kwds)`` raises *exc*  |            |
    | <TestCase.assertRaises>`                                |                                      |            |
    +---------------------------------------------------------+--------------------------------------+------------+
-   | :meth:`assertRaisesRegex(exc, re, fun, *args, **kwds)   | ``fun(*args, **kwds)`` raises *exc*  | 3.1        |
-   | <TestCase.assertRaisesRegex>`                           | and the message matches *re*         |            |
+   | :meth:`assertRaisesRegex(exc, r, fun, *args, **kwds)    | ``fun(*args, **kwds)`` raises *exc*  | 3.1        |
+   | <TestCase.assertRaisesRegex>`                           | and the message matches regex *r*    |            |
    +---------------------------------------------------------+--------------------------------------+------------+
    | :meth:`assertWarns(warn, fun, *args, **kwds)            | ``fun(*args, **kwds)`` raises *warn* | 3.2        |
    | <TestCase.assertWarns>`                                 |                                      |            |
    +---------------------------------------------------------+--------------------------------------+------------+
-   | :meth:`assertWarnsRegex(warn, re, fun, *args, **kwds)   | ``fun(*args, **kwds)`` raises *warn* | 3.2        |
-   | <TestCase.assertWarnsRegex>`                            | and the message matches *re*         |            |
+   | :meth:`assertWarnsRegex(warn, r, fun, *args, **kwds)    | ``fun(*args, **kwds)`` raises *warn* | 3.2        |
+   | <TestCase.assertWarnsRegex>`                            | and the message matches regex *r*    |            |
    +---------------------------------------------------------+--------------------------------------+------------+
 
    .. method:: assertRaises(exception, callable, *args, **kwds)
@@ -866,7 +873,7 @@ Test cases
       a regular expression object or a string containing a regular expression
       suitable for use by :func:`re.search`.  Examples::
 
-         self.assertRaisesRegex(ValueError, 'invalid literal for.*XYZ$',
+         self.assertRaisesRegex(ValueError, "invalid literal for.*XYZ'$",
                                 int, 'XYZ')
 
       or::
@@ -890,25 +897,25 @@ Test cases
       Test that a warning is triggered when *callable* is called with any
       positional or keyword arguments that are also passed to
       :meth:`assertWarns`.  The test passes if *warning* is triggered and
-      fails if it isn't.  Also, any unexpected exception is an error.
+      fails if it isn't.  Any exception is an error.
       To catch any of a group of warnings, a tuple containing the warning
       classes may be passed as *warnings*.
 
       If only the *warning* and possibly the *msg* arguments are given,
-      returns a context manager so that the code under test can be written
+      return a context manager so that the code under test can be written
       inline rather than as a function::
 
          with self.assertWarns(SomeWarning):
              do_something()
 
-      When used as a context manager, :meth:`assertRaises` accepts the
+      When used as a context manager, :meth:`assertWarns` accepts the
       additional keyword argument *msg*.
 
       The context manager will store the caught warning object in its
       :attr:`warning` attribute, and the source line which triggered the
       warnings in the :attr:`filename` and :attr:`lineno` attributes.
       This can be useful if the intention is to perform additional checks
-      on the exception raised::
+      on the warning caught::
 
          with self.assertWarns(SomeWarning) as cm:
              do_something()
@@ -971,10 +978,10 @@ Test cases
    | :meth:`assertLessEqual(a, b)          | ``a <= b``                     | 3.1          |
    | <TestCase.assertLessEqual>`           |                                |              |
    +---------------------------------------+--------------------------------+--------------+
-   | :meth:`assertRegex(s, re)             | ``regex.search(s)``            | 3.1          |
+   | :meth:`assertRegex(s, r)              | ``r.search(s)``                | 3.1          |
    | <TestCase.assertRegex>`               |                                |              |
    +---------------------------------------+--------------------------------+--------------+
-   | :meth:`assertNotRegex(s, re)          | ``not regex.search(s)``        | 3.2          |
+   | :meth:`assertNotRegex(s, r)           | ``not r.search(s)``            | 3.2          |
    | <TestCase.assertNotRegex>`            |                                |              |
    +---------------------------------------+--------------------------------+--------------+
    | :meth:`assertCountEqual(a, b)         | *a* and *b* have the same      | 3.2          |
@@ -993,7 +1000,7 @@ Test cases
       like the :func:`round` function) and not *significant digits*.
 
       If *delta* is supplied instead of *places* then the difference
-      between *first* and *second* must be less (or more) than *delta*.
+      between *first* and *second* must be less or equal to (or greater than) *delta*.
 
       Supplying both *delta* and *places* raises a ``TypeError``.
 
@@ -1482,11 +1489,11 @@ Loading and running tests
 
    .. method:: discover(start_dir, pattern='test*.py', top_level_dir=None)
 
-      Find and return all test modules from the specified start directory,
-      recursing into subdirectories to find them. Only test files that match
-      *pattern* will be loaded. (Using shell style pattern matching.) Only
-      module names that are importable (i.e. are valid Python identifiers) will
-      be loaded.
+      Find all the test modules by recursing into subdirectories from the
+      specified start directory, and return a TestSuite object containing them.
+      Only test files that match *pattern* will be loaded. (Using shell style
+      pattern matching.) Only module names that are importable (i.e. are valid
+      Python identifiers) will be loaded.
 
       All test modules must be importable from the top level of the project. If
       the start directory is not the top level directory then the top level
@@ -1570,8 +1577,7 @@ Loading and running tests
 
       A list containing 2-tuples of :class:`TestCase` instances and strings
       holding formatted tracebacks. Each tuple represents a test where a failure
-      was explicitly signalled using the :meth:`TestCase.fail\*` or
-      :meth:`TestCase.assert\*` methods.
+      was explicitly signalled using the :meth:`TestCase.assert\*` methods.
 
    .. attribute:: skipped
 
@@ -1668,7 +1674,7 @@ Loading and running tests
 
    .. method:: addError(test, err)
 
-      Called when the test case *test* raises an unexpected exception *err* is a
+      Called when the test case *test* raises an unexpected exception. *err* is a
       tuple of the form returned by :func:`sys.exc_info`: ``(type, value,
       traceback)``.
 
@@ -1739,7 +1745,8 @@ Loading and running tests
    instead of repeatedly creating new instances.
 
 
-.. class:: TextTestRunner(stream=None, descriptions=True, verbosity=1, runnerclass=None, warnings=None)
+.. class:: TextTestRunner(stream=None, descriptions=True, verbosity=1, failfast=False, \
+                          buffer=False, resultclass=None, warnings=None)
 
    A basic test runner implementation that outputs results to a stream. If *stream*
    is ``None``, the default, :data:`sys.stderr` is used as the output stream. This class
@@ -1747,13 +1754,14 @@ Loading and running tests
    applications which run test suites should provide alternate implementations.
 
    By default this runner shows :exc:`DeprecationWarning`,
-   :exc:`PendingDeprecationWarning`, and :exc:`ImportWarning` even if they are
-   :ref:`ignored by default <warning-ignored>`. Deprecation warnings caused by
-   :ref:`deprecated unittest methods <deprecated-aliases>` are also
-   special-cased and, when the warning filters are ``'default'`` or ``'always'``,
-   they will appear only once per-module, in order to avoid too many warning
-   messages.  This behavior can be overridden using the :option:`-Wd` or
-   :option:`-Wa` options and leaving *warnings* to ``None``.
+   :exc:`PendingDeprecationWarning`, :exc:`ResourceWarning` and
+   :exc:`ImportWarning` even if they are :ref:`ignored by default
+   <warning-ignored>`. Deprecation warnings caused by :ref:`deprecated unittest
+   methods <deprecated-aliases>` are also special-cased and, when the warning
+   filters are ``'default'`` or ``'always'``, they will appear only once
+   per-module, in order to avoid too many warning messages.  This behavior can
+   be overridden using the :option:`-Wd` or :option:`-Wa` options and leaving
+   *warnings* to ``None``.
 
    .. versionchanged:: 3.2
       Added the ``warnings`` argument.
@@ -1793,6 +1801,10 @@ Loading and running tests
 
       if __name__ == '__main__':
           unittest.main(verbosity=2)
+
+   The *defaultTest* argument is the name of the test to run if no test names
+   are specified via *argv*.  If not specified or ``None`` and no test names are
+   provided via *argv*, all tests found in *module* are run.
 
    The *argv* argument can be a list of options passed to the program, with the
    first element being the program name.  If not specified or ``None``,
@@ -1958,7 +1970,7 @@ then you must call up to them yourself. The implementations in
 If an exception is raised during a ``setUpClass`` then the tests in the class
 are not run and the ``tearDownClass`` is not run. Skipped classes will not
 have ``setUpClass`` or ``tearDownClass`` run. If the exception is a
-``SkipTest`` exception then the class will be reported as having been skipped
+:exc:`SkipTest` exception then the class will be reported as having been skipped
 instead of as an error.
 
 
@@ -1975,7 +1987,7 @@ These should be implemented as functions::
 
 If an exception is raised in a ``setUpModule`` then none of the tests in the
 module will be run and the ``tearDownModule`` will not be run. If the exception is a
-``SkipTest`` exception then the module will be reported as having been skipped
+:exc:`SkipTest` exception then the module will be reported as having been skipped
 instead of as an error.
 
 

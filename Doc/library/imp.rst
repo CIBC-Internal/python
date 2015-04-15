@@ -1,5 +1,5 @@
-:mod:`imp` --- Access the :keyword:`import` internals
-=====================================================
+:mod:`imp` --- Access the :ref:`import <importsystem>` internals
+================================================================
 
 .. module:: imp
    :synopsis: Access the implementation of the import statement.
@@ -9,6 +9,10 @@
 
 This module provides an interface to the mechanisms used to implement the
 :keyword:`import` statement.  It defines the following constants and functions:
+
+
+.. note::
+   New programs should use :mod:`importlib` rather than this module.
 
 
 .. function:: get_magic()
@@ -154,7 +158,7 @@ This module provides an interface to the mechanisms used to implement the
           cache = {}
 
    It is legal though generally not very useful to reload built-in or dynamically
-   loaded modules, except for :mod:`sys`, :mod:`__main__` and :mod:`__builtin__`.
+   loaded modules, except for :mod:`sys`, :mod:`__main__` and :mod:`builtins`.
    In many cases, however, extension modules are not designed to be initialized
    more than once, and may fail in arbitrary ways when reloaded.
 
@@ -167,6 +171,10 @@ This module provides an interface to the mechanisms used to implement the
    If a module instantiates instances of a class, reloading the module that defines
    the class does not affect the method definitions of the instances --- they
    continue to use the old class definition.  The same is true for derived classes.
+
+   .. versionchanged:: 3.3
+      Relies on both ``__name__`` and ``__loader__`` being defined on the module
+      being reloaded instead of just ``__name__``.
 
 
 The following functions are conveniences for handling :pep:`3147` byte-compiled
@@ -182,8 +190,8 @@ file paths.
    The ``cpython-32`` string comes from the current magic tag (see
    :func:`get_tag`; if :attr:`sys.implementation.cache_tag` is not defined then
    :exc:`NotImplementedError` will be raised).  The returned path will end in
-   ``.pyc`` when ``__debug__`` is True or ``.pyo`` for an optimized Python
-   (i.e. ``__debug__`` is False).  By passing in True or False for
+   ``.pyc`` when ``__debug__`` is ``True`` or ``.pyo`` for an optimized Python
+   (i.e. ``__debug__`` is ``False``).  By passing in ``True`` or ``False`` for
    *debug_override* you can override the system's value for ``__debug__`` for
    extension selection.
 

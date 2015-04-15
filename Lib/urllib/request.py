@@ -142,16 +142,12 @@ def urlopen(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
             raise ValueError('SSL support not available')
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         context.options |= ssl.OP_NO_SSLv2
-        if cafile or capath or cadefault:
-            context.verify_mode = ssl.CERT_REQUIRED
-            if cafile or capath:
-                context.load_verify_locations(cafile, capath)
-            else:
-                context.set_default_verify_paths()
-            check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        if cafile or capath:
+            context.load_verify_locations(cafile, capath)
         else:
-            check_hostname = False
-        https_handler = HTTPSHandler(context=context, check_hostname=check_hostname)
+            context.set_default_verify_paths()
+        https_handler = HTTPSHandler(context=context, check_hostname=True)
         opener = build_opener(https_handler)
     elif _opener is None:
         _opener = opener = build_opener()
@@ -281,7 +277,7 @@ class Request:
     def _parse(self):
         self.type, rest = splittype(self.full_url)
         if self.type is None:
-            raise ValueError("unknown url type: %s" % self.full_url)
+            raise ValueError("unknown url type: %r" % self.full_url)
         self.host, self.selector = splithost(rest)
         if self.host:
             self.host = unquote(self.host)
@@ -1255,6 +1251,12 @@ class AbstractHTTPHandler(BaseHandler):
             raise URLError(err)
         else:
             r = h.getresponse()
+            # If the server does not send us a 'Connection: close' header,
+            # HTTPConnection assumes the socket should be left open. Manually
+            # mark the socket to be closed when this response object goes away.
+            if h.sock:
+                h.sock.close()
+                h.sock = None
 
         r.url = req.get_full_url()
         # This line replaces the .msg attribute of the HTTPResponse
@@ -2233,7 +2235,10 @@ def thishost():
     """Return the IP addresses of the current host."""
     global _thishost
     if _thishost is None:
-        _thishost = tuple(socket.gethostbyname_ex(socket.gethostname())[2])
+        try:
+            _thishost = tuple(socket.gethostbyname_ex(socket.gethostname())[2])
+        except socket.gaierror:
+            _thishost = tuple(socket.gethostbyname_ex('localhost')[2])
     return _thishost
 
 _ftperrors = None
@@ -2277,8 +2282,8 @@ class ftpwrapper:
         self.ftp = ftplib.FTP()
         self.ftp.connect(self.host, self.port, self.timeout)
         self.ftp.login(self.user, self.passwd)
-        for dir in self.dirs:
-            self.ftp.cwd(dir)
+        _target = '/'.join(self.dirs)
+        self.ftp.cwd(_target)
 
     def retrfile(self, file, type):
         import ftplib
@@ -2298,7 +2303,7 @@ class ftpwrapper:
                 conn, retrlen = self.ftp.ntransfercmd(cmd)
             except ftplib.error_perm as reason:
                 if str(reason)[:3] != '550':
-                    raise URLError('ftp error: %d' % reason).with_traceback(
+                    raise URLError('ftp error: %r' % reason).with_traceback(
                         sys.exc_info()[2])
         if not conn:
             # Set transfer mode to ASCII!
@@ -2310,7 +2315,7 @@ class ftpwrapper:
                     try:
                         self.ftp.cwd(file)
                     except ftplib.error_perm as reason:
-                        raise URLError('ftp error: %d' % reason) from reason
+                        raise URLError('ftp error: %r' % reason) from reason
                 finally:
                     self.ftp.cwd(pwd)
                 cmd = 'LIST ' + file

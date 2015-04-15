@@ -45,6 +45,7 @@ in any early abort case).
 Unless otherwise stated, buffers are not NUL-terminated.
 
 .. note::
+
    For all ``#`` variants of formats (``s#``, ``y#``, etc.), the type of
    the length argument (int or :c:type:`Py_ssize_t`) is controlled by
    defining the macro :c:macro:`PY_SSIZE_T_CLEAN` before including
@@ -70,8 +71,7 @@ Unless otherwise stated, buffers are not NUL-terminated.
       as *converter*.
 
 ``s*`` (:class:`str`, :class:`bytes`, :class:`bytearray` or buffer compatible object) [Py_buffer]
-   This format accepts Unicode objects as well as objects supporting the
-   buffer protocol.
+   This format accepts Unicode objects as well as :term:`bytes-like object`\ s.
    It fills a :c:type:`Py_buffer` structure provided by the caller.
    In this case the resulting C string may contain embedded NUL bytes.
    Unicode objects are converted to C strings using ``'utf-8'`` encoding.
@@ -101,14 +101,14 @@ Unless otherwise stated, buffers are not NUL-terminated.
    contain embedded NUL bytes; if it does, a :exc:`TypeError`
    exception is raised.
 
-``y*`` (:class:`bytes`, :class:`bytearray` or buffer compatible object) [Py_buffer]
-   This variant on ``s*`` doesn't accept Unicode objects, only objects
-   supporting the buffer protocol.  **This is the recommended way to accept
+``y*`` (:class:`bytes`, :class:`bytearray` or :term:`bytes-like object`) [Py_buffer]
+   This variant on ``s*`` doesn't accept Unicode objects, only
+   :term:`bytes-like object`\ s.  **This is the recommended way to accept
    binary data.**
 
 ``y#`` (:class:`bytes`) [const char \*, int]
-   This variant on ``s#`` doesn't accept Unicode objects, only bytes-like
-   objects.
+   This variant on ``s#`` doesn't accept Unicode objects, only :term:`bytes-like
+   object`\ s.
 
 ``S`` (:class:`bytes`) [PyBytesObject \*]
    Requires that the Python object is a :class:`bytes` object, without
@@ -514,7 +514,7 @@ Building values
       ``None`` is returned.
 
    ``y`` (:class:`bytes`) [char \*]
-      This converts a C string to a Python :func:`bytes` object.  If the C
+      This converts a C string to a Python :class:`bytes` object.  If the C
       string pointer is *NULL*, ``None`` is returned.
 
    ``y#`` (:class:`bytes`) [char \*, int]

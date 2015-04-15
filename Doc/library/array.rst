@@ -73,8 +73,8 @@ The module defines the following type:
 .. class:: array(typecode[, initializer])
 
    A new array whose items are restricted by *typecode*, and initialized
-   from the optional *initializer* value, which must be a list, object
-   supporting the buffer interface, or iterable over elements of the
+   from the optional *initializer* value, which must be a list, a
+   :term:`bytes-like object`, or iterable over elements of the
    appropriate type.
 
    If given a list or string, the initializer is passed to the new array's
@@ -91,7 +91,7 @@ Array objects support the ordinary sequence operations of indexing, slicing,
 concatenation, and multiplication.  When using slice assignment, the assigned
 value must be an array object with the same type code; in all other cases,
 :exc:`TypeError` is raised. Array objects also implement the buffer interface,
-and may be used wherever buffer objects are supported.
+and may be used wherever :term:`bytes-like object`\ s are supported.
 
 The following data items and methods are also supported:
 
@@ -271,9 +271,7 @@ Examples::
       Packing and unpacking of External Data Representation (XDR) data as used in some
       remote procedure call systems.
 
-   `The Numerical Python Manual <http://numpy.sourceforge.net/numdoc/HTML/numdoc.htm>`_
+   `The Numerical Python Documentation <http://docs.scipy.org/doc/>`_
       The Numeric Python extension (NumPy) defines another array type; see
-      http://numpy.sourceforge.net/ for further information about Numerical Python.
-      (A PDF version of the NumPy manual is available at
-      http://numpy.sourceforge.net/numdoc/numdoc.pdf).
+      http://www.numpy.org/ for further information about Numerical Python.
 

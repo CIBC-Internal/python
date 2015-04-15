@@ -17,6 +17,14 @@ to be simpler than the full DOM and also significantly smaller.  Users who are
 not already proficient with the DOM should consider using the
 :mod:`xml.etree.ElementTree` module for their XML processing instead
 
+
+.. warning::
+
+   The :mod:`xml.dom.minidom` module is not secure against
+   maliciously constructed data.  If you need to parse untrusted or
+   unauthenticated data see :ref:`xml-vulnerabilities`.
+
+
 DOM applications typically start by parsing some XML into a DOM.  With
 :mod:`xml.dom.minidom`, this is done through the parse functions::
 
@@ -47,7 +55,7 @@ instead:
 .. function:: parseString(string, parser=None)
 
    Return a :class:`Document` that represents the *string*. This method creates a
-   :class:`StringIO` object for the string and passes that on to :func:`parse`.
+   :class:`io.StringIO` object for the string and passes that on to :func:`parse`.
 
 Both functions return a :class:`Document` object representing the content of the
 document.
@@ -244,4 +252,4 @@ utility to most DOM users.
    "UTF8" is not valid in an XML document's declaration, even though
    Python accepts it as an encoding name.
    See http://www.w3.org/TR/2006/REC-xml11-20060816/#NT-EncodingDecl
-   and http://www.iana.org/assignments/character-sets .
+   and http://www.iana.org/assignments/character-sets\ .

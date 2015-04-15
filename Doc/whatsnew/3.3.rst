@@ -194,7 +194,7 @@ API changes
   are still permitted, but will always compare as unequal, regardless
   of view contents.
 
-* For further changes see `Build and C API Changes`_ and `Porting C code`_ .
+* For further changes see `Build and C API Changes`_ and `Porting C code`_.
 
 (Contributed by Stefan Krah in :issue:`10181`)
 
@@ -1125,7 +1125,7 @@ Features
 
 * If Python is compiled without threads, the C version automatically
   disables the expensive thread local context machinery. In this case,
-  the variable :data:`~decimal.HAVE_THREADS` is set to False.
+  the variable :data:`~decimal.HAVE_THREADS` is set to ``False``.
 
 API changes
 ~~~~~~~~~~~
@@ -1208,6 +1208,8 @@ the ``Message`` object it is serializing.  The default policy is
 
 The minimum set of controls implemented by all ``policy`` objects are:
 
+    .. tabularcolumns:: |l|L|
+
     ===============     =======================================================
     max_line_length     The maximum length, excluding the linesep character(s),
                         individual lines may have when a ``Message`` is
@@ -1258,6 +1260,8 @@ removal of the code) may occur if deemed necessary by the core developers.
 
 The new policies are instances of :class:`~email.policy.EmailPolicy`,
 and add the following additional controls:
+
+    .. tabularcolumns:: |l|L|
 
     ===============     =======================================================
     refold_source       Controls whether or not headers parsed by a
@@ -1763,7 +1767,7 @@ sched
 select
 ------
 
-Solaris and derivatives platforms have a new class :class:`select.devpoll`
+Solaris and derivative platforms have a new class :class:`select.devpoll`
 for high performance asynchronous sockets via :file:`/dev/poll`.
 (Contributed by Jesús Cea Avión in :issue:`6397`.)
 
@@ -1819,12 +1823,12 @@ signal
 * The :mod:`signal` module has new functions:
 
   * :func:`~signal.pthread_sigmask`: fetch and/or change the signal mask of the
-    calling thread (Contributed by Jean-Paul Calderone in :issue:`8407`) ;
-  * :func:`~signal.pthread_kill`: send a signal to a thread ;
-  * :func:`~signal.sigpending`: examine pending functions ;
-  * :func:`~signal.sigwait`: wait a signal.
+    calling thread (Contributed by Jean-Paul Calderone in :issue:`8407`);
+  * :func:`~signal.pthread_kill`: send a signal to a thread;
+  * :func:`~signal.sigpending`: examine pending functions;
+  * :func:`~signal.sigwait`: wait a signal;
   * :func:`~signal.sigwaitinfo`: wait for a signal, returning detailed
-    information about it.
+    information about it;
   * :func:`~signal.sigtimedwait`: like :func:`~signal.sigwaitinfo` but with a
     timeout.
 
@@ -2013,7 +2017,7 @@ tempfile
 --------
 
 :class:`tempfile.SpooledTemporaryFile`\'s
-:meth:`~tempfile.SpooledTemporaryFile.trucate` method now accepts
+:meth:`~tempfile.SpooledTemporaryFile.truncate` method now accepts
 a ``size`` parameter.  (Contributed by Ryan Kelly in :issue:`9957`.)
 
 

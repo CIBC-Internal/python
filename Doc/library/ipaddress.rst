@@ -165,7 +165,7 @@ write code that handles both IP versions correctly.
 
    .. attribute:: is_unspecified
 
-      ``True`` if the address is unspecified.  See :RFC:`5375` (for IPv4)
+      ``True`` if the address is unspecified.  See :RFC:`5735` (for IPv4)
       or :RFC:`2373` (for IPv6).
 
    .. attribute:: is_reserved
@@ -282,10 +282,10 @@ only be applied between compatible objects (i.e. IPv4 with IPv4, IPv6 with
 IPv6).
 
 
-Logical operators
-"""""""""""""""""
+Comparison operators
+""""""""""""""""""""
 
-Address objects can be compared with the usual set of logical operators.  Some
+Address objects can be compared with the usual set of comparison operators.  Some
 examples::
 
    >>> IPv4Address('127.0.0.2') > IPv4Address('127.0.0.1')
@@ -405,7 +405,7 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
       The broadcast address for the network. Packets sent to the broadcast
       address should be received by every host on the network.
 
-   .. attribute:: host mask
+   .. attribute:: hostmask
 
       The host mask, as a string.
 
@@ -561,7 +561,7 @@ so to avoid duplication they are only documented for :class:`IPv4Network`.
    .. attribute:: is_link_local
    .. attribute:: network_address
    .. attribute:: broadcast_address
-   .. attribute:: host mask
+   .. attribute:: hostmask
    .. attribute:: with_prefixlen
    .. attribute:: compressed
    .. attribute:: exploded

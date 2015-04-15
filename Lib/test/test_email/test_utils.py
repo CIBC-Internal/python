@@ -4,6 +4,7 @@ import test.support
 import time
 import unittest
 import sys
+import os.path
 
 class DateTimeTests(unittest.TestCase):
 
@@ -53,12 +54,12 @@ class LocaltimeTests(unittest.TestCase):
     def test_localtime_is_tz_aware_daylight_true(self):
         test.support.patch(self, time, 'daylight', True)
         t = utils.localtime()
-        self.assertIsNot(t.tzinfo, None)
+        self.assertIsNotNone(t.tzinfo)
 
     def test_localtime_is_tz_aware_daylight_false(self):
         test.support.patch(self, time, 'daylight', False)
         t = utils.localtime()
-        self.assertIsNot(t.tzinfo, None)
+        self.assertIsNotNone(t.tzinfo)
 
     def test_localtime_daylight_true_dst_false(self):
         test.support.patch(self, time, 'daylight', True)
@@ -123,6 +124,9 @@ class LocaltimeTests(unittest.TestCase):
     # XXX: Need a more robust test for Olson's tzdata
     @unittest.skipIf(sys.platform.startswith('win'),
                      "Windows does not use Olson's TZ database")
+    @unittest.skipUnless(os.path.exists('/usr/share/zoneinfo') or
+                         os.path.exists('/usr/lib/zoneinfo'),
+                         "Can't find the Olson's TZ database")
     @test.support.run_with_tz('Europe/Kiev')
     def test_variable_tzname(self):
         t0 = datetime.datetime(1984, 1, 1, tzinfo=datetime.timezone.utc)

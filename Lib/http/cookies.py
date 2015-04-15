@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-#
-
 ####
 # Copyright 2000 by Timothy O'Malley <timo@alum.mit.edu>
 #
@@ -338,6 +335,8 @@ class Morsel(dict):
         "version"  : "Version",
     }
 
+    _flags = {'secure', 'httponly'}
+
     def __init__(self):
         # Set defaults
         self.key = self.value = self.coded_value = None
@@ -432,18 +431,22 @@ class Morsel(dict):
 _LegalCharsPatt  = r"[\w\d!#%&'~_`><@,:/\$\*\+\-\.\^\|\)\(\?\}\{\=]"
 _CookiePattern = re.compile(r"""
     (?x)                           # This is a verbose pattern
+    \s*                            # Optional whitespace at start of cookie
     (?P<key>                       # Start of group 'key'
     """ + _LegalCharsPatt + r"""+?   # Any word of at least one letter
     )                              # End of group 'key'
-    \s*=\s*                        # Equal Sign
-    (?P<val>                       # Start of group 'val'
-    "(?:[^\\"]|\\.)*"                # Any doublequoted string
-    |                                # or
+    (                              # Optional group: there may not be a value.
+    \s*=\s*                          # Equal Sign
+    (?P<val>                         # Start of group 'val'
+    "(?:[^\\"]|\\.)*"                  # Any doublequoted string
+    |                                  # or
     \w{3},\s[\w\d\s-]{9,11}\s[\d:]{8}\sGMT  # Special case for "expires" attr
-    |                                # or
-    """ + _LegalCharsPatt + r"""*    # Any word or empty string
-    )                              # End of group 'val'
-    \s*;?                          # Probably ending in a semi-colon
+    |                                  # or
+    """ + _LegalCharsPatt + r"""*      # Any word or empty string
+    )                                # End of group 'val'
+    )?                             # End of optional value group
+    \s*                            # Any number of spaces.
+    (\s+|;|$)                      # Ending either at space, semicolon, or EOS.
     """, re.ASCII)                 # May be removed if safe.
 
 
@@ -532,7 +535,7 @@ class BaseCookie(dict):
 
         while 0 <= i < n:
             # Start looking for a cookie
-            match = patt.search(str, i)
+            match = patt.match(str, i)
             if not match:
                 # No more cookies
                 break
@@ -549,8 +552,12 @@ class BaseCookie(dict):
                     M[key[1:]] = value
             elif key.lower() in Morsel._reserved:
                 if M:
-                    M[key] = _unquote(value)
-            else:
+                    if value is None:
+                        if key.lower() in Morsel._flags:
+                            M[key] = True
+                    else:
+                        M[key] = _unquote(value)
+            elif value is not None:
                 rval, cval = self.value_decode(value)
                 self.__set(key, rval, cval)
                 M = self[key]

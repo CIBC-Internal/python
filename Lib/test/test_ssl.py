@@ -55,6 +55,7 @@ BADCERT = data_file("badcert.pem")
 WRONGCERT = data_file("XXXnonexisting.pem")
 BADKEY = data_file("badkey.pem")
 NOKIACERT = data_file("nokia.pem")
+NULLBYTECERT = data_file("nullbytecert.pem")
 
 DHFILE = data_file("dh512.pem")
 BYTES_DHFILE = os.fsencode(DHFILE)
@@ -125,9 +126,45 @@ class BasicSocketTests(unittest.TestCase):
         else:
             self.assertRaises(ssl.SSLError, ssl.RAND_bytes, 16)
 
+        # negative num is invalid
+        self.assertRaises(ValueError, ssl.RAND_bytes, -5)
+        self.assertRaises(ValueError, ssl.RAND_pseudo_bytes, -5)
+
         self.assertRaises(TypeError, ssl.RAND_egd, 1)
         self.assertRaises(TypeError, ssl.RAND_egd, 'foo', 1)
         ssl.RAND_add("this is a random string", 75.0)
+
+    @unittest.skipUnless(os.name == 'posix', 'requires posix')
+    def test_random_fork(self):
+        status = ssl.RAND_status()
+        if not status:
+            self.fail("OpenSSL's PRNG has insufficient randomness")
+
+        rfd, wfd = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.close(rfd)
+                child_random = ssl.RAND_pseudo_bytes(16)[0]
+                self.assertEqual(len(child_random), 16)
+                os.write(wfd, child_random)
+                os.close(wfd)
+            except BaseException:
+                os._exit(1)
+            else:
+                os._exit(0)
+        else:
+            os.close(wfd)
+            self.addCleanup(os.close, rfd)
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(status, 0)
+
+            child_random = os.read(rfd, 16)
+            self.assertEqual(len(child_random), 16)
+            parent_random = ssl.RAND_pseudo_bytes(16)[0]
+            self.assertEqual(len(parent_random), 16)
+
+            self.assertNotEqual(child_random, parent_random)
 
     def test_parse_cert(self):
         # note that this uses an 'unofficial' function in _ssl.c,
@@ -161,6 +198,35 @@ class BasicSocketTests(unittest.TestCase):
                          (('DNS', 'projects.developer.nokia.com'),
                           ('DNS', 'projects.forum.nokia.com'))
                         )
+
+    def test_parse_cert_CVE_2013_4238(self):
+        p = ssl._ssl._test_decode_cert(NULLBYTECERT)
+        if support.verbose:
+            sys.stdout.write("\n" + pprint.pformat(p) + "\n")
+        subject = ((('countryName', 'US'),),
+                   (('stateOrProvinceName', 'Oregon'),),
+                   (('localityName', 'Beaverton'),),
+                   (('organizationName', 'Python Software Foundation'),),
+                   (('organizationalUnitName', 'Python Core Development'),),
+                   (('commonName', 'null.python.org\x00example.org'),),
+                   (('emailAddress', 'python-dev@python.org'),))
+        self.assertEqual(p['subject'], subject)
+        self.assertEqual(p['issuer'], subject)
+        if ssl._OPENSSL_API_VERSION >= (0, 9, 8):
+            san = (('DNS', 'altnull.python.org\x00example.com'),
+                   ('email', 'null@python.org\x00user@example.org'),
+                   ('URI', 'http://null.python.org\x00http://example.org'),
+                   ('IP Address', '192.0.2.1'),
+                   ('IP Address', '2001:DB8:0:0:0:0:0:1\n'))
+        else:
+            # OpenSSL 0.9.7 doesn't support IPv6 addresses in subjectAltName
+            san = (('DNS', 'altnull.python.org\x00example.com'),
+                   ('email', 'null@python.org\x00user@example.org'),
+                   ('URI', 'http://null.python.org\x00http://example.org'),
+                   ('IP Address', '192.0.2.1'),
+                   ('IP Address', '<invalid>'))
+
+        self.assertEqual(p['subjectAltName'], san)
 
     def test_DER_to_PEM(self):
         with open(SVN_PYTHON_ORG_ROOT_CERT, 'r') as f:
@@ -282,17 +348,50 @@ class BasicSocketTests(unittest.TestCase):
         fail(cert, 'Xa.com')
         fail(cert, '.a.com')
 
-        cert = {'subject': ((('commonName', 'a.*.com'),),)}
-        ok(cert, 'a.foo.com')
-        fail(cert, 'a..com')
-        fail(cert, 'a.com')
-
+        # only match one left-most wildcard
         cert = {'subject': ((('commonName', 'f*.com'),),)}
         ok(cert, 'foo.com')
         ok(cert, 'f.com')
         fail(cert, 'bar.com')
         fail(cert, 'foo.a.com')
         fail(cert, 'bar.foo.com')
+
+        # NULL bytes are bad, CVE-2013-4073
+        cert = {'subject': ((('commonName',
+                              'null.python.org\x00example.org'),),)}
+        ok(cert, 'null.python.org\x00example.org') # or raise an error?
+        fail(cert, 'example.org')
+        fail(cert, 'null.python.org')
+
+        # error cases with wildcards
+        cert = {'subject': ((('commonName', '*.*.a.com'),),)}
+        fail(cert, 'bar.foo.a.com')
+        fail(cert, 'a.com')
+        fail(cert, 'Xa.com')
+        fail(cert, '.a.com')
+
+        cert = {'subject': ((('commonName', 'a.*.com'),),)}
+        fail(cert, 'a.foo.com')
+        fail(cert, 'a..com')
+        fail(cert, 'a.com')
+
+        # wildcard doesn't match IDNA prefix 'xn--'
+        idna = 'püthon.python.org'.encode("idna").decode("ascii")
+        cert = {'subject': ((('commonName', idna),),)}
+        ok(cert, idna)
+        cert = {'subject': ((('commonName', 'x*.python.org'),),)}
+        fail(cert, idna)
+        cert = {'subject': ((('commonName', 'xn--p*.python.org'),),)}
+        fail(cert, idna)
+
+        # wildcard in first fragment and  IDNA A-labels in sequent fragments
+        # are supported.
+        idna = 'www*.pythön.org'.encode("idna").decode("ascii")
+        cert = {'subject': ((('commonName', idna),),)}
+        ok(cert, 'www.pythön.org'.encode("idna").decode("ascii"))
+        ok(cert, 'www1.pythön.org'.encode("idna").decode("ascii"))
+        fail(cert, 'ftp.pythön.org'.encode("idna").decode("ascii"))
+        fail(cert, 'pythön.org'.encode("idna").decode("ascii"))
 
         # Slightly fake real-world example
         cert = {'notAfter': 'Jun 26 21:41:46 2011 GMT',
@@ -349,6 +448,17 @@ class BasicSocketTests(unittest.TestCase):
         self.assertRaises(ValueError, ssl.match_hostname, None, 'example.com')
         self.assertRaises(ValueError, ssl.match_hostname, {}, 'example.com')
 
+        # Issue #17980: avoid denials of service by refusing more than one
+        # wildcard per fragment.
+        cert = {'subject': ((('commonName', 'a*b.com'),),)}
+        ok(cert, 'axxb.com')
+        cert = {'subject': ((('commonName', 'a*b.co*'),),)}
+        fail(cert, 'axxb.com')
+        cert = {'subject': ((('commonName', 'a*b*.com'),),)}
+        with self.assertRaises(ssl.CertificateError) as cm:
+            ssl.match_hostname(cert, 'axxbxxc.com')
+        self.assertIn("too many wildcards", str(cm.exception))
+
     def test_server_side(self):
         # server_hostname doesn't work for server sockets
         ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
@@ -383,6 +493,18 @@ class BasicSocketTests(unittest.TestCase):
             support.gc_collect()
         self.assertIn(r, str(cm.warning.args[0]))
 
+    def test_unsupported_dtls(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.addCleanup(s.close)
+        with self.assertRaises(NotImplementedError) as cx:
+            ssl.wrap_socket(s, cert_reqs=ssl.CERT_NONE)
+        self.assertEqual(str(cx.exception), "only stream sockets are supported")
+        ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        with self.assertRaises(NotImplementedError) as cx:
+            ctx.wrap_socket(s)
+        self.assertEqual(str(cx.exception), "only stream sockets are supported")
+
+
 class ContextTests(unittest.TestCase):
 
     @skip_if_broken_ubuntu_ssl
@@ -412,9 +534,7 @@ class ContextTests(unittest.TestCase):
     @skip_if_broken_ubuntu_ssl
     def test_options(self):
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-        # OP_ALL is the default value
-        self.assertEqual(ssl.OP_ALL, ctx.options)
-        ctx.options |= ssl.OP_NO_SSLv2
+        # OP_ALL | OP_NO_SSLv2 is the default value
         self.assertEqual(ssl.OP_ALL | ssl.OP_NO_SSLv2,
                          ctx.options)
         ctx.options |= ssl.OP_NO_SSLv3
@@ -729,8 +849,10 @@ class NetworkedTests(unittest.TestCase):
                                 cert_reqs=ssl.CERT_REQUIRED,
                                 ca_certs=SVN_PYTHON_ORG_ROOT_CERT)
             try:
-                self.assertEqual(errno.ECONNREFUSED,
-                                 s.connect_ex(("svn.python.org", 444)))
+                rc = s.connect_ex(("svn.python.org", 444))
+                # Issue #19919: Windows machines or VMs hosted on Windows
+                # machines sometimes return EWOULDBLOCK.
+                self.assertIn(rc, (errno.ECONNREFUSED, errno.EWOULDBLOCK))
             finally:
                 s.close()
 
@@ -842,12 +964,15 @@ class NetworkedTests(unittest.TestCase):
     def test_get_server_certificate(self):
         def _test_get_server_certificate(host, port, cert=None):
             with support.transient_internet(host):
-                pem = ssl.get_server_certificate((host, port))
+                pem = ssl.get_server_certificate((host, port),
+                                                 ssl.PROTOCOL_SSLv23)
                 if not pem:
                     self.fail("No server certificate on %s:%s!" % (host, port))
 
                 try:
-                    pem = ssl.get_server_certificate((host, port), ca_certs=CERTFILE)
+                    pem = ssl.get_server_certificate((host, port),
+                                                     ssl.PROTOCOL_SSLv23,
+                                                     ca_certs=CERTFILE)
                 except ssl.SSLError as x:
                     #should fail
                     if support.verbose:
@@ -855,7 +980,9 @@ class NetworkedTests(unittest.TestCase):
                 else:
                     self.fail("Got server certificate %s for %s:%s!" % (pem, host, port))
 
-                pem = ssl.get_server_certificate((host, port), ca_certs=cert)
+                pem = ssl.get_server_certificate((host, port),
+                                                 ssl.PROTOCOL_SSLv23,
+                                                 ca_certs=cert)
                 if not pem:
                     self.fail("No server certificate on %s:%s!" % (host, port))
                 if support.verbose:
@@ -1318,9 +1445,9 @@ else:
                               ssl.get_protocol_name(server_protocol),
                               certtype))
         client_context = ssl.SSLContext(client_protocol)
-        client_context.options = ssl.OP_ALL | client_options
+        client_context.options |= client_options
         server_context = ssl.SSLContext(server_protocol)
-        server_context.options = ssl.OP_ALL | server_options
+        server_context.options |= server_options
         for ctx in (client_context, server_context):
             ctx.verify_mode = certsreqs
             # NOTE: we must enable "ALL" ciphers, otherwise an SSLv23 client
@@ -1461,7 +1588,7 @@ else:
             try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv2, True)
             try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv2, True, ssl.CERT_OPTIONAL)
             try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv2, True, ssl.CERT_REQUIRED)
-            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, True)
+            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, False)
             try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv3, False)
             try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_TLSv1, False)
             # SSLv23 client with specific SSL options
@@ -1469,9 +1596,9 @@ else:
                 # No SSLv2 => client will use an SSLv3 hello on recent OpenSSLs
                 try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, False,
                                    client_options=ssl.OP_NO_SSLv2)
-            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, True,
+            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, False,
                                client_options=ssl.OP_NO_SSLv3)
-            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, True,
+            try_protocol_combo(ssl.PROTOCOL_SSLv2, ssl.PROTOCOL_SSLv23, False,
                                client_options=ssl.OP_NO_TLSv1)
 
         @skip_if_broken_ubuntu_ssl

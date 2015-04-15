@@ -301,7 +301,7 @@ faulthandler_fatal_error(int signum)
         return;
     }
 #endif
-    /* call the previous signal handler: it is called immediatly if we use
+    /* call the previous signal handler: it is called immediately if we use
        sigaction() thanks to SA_NODEFER flag, otherwise it is deferred */
     raise(signum);
 }
@@ -742,6 +742,8 @@ faulthandler_register_py(PyObject *self,
             PyErr_SetFromErrno(PyExc_OSError);
             return NULL;
         }
+
+        user->previous = previous;
     }
 
     Py_XDECREF(user->file);
@@ -750,7 +752,6 @@ faulthandler_register_py(PyObject *self,
     user->fd = fd;
     user->all_threads = all_threads;
     user->chain = chain;
-    user->previous = previous;
     user->interp = tstate->interp;
     user->enabled = 1;
 

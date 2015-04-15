@@ -22,6 +22,10 @@ try:
     import resource
 except ImportError:
     resource = None
+try:
+    import threading
+except ImportError:
+    threading = None
 
 mswindows = (sys.platform == "win32")
 
@@ -382,7 +386,8 @@ class ProcessTestCase(BaseTestCase):
     def test_executable_without_cwd(self):
         # For a normal installation, it should work without 'cwd'
         # argument.  For test runs in the build directory, see #7774.
-        self._assert_cwd('', "somethingyoudonthave", executable=sys.executable)
+        self._assert_cwd(os.getcwd(), "somethingyoudonthave",
+                         executable=sys.executable)
 
     def test_stdin_pipe(self):
         # stdin redirection
@@ -948,10 +953,10 @@ class ProcessTestCase(BaseTestCase):
 
     def test_wait_timeout(self):
         p = subprocess.Popen([sys.executable,
-                              "-c", "import time; time.sleep(0.1)"])
+                              "-c", "import time; time.sleep(0.3)"])
         with self.assertRaises(subprocess.TimeoutExpired) as c:
-            p.wait(timeout=0.01)
-        self.assertIn("0.01", str(c.exception))  # For coverage of __str__.
+            p.wait(timeout=0.0001)
+        self.assertIn("0.0001", str(c.exception))  # For coverage of __str__.
         # Some heavily loaded buildbots (sparc Debian 3.x) require this much
         # time to start.
         self.assertEqual(p.wait(timeout=3), 0)
@@ -985,6 +990,36 @@ class ProcessTestCase(BaseTestCase):
             # ignore errors that indicate the command was not found
             if c.exception.errno not in (errno.ENOENT, errno.EACCES):
                 raise c.exception
+
+    @unittest.skipIf(threading is None, "threading required")
+    def test_double_close_on_error(self):
+        # Issue #18851
+        fds = []
+        def open_fds():
+            for i in range(20):
+                fds.extend(os.pipe())
+                time.sleep(0.001)
+        t = threading.Thread(target=open_fds)
+        t.start()
+        try:
+            with self.assertRaises(EnvironmentError):
+                subprocess.Popen(['nonexisting_i_hope'],
+                                 stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+        finally:
+            t.join()
+            exc = None
+            for fd in fds:
+                # If a double close occurred, some of those fds will
+                # already have been closed by mistake, and os.close()
+                # here will raise.
+                try:
+                    os.close(fd)
+                except OSError as e:
+                    exc = e
+            if exc is not None:
+                raise exc
 
     def test_issue8780(self):
         # Ensure that stdout is inherited from the parent
@@ -1263,7 +1298,8 @@ class POSIXProcessTestCase(BaseTestCase):
                                      self.stderr.fileno()),
                                 msg="At least one fd was closed early.")
                 finally:
-                    map(os.close, devzero_fds)
+                    for fd in devzero_fds:
+                        os.close(fd)
 
     @unittest.skipIf(not os.path.exists("/dev/zero"), "/dev/zero required.")
     def test_preexec_errpipe_does_not_double_close_pipes(self):
@@ -1396,16 +1432,22 @@ class POSIXProcessTestCase(BaseTestCase):
     def _kill_process(self, method, *args):
         # Do not inherit file handles from the parent.
         # It should fix failures on some platforms.
-        p = subprocess.Popen([sys.executable, "-c", """if 1:
-                             import sys, time
-                             sys.stdout.write('x\\n')
-                             sys.stdout.flush()
-                             time.sleep(30)
-                             """],
-                             close_fds=True,
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+        # Also set the SIGINT handler to the default to make sure it's not
+        # being ignored (some tests rely on that.)
+        old_handler = signal.signal(signal.SIGINT, signal.default_int_handler)
+        try:
+            p = subprocess.Popen([sys.executable, "-c", """if 1:
+                                 import sys, time
+                                 sys.stdout.write('x\\n')
+                                 sys.stdout.flush()
+                                 time.sleep(30)
+                                 """],
+                                 close_fds=True,
+                                 stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+        finally:
+            signal.signal(signal.SIGINT, old_handler)
         # Wait for the interpreter to be completely initialized before
         # sending any signal.
         p.stdout.read(1)
@@ -1516,6 +1558,27 @@ class POSIXProcessTestCase(BaseTestCase):
         # Issue #10806: test that subprocess pipes still work properly with
         # all standard fds closed.
         self.check_close_std_fds([0, 1, 2])
+
+    def test_small_errpipe_write_fd(self):
+        """Issue #15798: Popen should work when stdio fds are available."""
+        new_stdin = os.dup(0)
+        new_stdout = os.dup(1)
+        try:
+            os.close(0)
+            os.close(1)
+
+            # Side test: if errpipe_write fails to have its CLOEXEC
+            # flag set this should cause the parent to think the exec
+            # failed.  Extremely unlikely: everyone supports CLOEXEC.
+            subprocess.Popen([
+                    sys.executable, "-c",
+                    "print('AssertionError:0:CLOEXEC failure.')"]).wait()
+        finally:
+            # Restore original stdin and stdout
+            os.dup2(new_stdin, 0)
+            os.dup2(new_stdout, 1)
+            os.close(new_stdin)
+            os.close(new_stdout)
 
     def test_remapping_std_fds(self):
         # open up some temporary files
@@ -1936,6 +1999,23 @@ class POSIXProcessTestCase(BaseTestCase):
         self.assertRaises(OSError, os.waitpid, pid, 0)
         self.assertNotIn(ident, [id(o) for o in subprocess._active])
 
+    def test_close_fds_after_preexec(self):
+        fd_status = support.findfile("fd_status.py", subdir="subprocessdata")
+
+        # this FD is used as dup2() target by preexec_fn, and should be closed
+        # in the child process
+        fd = os.dup(1)
+        self.addCleanup(os.close, fd)
+
+        p = subprocess.Popen([sys.executable, fd_status],
+                             stdout=subprocess.PIPE, close_fds=True,
+                             preexec_fn=lambda: os.dup2(1, fd))
+        output, ignored = p.communicate()
+
+        remaining_fds = set(map(int, output.split(b',')))
+
+        self.assertNotIn(fd, remaining_fds)
+
 
 @unittest.skipUnless(mswindows, "Windows specific tests")
 class Win32ProcessTestCase(BaseTestCase):
@@ -2074,13 +2154,6 @@ class Win32ProcessTestCase(BaseTestCase):
     def test_terminate_dead(self):
         self._kill_dead_process('terminate')
 
-
-# The module says:
-#   "NB This only works (and is only relevant) for UNIX."
-#
-# Actually, getoutput should work on any platform with an os.popen, but
-# I'll take the comment as given, and skip this suite.
-@unittest.skipUnless(os.name == 'posix', "only relevant for UNIX")
 class CommandTests(unittest.TestCase):
     def test_getoutput(self):
         self.assertEqual(subprocess.getoutput('echo xyzzy'), 'xyzzy')
@@ -2094,8 +2167,8 @@ class CommandTests(unittest.TestCase):
         try:
             dir = tempfile.mkdtemp()
             name = os.path.join(dir, "foo")
-
-            status, output = subprocess.getstatusoutput('cat ' + name)
+            status, output = subprocess.getstatusoutput(
+                ("type " if mswindows else "cat ") + name)
             self.assertNotEqual(status, 0)
         finally:
             if dir is not None:

@@ -320,13 +320,8 @@ SHA1_copy(SHA1object *self, PyObject *unused)
 {
     SHA1object *newobj;
 
-    if (Py_TYPE(self) == &SHA1type) {
-        if ( (newobj = newSHA1object())==NULL)
-            return NULL;
-    } else {
-        if ( (newobj = newSHA1object())==NULL)
-            return NULL;
-    }
+    if ((newobj = newSHA1object()) == NULL)
+        return NULL;
 
     newobj->hash_state = self->hash_state;
     return (PyObject *)newobj;
@@ -420,7 +415,7 @@ SHA1_get_block_size(PyObject *self, void *closure)
 static PyObject *
 SHA1_get_name(PyObject *self, void *closure)
 {
-    return PyUnicode_FromStringAndSize("SHA1", 3);
+    return PyUnicode_FromStringAndSize("SHA1", 4);
 }
 
 static PyObject *

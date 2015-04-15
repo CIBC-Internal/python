@@ -41,11 +41,8 @@ class TestUntestedModules(unittest.TestCase):
 
             import encodings
             import formatter
-            import getpass
             import html.entities
-            import imghdr
             import keyword
-            import macurl2path
             import mailcap
             import nturl2path
             import os2emxpath

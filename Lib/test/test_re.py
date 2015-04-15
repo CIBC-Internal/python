@@ -1,8 +1,9 @@
 from test.support import verbose, run_unittest, gc_collect, bigmemtest, _2G, \
-        cpython_only
+        cpython_only, captured_stdout
 import io
 import re
 from re import Scanner
+import sre_constants
 import sys
 import string
 import traceback
@@ -180,6 +181,10 @@ class ReTests(unittest.TestCase):
         self.assertRaises(re.error, re.compile, '(?(a))')
         self.assertRaises(re.error, re.compile, '(?(1a))')
         self.assertRaises(re.error, re.compile, '(?(a.))')
+        # New valid/invalid identifiers in Python 3
+        re.compile('(?P<µ>x)(?P=µ)(?(µ)y)')
+        re.compile('(?P<𝔘𝔫𝔦𝔠𝔬𝔡𝔢>x)(?P=𝔘𝔫𝔦𝔠𝔬𝔡𝔢)(?(𝔘𝔫𝔦𝔠𝔬𝔡𝔢)y)')
+        self.assertRaises(re.error, re.compile, '(?P<©>x)')
 
     def test_symbolic_refs(self):
         self.assertRaises(re.error, re.sub, '(?P<a>x)', '\g<a', 'xx')
@@ -192,6 +197,10 @@ class ReTests(unittest.TestCase):
         self.assertRaises(re.error, re.sub, '(?P<a>x)|(?P<b>y)', '\g<b>', 'xx')
         self.assertRaises(re.error, re.sub, '(?P<a>x)|(?P<b>y)', '\\2', 'xx')
         self.assertRaises(re.error, re.sub, '(?P<a>x)', '\g<-1>', 'xx')
+        # New valid/invalid identifiers in Python 3
+        self.assertEqual(re.sub('(?P<µ>x)', r'\g<µ>', 'xx'), 'xx')
+        self.assertEqual(re.sub('(?P<𝔘𝔫𝔦𝔠𝔬𝔡𝔢>x)', r'\g<𝔘𝔫𝔦𝔠𝔬𝔡𝔢>', 'xx'), 'xx')
+        self.assertRaises(re.error, re.sub, '(?P<a>x)', r'\g<©>', 'xx')
 
     def test_re_subn(self):
         self.assertEqual(re.subn("(?i)b+", "x", "bbbb BBBB"), ('x x', 2))
@@ -419,6 +428,9 @@ class ReTests(unittest.TestCase):
                                   "\u2222").group(1), "\u2222")
         self.assertEqual(re.match("([\u2222\u2223])",
                                   "\u2222", re.UNICODE).group(1), "\u2222")
+        r = '[%s]' % ''.join(map(chr, range(256, 2**16, 255)))
+        self.assertEqual(re.match(r,
+                                  "\uff01", re.UNICODE).group(), "\uff01")
 
     def test_big_codesize(self):
         # Issue #1160
@@ -1020,6 +1032,65 @@ class ReTests(unittest.TestCase):
         self.assertRaises(OverflowError, re.compile, r".{%d}" % MAXREPEAT)
         self.assertRaises(OverflowError, re.compile, r".{,%d}" % MAXREPEAT)
         self.assertRaises(OverflowError, re.compile, r".{%d,}?" % MAXREPEAT)
+
+    def test_backref_group_name_in_exception(self):
+        # Issue 17341: Poor error message when compiling invalid regex
+        with self.assertRaisesRegex(sre_constants.error, '<foo>'):
+            re.compile('(?P=<foo>)')
+
+    def test_group_name_in_exception(self):
+        # Issue 17341: Poor error message when compiling invalid regex
+        with self.assertRaisesRegex(sre_constants.error, '\?foo'):
+            re.compile('(?P<?foo>)')
+
+    def test_issue17998(self):
+        for reps in '*', '+', '?', '{1}':
+            for mod in '', '?':
+                pattern = '.' + reps + mod + 'yz'
+                self.assertEqual(re.compile(pattern, re.S).findall('xyz'),
+                                 ['xyz'], msg=pattern)
+                pattern = pattern.encode()
+                self.assertEqual(re.compile(pattern, re.S).findall(b'xyz'),
+                                 [b'xyz'], msg=pattern)
+
+
+    def test_bug_2537(self):
+        # issue 2537: empty submatches
+        for outer_op in ('{0,}', '*', '+', '{1,187}'):
+            for inner_op in ('{0,}', '*', '?'):
+                r = re.compile("^((x|y)%s)%s" % (inner_op, outer_op))
+                m = r.match("xyyzy")
+                self.assertEqual(m.group(0), "xyy")
+                self.assertEqual(m.group(1), "")
+                self.assertEqual(m.group(2), "y")
+
+    def test_debug_flag(self):
+        with captured_stdout() as out:
+            re.compile('foo', re.DEBUG)
+        self.assertEqual(out.getvalue().splitlines(),
+                         ['literal 102 ', 'literal 111 ', 'literal 111 '])
+        # Debug output is output again even a second time (bypassing
+        # the cache -- issue #20426).
+        with captured_stdout() as out:
+            re.compile('foo', re.DEBUG)
+        self.assertEqual(out.getvalue().splitlines(),
+                         ['literal 102 ', 'literal 111 ', 'literal 111 '])
+
+    def test_keyword_parameters(self):
+        # Issue #20283: Accepting the string keyword parameter.
+        pat = re.compile(r'(ab)')
+        self.assertEqual(
+            pat.match(string='abracadabra', pos=7, endpos=10).span(), (7, 9))
+        self.assertEqual(
+            pat.search(string='abracadabra', pos=3, endpos=10).span(), (7, 9))
+        self.assertEqual(
+            pat.findall(string='abracadabra', pos=3, endpos=10), ['ab'])
+        self.assertEqual(
+            pat.split(string='abracadabra', maxsplit=1),
+            ['', 'ab', 'racadabra'])
+        self.assertEqual(
+            pat.scanner(string='abracadabra', pos=3, endpos=10).search().span(),
+            (7, 9))
 
 
 def run_re_tests():

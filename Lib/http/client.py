@@ -214,6 +214,8 @@ MAXAMOUNT = 1048576
 
 # maximal line length when calling readline().
 _MAXLINE = 65536
+_MAXHEADERS = 100
+
 
 class HTTPMessage(email.message.Message):
     # XXX The only usage of this method is in
@@ -261,6 +263,8 @@ def parse_headers(fp, _class=HTTPMessage):
         if len(line) > _MAXLINE:
             raise LineTooLong("header line")
         headers.append(line)
+        if len(headers) > _MAXHEADERS:
+            raise HTTPException("got more than %d headers" % _MAXHEADERS)
         if line in (b'\r\n', b'\n', b''):
             break
     hstring = b''.join(headers).decode('iso-8859-1')
@@ -540,7 +544,7 @@ class HTTPResponse(io.RawIOBase):
         # connection, and the user is reading more bytes than will be provided
         # (for example, reading in 1k chunks)
         n = self.fp.readinto(b)
-        if not n:
+        if not n and b:
             # Ideally, we would raise IncompleteRead if the content-length
             # wasn't satisfied, but it might break compatibility.
             self._close_conn()
@@ -866,7 +870,7 @@ class HTTPConnection:
                 if encode:
                     datablock = datablock.encode("iso-8859-1")
                 self.sock.sendall(datablock)
-
+            return
         try:
             self.sock.sendall(data)
         except TypeError:

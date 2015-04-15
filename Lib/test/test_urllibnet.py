@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import unittest
 from test import support
 
@@ -82,7 +80,7 @@ class urlopenNetworkTests(unittest.TestCase):
 
     def test_geturl(self):
         # Make sure same URL as opened is returned by geturl.
-        URL = "http://www.python.org/"
+        URL = "https://www.python.org/"
         with self.urlopen(URL) as open_url:
             gotten_url = open_url.geturl()
             self.assertEqual(gotten_url, URL)
@@ -98,15 +96,14 @@ class urlopenNetworkTests(unittest.TestCase):
                 open_url.close()
             self.assertEqual(code, 404)
 
+    # On Windows, socket handles are not file descriptors; this
+    # test can't pass on Windows.
+    @unittest.skipIf(sys.platform in ('win32',), 'not appropriate for Windows')
     def test_fileno(self):
-        if sys.platform in ('win32',):
-            # On Windows, socket handles are not file descriptors; this
-            # test can't pass on Windows.
-            return
         # Make sure fd returned by fileno is valid.
         with self.urlopen("http://www.python.org/", timeout=None) as open_url:
             fd = open_url.fileno()
-            with os.fdopen(fd, encoding='utf-8') as f:
+            with os.fdopen(fd, 'rb') as f:
                 self.assertTrue(f.read(), "reading from file created using fd "
                                           "returned by fileno failed")
 
@@ -116,7 +113,10 @@ class urlopenNetworkTests(unittest.TestCase):
         bogus_domain = "sadflkjsasf.i.nvali.d"
         try:
             socket.gethostbyname(bogus_domain)
-        except socket.gaierror:
+        except OSError:
+            # socket.gaierror is too narrow, since getaddrinfo() may also
+            # fail with EAI_SYSTEM and ETIMEDOUT (seen on Ubuntu 13.04),
+            # i.e. Python's TimeoutError.
             pass
         else:
             # This happens with some overzealous DNS providers such as OpenDNS
@@ -151,7 +151,7 @@ class urlretrieveNetworkTests(unittest.TestCase):
         with self.urlretrieve("http://www.python.org/") as (file_location, info):
             self.assertTrue(os.path.exists(file_location), "file location returned by"
                             " urlretrieve is not a valid path")
-            with open(file_location, encoding='utf-8') as f:
+            with open(file_location, 'rb') as f:
                 self.assertTrue(f.read(), "reading from the file location returned"
                                 " by urlretrieve failed")
 
@@ -161,7 +161,7 @@ class urlretrieveNetworkTests(unittest.TestCase):
                               support.TESTFN) as (file_location, info):
             self.assertEqual(file_location, support.TESTFN)
             self.assertTrue(os.path.exists(file_location))
-            with open(file_location, encoding='utf-8') as f:
+            with open(file_location, 'rb') as f:
                 self.assertTrue(f.read(), "reading from temporary file failed")
 
     def test_header(self):
@@ -170,7 +170,7 @@ class urlretrieveNetworkTests(unittest.TestCase):
             self.assertIsInstance(info, email.message.Message,
                                   "info is not an instance of email.message.Message")
 
-    logo = "http://www.python.org/community/logos/python-logo-master-v3-TM.png"
+    logo = "http://www.python.org/static/community_logos/python-logo-master-v3-TM.png"
 
     def test_data_header(self):
         with self.urlretrieve(self.logo) as (file_location, fileheaders):

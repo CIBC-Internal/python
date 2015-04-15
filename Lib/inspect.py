@@ -48,7 +48,7 @@ from collections import namedtuple, OrderedDict
 
 # Create constants for the compiler flags in Include/code.h
 # We try to get them from dis to avoid duplication, but fall
-# back to hardcording so the dependency is optional
+# back to hardcoding so the dependency is optional
 try:
     from dis import COMPILER_FLAG_NAMES as _flag_names
 except ImportError:
@@ -185,7 +185,7 @@ def isgenerator(object):
     """Return true if the object is a generator.
 
     Generator objects provide these attributes:
-        __iter__        defined to support interation over container
+        __iter__        defined to support iteration over container
         close           raises a new GeneratorExit exception inside the
                         generator to terminate the iteration
         gi_code         code object
@@ -550,7 +550,7 @@ def findsource(object):
 
     file = getfile(object)
     sourcefile = getsourcefile(object)
-    if not sourcefile and file[0] + file[-1] != '<>':
+    if not sourcefile and file[:1] + file[-1:] != '<>':
         raise IOError('source code not available')
     file = sourcefile if sourcefile else file
 
@@ -753,7 +753,8 @@ def getclasstree(classes, unique=False):
             for parent in c.__bases__:
                 if not parent in children:
                     children[parent] = []
-                children[parent].append(c)
+                if c not in children[parent]:
+                    children[parent].append(c)
                 if unique and parent in classes: break
         elif c not in roots:
             roots.append(c)
@@ -984,12 +985,14 @@ def _too_many(f_name, args, kwonly, varargs, defcount, given, values):
             (f_name, sig, "s" if plural else "", given, kwonly_sig,
              "was" if given == 1 and not kwonly_given else "were"))
 
-def getcallargs(func, *positional, **named):
+def getcallargs(*func_and_positional, **named):
     """Get the mapping of arguments to values.
 
     A dict is returned, with keys the function argument names (including the
     names of the * and ** arguments, if any), and values the respective bound
     values from 'positional' and 'named'."""
+    func = func_and_positional[0]
+    positional = func_and_positional[1:]
     spec = getfullargspec(func)
     args, varargs, varkw, defaults, kwonlyargs, kwonlydefaults, ann = spec
     f_name = func.__name__

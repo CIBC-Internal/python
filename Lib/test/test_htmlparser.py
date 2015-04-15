@@ -151,6 +151,12 @@ text
             ("data", "&#bad;"),
             ("endtag", "p"),
         ])
+        # add the [] as a workaround to avoid buffering (see #20288)
+        self._run_check(["<div>&#bad;</div>"], [
+            ("starttag", "div", []),
+            ("data", "&#bad;"),
+            ("endtag", "div"),
+        ])
 
     def test_unclosed_entityref(self):
         self._run_check("&entityref foo", [
@@ -229,6 +235,11 @@ text
         self._parse_error("<a foo='bar")
         self._parse_error("<a foo='>'")
         self._parse_error("<a foo='>")
+        self._parse_error("<a$>")
+        self._parse_error("<a$b>")
+        self._parse_error("<a$b/>")
+        self._parse_error("<a$b  >")
+        self._parse_error("<a$b  />")
 
     def test_valid_doctypes(self):
         # from http://www.w3.org/QA/2002/04/valid-dtd-list.html
@@ -368,8 +379,8 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
                             ('starttag', 'html', [('<html', None)]),
                             ('data', 'te>>xt'),
                             ('entityref', 'a'),
-                            ('data', '<<bc'),
-                            ('endtag', 'a'),
+                            ('data', '<'),
+                            ('starttag', 'bc<', [('a', None)]),
                             ('endtag', 'html'),
                             ('data', '\n<img src="URL>'),
                             ('comment', '/img'),
@@ -380,8 +391,7 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
         self._run_check("</$>", [('comment', '$')])
         self._run_check("</", [('data', '</')])
         self._run_check("</a", [('data', '</a')])
-        # XXX this might be wrong
-        self._run_check("<a<a>", [('data', '<a'), ('starttag', 'a', [])])
+        self._run_check("<a<a>", [('starttag', 'a<a', [])])
         self._run_check("</a<a>", [('endtag', 'a<a')])
         self._run_check("<!", [('data', '<!')])
         self._run_check("<a", [('data', '<a')])
@@ -389,6 +399,11 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
         self._run_check("<a foo='bar", [('data', "<a foo='bar")])
         self._run_check("<a foo='>'", [('data', "<a foo='>'")])
         self._run_check("<a foo='>", [('data', "<a foo='>")])
+        self._run_check("<a$>", [('starttag', 'a$', [])])
+        self._run_check("<a$b>", [('starttag', 'a$b', [])])
+        self._run_check("<a$b/>", [('startendtag', 'a$b', [])])
+        self._run_check("<a$b  >", [('starttag', 'a$b', [])])
+        self._run_check("<a$b  />", [('startendtag', 'a$b', [])])
 
     def test_slashes_in_starttag(self):
         self._run_check('<a foo="var"/>', [('startendtag', 'a', [('foo', 'var')])])
@@ -534,6 +549,20 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
             ('endtag', 'a'),
         ]
         self._run_check(html, expected)
+
+    def test_EOF_in_charref(self):
+        # see #17802
+        # This test checks that the UnboundLocalError reported in the issue
+        # is not raised, however I'm not sure the returned values are correct.
+        # Maybe HTMLParser should use self.unescape for these
+        data = [
+            ('a&', [('data', 'a&')]),
+            ('a&b', [('data', 'ab')]),
+            ('a&b ', [('data', 'a'), ('entityref', 'b'), ('data', ' ')]),
+            ('a&b;', [('data', 'a'), ('entityref', 'b')]),
+        ]
+        for html, expected in data:
+            self._run_check(html, expected)
 
     def test_unescape_function(self):
         p = self.get_collector()
@@ -739,11 +768,5 @@ class AttributesTolerantTestCase(AttributesStrictTestCase):
                          ("data", "spam"), ("endtag", "a")])
 
 
-
-def test_main():
-    support.run_unittest(HTMLParserStrictTestCase, HTMLParserTolerantTestCase,
-                         AttributesStrictTestCase, AttributesTolerantTestCase)
-
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

@@ -157,7 +157,7 @@ standard stream implementations.
       The abstract base classes also provide default implementations of some
       methods in order to help implementation of concrete stream classes.  For
       example, :class:`BufferedIOBase` provides unoptimized implementations of
-      ``readinto()`` and ``readline()``.
+      :meth:`~IOBase.readinto` and :meth:`~IOBase.readline`.
 
 At the top of the I/O hierarchy is the abstract base class :class:`IOBase`.  It
 defines the basic interface to a stream.  Note, however, that there is no
@@ -186,6 +186,8 @@ Argument names are not part of the specification, and only the arguments of
 :func:`open` are intended to be used as keyword arguments.
 
 The following table summarizes the ABCs provided by the :mod:`io` module:
+
+.. tabularcolumns:: |l|l|L|L|
 
 =========================  ==================  ========================  ==================================================
 ABC                        Inherits            Stub Methods              Mixin Methods and Properties
@@ -226,7 +228,7 @@ I/O Base Classes
 
    The basic type used for binary data read from or written to a file is
    :class:`bytes`.  :class:`bytearray`\s are accepted too, and in some cases
-   (such as :class:`readinto`) required.  Text I/O classes work with
+   (such as :meth:`readinto`) required.  Text I/O classes work with
    :class:`str` data.
 
    Note that calling any method (even inquiries) on a closed stream is
@@ -278,7 +280,7 @@ I/O Base Classes
 
    .. method:: readable()
 
-      Return ``True`` if the stream can be read from.  If False, :meth:`read`
+      Return ``True`` if the stream can be read from.  If ``False``, :meth:`read`
       will raise :exc:`OSError`.
 
    .. method:: readline(limit=-1)
@@ -295,6 +297,9 @@ I/O Base Classes
       Read and return a list of lines from the stream.  *hint* can be specified
       to control the number of lines read: no more lines will be read if the
       total size (in bytes/characters) of all lines so far exceeds *hint*.
+
+      Note that it's already possible to iterate on file objects using ``for
+      line in file: ...`` without calling ``file.readlines()``.
 
    .. method:: seek(offset, whence=SEEK_SET)
 
@@ -676,6 +681,7 @@ than raw I/O does.
    :exc:`UnsupportedOperation`.
 
    .. warning::
+
       :class:`BufferedRWPair` does not attempt to synchronize accesses to
       its underlying raw streams.  You should not pass it the same object
       as reader and writer; use :class:`BufferedRandom` instead.
@@ -839,13 +845,14 @@ Text I/O
       Whether line buffering is enabled.
 
 
-.. class:: StringIO(initial_value='', newline=None)
+.. class:: StringIO(initial_value='', newline='\\n')
 
    An in-memory stream for text I/O.
 
    The initial value of the buffer (an empty string by default) can be set by
    providing *initial_value*.  The *newline* argument works like that of
-   :class:`TextIOWrapper`.  The default is to do no newline translation.
+   :class:`TextIOWrapper`.  The default is to consider only ``\n`` characters
+   as end of lines and to do no newline translation.
 
    :class:`StringIO` provides this method in addition to those from
    :class:`TextIOBase` and its parents:

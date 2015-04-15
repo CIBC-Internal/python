@@ -111,6 +111,7 @@ else:
 from socket import getnameinfo as _getnameinfo
 from socket import error as socket_error
 from socket import socket, AF_INET, SOCK_STREAM, create_connection
+from socket import SOL_SOCKET, SO_TYPE
 import base64        # for DER-to-PEM translation
 import traceback
 import errno
@@ -129,24 +130,59 @@ class CertificateError(ValueError):
     pass
 
 
-def _dnsname_to_pat(dn):
+def _dnsname_match(dn, hostname, max_wildcards=1):
+    """Matching according to RFC 6125, section 6.4.3
+
+    http://tools.ietf.org/html/rfc6125#section-6.4.3
+    """
     pats = []
-    for frag in dn.split(r'.'):
-        if frag == '*':
-            # When '*' is a fragment by itself, it matches a non-empty dotless
-            # fragment.
-            pats.append('[^.]+')
-        else:
-            # Otherwise, '*' matches any dotless fragment.
-            frag = re.escape(frag)
-            pats.append(frag.replace(r'\*', '[^.]*'))
-    return re.compile(r'\A' + r'\.'.join(pats) + r'\Z', re.IGNORECASE)
+    if not dn:
+        return False
+
+    leftmost, *remainder = dn.split(r'.')
+
+    wildcards = leftmost.count('*')
+    if wildcards > max_wildcards:
+        # Issue #17980: avoid denials of service by refusing more
+        # than one wildcard per fragment.  A survery of established
+        # policy among SSL implementations showed it to be a
+        # reasonable choice.
+        raise CertificateError(
+            "too many wildcards in certificate DNS name: " + repr(dn))
+
+    # speed up common case w/o wildcards
+    if not wildcards:
+        return dn.lower() == hostname.lower()
+
+    # RFC 6125, section 6.4.3, subitem 1.
+    # The client SHOULD NOT attempt to match a presented identifier in which
+    # the wildcard character comprises a label other than the left-most label.
+    if leftmost == '*':
+        # When '*' is a fragment by itself, it matches a non-empty dotless
+        # fragment.
+        pats.append('[^.]+')
+    elif leftmost.startswith('xn--') or hostname.startswith('xn--'):
+        # RFC 6125, section 6.4.3, subitem 3.
+        # The client SHOULD NOT attempt to match a presented identifier
+        # where the wildcard character is embedded within an A-label or
+        # U-label of an internationalized domain name.
+        pats.append(re.escape(leftmost))
+    else:
+        # Otherwise, '*' matches any dotless string, e.g. www*
+        pats.append(re.escape(leftmost).replace(r'\*', '[^.]*'))
+
+    # add the remaining fragments, ignore any wildcards
+    for frag in remainder:
+        pats.append(re.escape(frag))
+
+    pat = re.compile(r'\A' + r'\.'.join(pats) + r'\Z', re.IGNORECASE)
+    return pat.match(hostname)
 
 
 def match_hostname(cert, hostname):
     """Verify that *cert* (in decoded format as returned by
-    SSLSocket.getpeercert()) matches the *hostname*.  RFC 2818 rules
-    are mostly followed, but IP addresses are not accepted for *hostname*.
+    SSLSocket.getpeercert()) matches the *hostname*.  RFC 2818 and RFC 6125
+    rules are followed, but IP addresses are not accepted for *hostname*.
 
     CertificateError is raised on failure. On success, the function
     returns nothing.
@@ -157,7 +193,7 @@ def match_hostname(cert, hostname):
     san = cert.get('subjectAltName', ())
     for key, value in san:
         if key == 'DNS':
-            if _dnsname_to_pat(value).match(hostname):
+            if _dnsname_match(value, hostname):
                 return
             dnsnames.append(value)
     if not dnsnames:
@@ -168,7 +204,7 @@ def match_hostname(cert, hostname):
                 # XXX according to RFC 2818, the most specific Common Name
                 # must be used.
                 if key == 'commonName':
-                    if _dnsname_to_pat(value).match(hostname):
+                    if _dnsname_match(value, hostname):
                         return
                     dnsnames.append(value)
     if len(dnsnames) > 1:
@@ -261,6 +297,10 @@ class SSLSocket(socket):
             self.ssl_version = ssl_version
             self.ca_certs = ca_certs
             self.ciphers = ciphers
+        # Can't use sock.type as other flags (such as SOCK_NONBLOCK) get
+        # mixed in.
+        if sock.getsockopt(SOL_SOCKET, SO_TYPE) != SOCK_STREAM:
+            raise NotImplementedError("only stream sockets are supported")
         if server_side and server_hostname:
             raise ValueError("server_hostname can only be specified "
                              "in client mode")

@@ -704,7 +704,7 @@ def is_third_party(request):
 
     """
     req_host = request_host(request)
-    if not domain_match(req_host, reach(request.get_origin_req_host())):
+    if not domain_match(req_host, reach(request.origin_req_host)):
         return True
     else:
         return False
@@ -1981,7 +1981,7 @@ class MozillaCookieJar(FileCookieJar):
     magic_re = re.compile("#( Netscape)? HTTP Cookie File")
     header = """\
 # Netscape HTTP Cookie File
-# http://www.netscape.com/newsref/std/cookie_spec.html
+# http://curl.haxx.se/rfc/cookie_spec.html
 # This is a generated file!  Do not edit.
 
 """

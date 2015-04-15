@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import unittest
 from test import support
 from unittest.case import _ExpectedFailure
@@ -9,7 +7,6 @@ import io
 import socket
 import select
 import tempfile
-import _testcapi
 import time
 import traceback
 import queue
@@ -714,13 +711,13 @@ class GeneralModuleTests(unittest.TestCase):
             ip = socket.gethostbyname(hostname)
         except socket.error:
             # Probably name lookup wasn't set up right; skip this test
-            return
+            self.skipTest('name lookup failure')
         self.assertTrue(ip.find('.') >= 0, "Error resolving host to ip.")
         try:
             hname, aliases, ipaddrs = socket.gethostbyaddr(ip)
         except socket.error:
             # Probably a similar problem as above; skip this test
-            return
+            self.skipTest('name lookup failure')
         all_host_names = [hostname, hname] + aliases
         fqhn = socket.getfqdn(ip)
         if not fqhn in all_host_names:
@@ -772,16 +769,17 @@ class GeneralModuleTests(unittest.TestCase):
         self.assertRaises(TypeError, socket.if_nametoindex, 0)
         self.assertRaises(TypeError, socket.if_indextoname, '_DEADBEEF')
 
+    @unittest.skipUnless(hasattr(sys, 'getrefcount'),
+                         'test needs sys.getrefcount()')
     def testRefCountGetNameInfo(self):
         # Testing reference count for getnameinfo
-        if hasattr(sys, "getrefcount"):
-            try:
-                # On some versions, this loses a reference
-                orig = sys.getrefcount(__name__)
-                socket.getnameinfo(__name__,0)
-            except TypeError:
-                if sys.getrefcount(__name__) != orig:
-                    self.fail("socket.getnameinfo loses a reference")
+        try:
+            # On some versions, this loses a reference
+            orig = sys.getrefcount(__name__)
+            socket.getnameinfo(__name__,0)
+        except TypeError:
+            if sys.getrefcount(__name__) != orig:
+                self.fail("socket.getnameinfo loses a reference")
 
     def testInterpreterCrash(self):
         # Making sure getnameinfo doesn't crash the interpreter
@@ -886,17 +884,17 @@ class GeneralModuleTests(unittest.TestCase):
         # Check that setting it to an invalid type raises TypeError
         self.assertRaises(TypeError, socket.setdefaulttimeout, "spam")
 
+    @unittest.skipUnless(hasattr(socket, 'inet_aton'),
+                         'test needs socket.inet_aton()')
     def testIPv4_inet_aton_fourbytes(self):
-        if not hasattr(socket, 'inet_aton'):
-            return  # No inet_aton, nothing to check
         # Test that issue1008086 and issue767150 are fixed.
         # It must return 4 bytes.
         self.assertEqual(b'\x00'*4, socket.inet_aton('0.0.0.0'))
         self.assertEqual(b'\xff'*4, socket.inet_aton('255.255.255.255'))
 
+    @unittest.skipUnless(hasattr(socket, 'inet_pton'),
+                         'test needs socket.inet_pton()')
     def testIPv4toString(self):
-        if not hasattr(socket, 'inet_pton'):
-            return # No inet_pton() on this platform
         from socket import inet_aton as f, inet_pton, AF_INET
         g = lambda a: inet_pton(AF_INET, a)
 
@@ -925,15 +923,15 @@ class GeneralModuleTests(unittest.TestCase):
         assertInvalid(g, '1.2.3.4.5')
         assertInvalid(g, '::1')
 
+    @unittest.skipUnless(hasattr(socket, 'inet_pton'),
+                         'test needs socket.inet_pton()')
     def testIPv6toString(self):
-        if not hasattr(socket, 'inet_pton'):
-            return # No inet_pton() on this platform
         try:
             from socket import inet_pton, AF_INET6, has_ipv6
             if not has_ipv6:
-                return
+                self.skipTest('IPv6 not available')
         except ImportError:
-            return
+            self.skipTest('could not import needed symbols from socket')
         f = lambda a: inet_pton(AF_INET6, a)
         assertInvalid = lambda a: self.assertRaises(
             (socket.error, ValueError), f, a
@@ -979,9 +977,9 @@ class GeneralModuleTests(unittest.TestCase):
         assertInvalid('::1.2.3.4:0')
         assertInvalid('0.100.200.0:3:4:5:6:7:8')
 
+    @unittest.skipUnless(hasattr(socket, 'inet_ntop'),
+                         'test needs socket.inet_ntop()')
     def testStringToIPv4(self):
-        if not hasattr(socket, 'inet_ntop'):
-            return # No inet_ntop() on this platform
         from socket import inet_ntoa as f, inet_ntop, AF_INET
         g = lambda a: inet_ntop(AF_INET, a)
         assertInvalid = lambda func,a: self.assertRaises(
@@ -1003,15 +1001,15 @@ class GeneralModuleTests(unittest.TestCase):
         assertInvalid(g, b'\x00' * 5)
         assertInvalid(g, b'\x00' * 16)
 
+    @unittest.skipUnless(hasattr(socket, 'inet_ntop'),
+                         'test needs socket.inet_ntop()')
     def testStringToIPv6(self):
-        if not hasattr(socket, 'inet_ntop'):
-            return # No inet_ntop() on this platform
         try:
             from socket import inet_ntop, AF_INET6, has_ipv6
             if not has_ipv6:
-                return
+                self.skipTest('IPv6 not available')
         except ImportError:
-            return
+            self.skipTest('could not import needed symbols from socket')
         f = lambda a: inet_ntop(AF_INET6, a)
         assertInvalid = lambda a: self.assertRaises(
             (socket.error, ValueError), f, a
@@ -1044,7 +1042,7 @@ class GeneralModuleTests(unittest.TestCase):
             my_ip_addr = socket.gethostbyname(socket.gethostname())
         except socket.error:
             # Probably name lookup wasn't set up right; skip this test
-            return
+            self.skipTest('name lookup failure')
         self.assertIn(name[0], ("0.0.0.0", my_ip_addr), '%s invalid' % name[0])
         self.assertEqual(name[1], port)
 
@@ -1166,6 +1164,16 @@ class GeneralModuleTests(unittest.TestCase):
         # Issue #6697.
         self.assertRaises(UnicodeEncodeError, socket.getaddrinfo, 'localhost', '\uD800')
 
+        # Issue 17269: test workaround for OS X platform bug segfault
+        if hasattr(socket, 'AI_NUMERICSERV'):
+            try:
+                # The arguments here are undefined and the call may succeed
+                # or fail.  All we care here is that it doesn't segfault.
+                socket.getaddrinfo("localhost", None, 0, 0, 0,
+                                   socket.AI_NUMERICSERV)
+            except socket.gaierror:
+                pass
+
     def test_getnameinfo(self):
         # only IP addresses are allowed
         self.assertRaises(socket.error, socket.getnameinfo, ('mail.python.org',0), 0)
@@ -1206,12 +1214,14 @@ class GeneralModuleTests(unittest.TestCase):
                 c.settimeout(1.5)
             with self.assertRaises(ZeroDivisionError):
                 signal.alarm(1)
-                c.sendall(b"x" * (1024**2))
+                c.sendall(b"x" * support.SOCK_MAX_SIZE)
             if with_timeout:
                 signal.signal(signal.SIGALRM, ok_handler)
                 signal.alarm(1)
-                self.assertRaises(socket.timeout, c.sendall, b"x" * (1024**2))
+                self.assertRaises(socket.timeout, c.sendall,
+                                  b"x" * support.SOCK_MAX_SIZE)
         finally:
+            signal.alarm(0)
             signal.signal(signal.SIGALRM, old_alarm)
             c.close()
             s.close()
@@ -1269,7 +1279,10 @@ class GeneralModuleTests(unittest.TestCase):
             srv.listen(backlog)
             srv.close()
 
+    @support.cpython_only
+    def test_listen_backlog_overflow(self):
         # Issue 15989
+        import _testcapi
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.bind((HOST, 0))
         self.assertRaises(OverflowError, srv.listen, _testcapi.INT_MAX + 1)
@@ -1587,6 +1600,14 @@ class BasicTCPTest(SocketConnectedTest):
         self.done.wait()
 
     def _testShutdown(self):
+        self.serv_conn.send(MSG)
+        self.serv_conn.shutdown(2)
+
+    testShutdown_overflow = support.cpython_only(testShutdown)
+
+    @support.cpython_only
+    def _testShutdown_overflow(self):
+        import _testcapi
         self.serv_conn.send(MSG)
         # Issue 15989
         self.assertRaises(OverflowError, self.serv_conn.shutdown,
@@ -2356,7 +2377,12 @@ class CmsgMacroTests(unittest.TestCase):
     # code with these functions.
 
     # Match the definition in socketmodule.c
-    socklen_t_limit = min(0x7fffffff, _testcapi.INT_MAX)
+    try:
+        import _testcapi
+    except ImportError:
+        socklen_t_limit = 0x7fffffff
+    else:
+        socklen_t_limit = min(0x7fffffff, _testcapi.INT_MAX)
 
     @requireAttrs(socket, "CMSG_LEN")
     def testCMSG_LEN(self):
@@ -2529,8 +2555,7 @@ class SCMRightsTest(SendrecvmsgServerTimeoutBase):
     def _testFDPassCMSG_LEN(self):
         self.createAndSendFDs(1)
 
-    # Issue #12958: The following test has problems on Mac OS X
-    @support.anticipate_failure(sys.platform == "darwin")
+    @unittest.skipIf(sys.platform == "darwin", "skipping, see issue #12958")
     @requireAttrs(socket, "CMSG_SPACE")
     def testFDPassSeparate(self):
         # Pass two FDs in two separate arrays.  Arrays may be combined
@@ -2540,7 +2565,7 @@ class SCMRightsTest(SendrecvmsgServerTimeoutBase):
                              maxcmsgs=2)
 
     @testFDPassSeparate.client_skip
-    @support.anticipate_failure(sys.platform == "darwin")
+    @unittest.skipIf(sys.platform == "darwin", "skipping, see issue #12958")
     def _testFDPassSeparate(self):
         fd0, fd1 = self.newFDs(2)
         self.assertEqual(
@@ -2552,8 +2577,7 @@ class SCMRightsTest(SendrecvmsgServerTimeoutBase):
                                           array.array("i", [fd1]))]),
             len(MSG))
 
-    # Issue #12958: The following test has problems on Mac OS X
-    @support.anticipate_failure(sys.platform == "darwin")
+    @unittest.skipIf(sys.platform == "darwin", "skipping, see issue #12958")
     @requireAttrs(socket, "CMSG_SPACE")
     def testFDPassSeparateMinSpace(self):
         # Pass two FDs in two separate arrays, receiving them into the
@@ -2565,7 +2589,7 @@ class SCMRightsTest(SendrecvmsgServerTimeoutBase):
                              maxcmsgs=2, ignoreflags=socket.MSG_CTRUNC)
 
     @testFDPassSeparateMinSpace.client_skip
-    @support.anticipate_failure(sys.platform == "darwin")
+    @unittest.skipIf(sys.platform == "darwin", "skipping, see issue #12958")
     def _testFDPassSeparateMinSpace(self):
         fd0, fd1 = self.newFDs(2)
         self.assertEqual(
@@ -3221,7 +3245,11 @@ class RecvmsgIntoUDPTest(RecvmsgIntoTests, SendrecvmsgUDPTestBase):
 class SendrecvmsgUDP6TestBase(SendrecvmsgDgramFlagsBase,
                               SendrecvmsgConnectionlessBase,
                               ThreadedSocketTestMixin, UDP6TestBase):
-    pass
+
+    def checkRecvmsgAddress(self, addr1, addr2):
+        # Called to compare the received address with the address of
+        # the peer, ignoring scope ID
+        self.assertEqual(addr1[:-1], addr2[:-1])
 
 @requireAttrs(socket.socket, "sendmsg")
 @unittest.skipUnless(support.IPV6_ENABLED, 'IPv6 required for this test.')
@@ -3483,12 +3511,12 @@ class InterruptedSendTimeoutTest(InterruptedTimeoutBase,
         self.assertNotIsInstance(cm.exception, socket.timeout)
         self.assertEqual(cm.exception.errno, errno.EINTR)
 
-    # Issue #12958: The following tests have problems on Mac OS X
-    @support.anticipate_failure(sys.platform == "darwin")
+    # Issue #12958: The following tests have problems on OS X prior to 10.7
+    @support.requires_mac_ver(10, 7)
     def testInterruptedSendTimeout(self):
         self.checkInterruptedSend(self.serv_conn.send, b"a"*512)
 
-    @support.anticipate_failure(sys.platform == "darwin")
+    @support.requires_mac_ver(10, 7)
     def testInterruptedSendtoTimeout(self):
         # Passing an actual address here as Python's wrapper for
         # sendto() doesn't allow passing a zero-length one; POSIX
@@ -3497,7 +3525,7 @@ class InterruptedSendTimeoutTest(InterruptedTimeoutBase,
         self.checkInterruptedSend(self.serv_conn.sendto, b"a"*512,
                                   self.serv_addr)
 
-    @support.anticipate_failure(sys.platform == "darwin")
+    @support.requires_mac_ver(10, 7)
     @requireAttrs(socket.socket, "sendmsg")
     def testInterruptedSendmsgTimeout(self):
         self.checkInterruptedSend(self.serv_conn.sendmsg, [b"a"*512])
@@ -3523,6 +3551,8 @@ class TCPCloserTest(ThreadedTCPSocketTest):
         self.cli.connect((HOST, self.port))
         time.sleep(1.0)
 
+@unittest.skipUnless(hasattr(socket, 'socketpair'),
+                     'test needs socket.socketpair()')
 @unittest.skipUnless(thread, 'Threading required for this test.')
 class BasicSocketPairTest(SocketPairTest):
 
@@ -3577,34 +3607,44 @@ class NonBlockingTCPTests(ThreadedTCPSocketTest):
             pass
         end = time.time()
         self.assertTrue((end - start) < 1.0, "Error setting non-blocking mode.")
-        # Issue 15989
-        if _testcapi.UINT_MAX < _testcapi.ULONG_MAX:
-            self.serv.setblocking(_testcapi.UINT_MAX + 1)
-            self.assertIsNone(self.serv.gettimeout())
 
     def _testSetBlocking(self):
         pass
 
-    if hasattr(socket, "SOCK_NONBLOCK"):
-        @support.requires_linux_version(2, 6, 28)
-        def testInitNonBlocking(self):
-            # reinit server socket
-            self.serv.close()
-            self.serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM |
-                                                      socket.SOCK_NONBLOCK)
-            self.port = support.bind_port(self.serv)
-            self.serv.listen(1)
-            # actual testing
-            start = time.time()
-            try:
-                self.serv.accept()
-            except socket.error:
-                pass
-            end = time.time()
-            self.assertTrue((end - start) < 1.0, "Error creating with non-blocking mode.")
+    @support.cpython_only
+    def testSetBlocking_overflow(self):
+        # Issue 15989
+        import _testcapi
+        if _testcapi.UINT_MAX >= _testcapi.ULONG_MAX:
+            self.skipTest('needs UINT_MAX < ULONG_MAX')
+        self.serv.setblocking(False)
+        self.assertEqual(self.serv.gettimeout(), 0.0)
+        self.serv.setblocking(_testcapi.UINT_MAX + 1)
+        self.assertIsNone(self.serv.gettimeout())
 
-        def _testInitNonBlocking(self):
+    _testSetBlocking_overflow = support.cpython_only(_testSetBlocking)
+
+    @unittest.skipUnless(hasattr(socket, 'SOCK_NONBLOCK'),
+                         'test needs socket.SOCK_NONBLOCK')
+    @support.requires_linux_version(2, 6, 28)
+    def testInitNonBlocking(self):
+        # reinit server socket
+        self.serv.close()
+        self.serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM |
+                                                  socket.SOCK_NONBLOCK)
+        self.port = support.bind_port(self.serv)
+        self.serv.listen(1)
+        # actual testing
+        start = time.time()
+        try:
+            self.serv.accept()
+        except socket.error:
             pass
+        end = time.time()
+        self.assertTrue((end - start) < 1.0, "Error creating with non-blocking mode.")
+
+    def _testInitNonBlocking(self):
+        pass
 
     def testInheritFlags(self):
         # Issue #7995: when calling accept() on a listening socket with a
@@ -4040,7 +4080,7 @@ class UnbufferedFileObjectClassTestCase(FileObjectClassTestCase):
         self.serv_skipped = None
         self.serv_conn.setblocking(False)
         # Try to saturate the socket buffer pipe with repeated large writes.
-        BIG = b"x" * (1024 ** 2)
+        BIG = b"x" * support.SOCK_MAX_SIZE
         LIMIT = 10
         # The first write() succeeds since a chunk of data can be buffered
         n = self.write_file.write(BIG)
@@ -4294,12 +4334,12 @@ class TCPTimeoutTest(SocketTCPTest):
         if not ok:
             self.fail("accept() returned success when we did not expect it")
 
+    @unittest.skipUnless(hasattr(signal, 'alarm'),
+                         'test needs signal.alarm()')
     def testInterruptedTimeout(self):
         # XXX I don't know how to do this test on MSWindows or any other
         # plaform that doesn't support signal.alarm() or os.kill(), though
         # the bug should have existed on all platforms.
-        if not hasattr(signal, "alarm"):
-            return                  # can only test on *nix
         self.serv.settimeout(5.0)   # must be longer than alarm
         class Alarm(Exception):
             pass
@@ -4359,6 +4399,7 @@ class TestExceptions(unittest.TestCase):
         self.assertTrue(issubclass(socket.gaierror, socket.error))
         self.assertTrue(issubclass(socket.timeout, socket.error))
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux specific test')
 class TestLinuxAbstractNamespace(unittest.TestCase):
 
     UNIX_PATH_MAX = 108
@@ -4394,6 +4435,7 @@ class TestLinuxAbstractNamespace(unittest.TestCase):
         finally:
             s.close()
 
+@unittest.skipUnless(hasattr(socket, 'AF_UNIX'), 'test needs socket.AF_UNIX')
 class TestUnixDomain(unittest.TestCase):
 
     def setUp(self):
@@ -4524,6 +4566,21 @@ class BufferIOTest(SocketConnectedTest):
 
     _testRecvFromIntoMemoryview = _testRecvFromIntoArray
 
+    def testRecvFromIntoSmallBuffer(self):
+        # See issue #20246.
+        buf = bytearray(8)
+        self.assertRaises(ValueError, self.cli_conn.recvfrom_into, buf, 1024)
+
+    def _testRecvFromIntoSmallBuffer(self):
+        self.serv_conn.send(MSG)
+
+    def testRecvFromIntoEmptyBuffer(self):
+        buf = bytearray()
+        self.cli_conn.recvfrom_into(buf)
+        self.cli_conn.recvfrom_into(buf, 0)
+
+    _testRecvFromIntoEmptyBuffer = _testRecvFromIntoArray
+
 
 TIPC_STYPE = 2000
 TIPC_LOWER = 200
@@ -4543,10 +4600,10 @@ def isTipcAvailable():
         for line in f:
             if line.startswith("tipc "):
                 return True
-    if support.verbose:
-        print("TIPC module is not loaded, please 'sudo modprobe tipc'")
     return False
 
+@unittest.skipUnless(isTipcAvailable(),
+                     "TIPC module is not loaded, please 'sudo modprobe tipc'")
 class TIPCTest(unittest.TestCase):
     def testRDM(self):
         srv = socket.socket(socket.AF_TIPC, socket.SOCK_RDM)
@@ -4569,6 +4626,8 @@ class TIPCTest(unittest.TestCase):
         self.assertEqual(msg, MSG)
 
 
+@unittest.skipUnless(isTipcAvailable(),
+                     "TIPC module is not loaded, please 'sudo modprobe tipc'")
 class TIPCThreadableTest(unittest.TestCase, ThreadableTest):
     def __init__(self, methodName = 'runTest'):
         unittest.TestCase.__init__(self, methodName = methodName)
@@ -4834,15 +4893,10 @@ def test_main():
         CloexecConstantTest,
         NonblockConstantTest
     ])
-    if hasattr(socket, "socketpair"):
-        tests.append(BasicSocketPairTest)
-    if hasattr(socket, "AF_UNIX"):
-        tests.append(TestUnixDomain)
-    if sys.platform == 'linux':
-        tests.append(TestLinuxAbstractNamespace)
-    if isTipcAvailable():
-        tests.append(TIPCTest)
-        tests.append(TIPCThreadableTest)
+    tests.append(BasicSocketPairTest)
+    tests.append(TestUnixDomain)
+    tests.append(TestLinuxAbstractNamespace)
+    tests.extend([TIPCTest, TIPCThreadableTest])
     tests.extend([BasicCANTest, CANTest])
     tests.extend([BasicRDSTest, RDSTest])
     tests.extend([

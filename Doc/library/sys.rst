@@ -227,7 +227,9 @@ always available.
    installed in :file:`{exec_prefix}/lib/python{X.Y}/lib-dynload`, where *X.Y*
    is the version number of Python, for example ``3.2``.
 
-   .. note:: If a :ref:`virtual environment <venv-def>` is in effect, this
+   .. note::
+
+      If a :ref:`virtual environment <venv-def>` is in effect, this
       value will be changed in ``site.py`` to point to the virtual environment.
       The value for the Python installation will still be available, via
       :data:`base_exec_prefix`.
@@ -306,6 +308,8 @@ always available.
    constants defined in the standard header file :file:`float.h` for the 'C'
    programming language; see section 5.2.4.2.2 of the 1999 ISO/IEC C standard
    [C99]_, 'Characteristics of floating types', for details.
+
+   .. tabularcolumns:: |l|l|L|
 
    +---------------------+----------------+--------------------------------------------------+
    | attribute           | float.h macro  | explanation                                      |
@@ -407,7 +411,7 @@ always available.
    * On Mac OS X, the encoding is ``'utf-8'``.
 
    * On Unix, the encoding is the user's preference according to the result of
-     nl_langinfo(CODESET), or ``'utf-8'`` if ``nl_langinfo(CODESET)`` failed.
+     nl_langinfo(CODESET).
 
    * On Windows NT+, file names are Unicode natively, so no conversion is
      performed. :func:`getfilesystemencoding` still returns ``'mbcs'``, as
@@ -418,8 +422,7 @@ always available.
    * On Windows 9x, the encoding is ``'mbcs'``.
 
    .. versionchanged:: 3.2
-      On Unix, use ``'utf-8'`` instead of ``None`` if ``nl_langinfo(CODESET)``
-      failed. :func:`getfilesystemencoding` result cannot be ``None``.
+      :func:`getfilesystemencoding` result cannot be ``None`` anymore.
 
 
 .. function:: getrefcount(object)
@@ -646,6 +649,8 @@ always available.
    A :term:`struct sequence` that holds information about Python's internal
    representation of integers.  The attributes are read only.
 
+   .. tabularcolumns:: |l|L|
+
    +-------------------------+----------------------------------------------+
    | Attribute               | Explanation                                  |
    +=========================+==============================================+
@@ -728,6 +733,8 @@ always available.
 
    This is a dictionary that maps module names to modules which have already been
    loaded.  This can be manipulated to force reloading of modules and other tricks.
+   However, replacing the dictionary will not necessarily work as expected and
+   deleting essential items from the dictionary may cause Python to fail.
 
 
 .. data:: path
@@ -1026,7 +1033,7 @@ always available.
    :func:`open` function.  Their parameters are chosen as follows:
 
    * The character encoding is platform-dependent.  Under Windows, if the stream
-     is interactive (that is, if its :meth:`isatty` method returns True), the
+     is interactive (that is, if its :meth:`isatty` method returns ``True``), the
      console codepage is used, otherwise the ANSI code page.  Under other
      platforms, the locale encoding is used (see :meth:`locale.getpreferredencoding`).
 
@@ -1078,6 +1085,8 @@ always available.
 
    A :term:`struct sequence` holding information about the thread
    implementation.
+
+   .. tabularcolumns:: |l|p{0.7\linewidth}|
 
    +------------------+---------------------------------------------------------+
    | Attribute        | Explanation                                             |
@@ -1180,5 +1189,5 @@ always available.
 
 .. rubric:: Citations
 
-.. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf .
+.. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf\ .
 

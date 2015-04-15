@@ -11,7 +11,7 @@ r"""subprocess - Subprocesses with accessible I/O streams
 
 This module allows you to spawn processes, connect to their
 input/output/error pipes, and obtain their return codes.  This module
-intends to replace several other, older modules and functions, like:
+intends to replace several older modules and functions:
 
 os.system
 os.spawn*
@@ -104,6 +104,9 @@ in the child process prior to executing the command.
 If env is not None, it defines the environment variables for the new
 process.
 
+If universal_newlines is false, the file objects stdin, stdout and stderr
+are opened as binary files, and no line ending conversion is done.
+
 If universal_newlines is true, the file objects stdout and stderr are
 opened as a text files, but lines may be terminated by any of '\n',
 the Unix end-of-line convention, '\r', the old Macintosh convention or
@@ -182,7 +185,7 @@ Exceptions raised in the child process, before the new program has
 started to execute, will be re-raised in the parent.  Additionally,
 the exception object will have one extra attribute called
 'child_traceback', which is a string containing traceback information
-from the childs point of view.
+from the child's point of view.
 
 The most common exception raised is OSError.  This occurs, for
 example, when trying to execute a non-existent file.  Applications
@@ -659,7 +662,6 @@ def list2cmdline(seq):
 
 # Various tools for executing commands and looking at their output and status.
 #
-# NB This only works (and is only relevant) for POSIX.
 
 def getstatusoutput(cmd):
     """Return (status, output) of executing cmd in a shell.
@@ -678,21 +680,15 @@ def getstatusoutput(cmd):
     >>> subprocess.getstatusoutput('/bin/junk')
     (256, 'sh: /bin/junk: not found')
     """
-    with os.popen('{ ' + cmd + '; } 2>&1', 'r') as pipe:
-        try:
-            text = pipe.read()
-            sts = pipe.close()
-        except:
-            process = pipe._proc
-            process.kill()
-            process.wait()
-            raise
-    if sts is None:
-        sts = 0
-    if text[-1:] == '\n':
-        text = text[:-1]
-    return sts, text
-
+    try:
+        data = check_output(cmd, shell=True, universal_newlines=True, stderr=STDOUT)
+        status = 0
+    except CalledProcessError as ex:
+        data = ex.output
+        status = ex.returncode
+    if data[-1:] == '\n':
+        data = data[:-1]
+    return status, data
 
 def getoutput(cmd):
     """Return output (stdout or stderr) of executing cmd in a shell.
@@ -711,6 +707,9 @@ _PLATFORM_DEFAULT_CLOSE_FDS = object()
 
 
 class Popen(object):
+
+    _child_created = False  # Set here since __del__ checks it
+
     def __init__(self, args, bufsize=-1, executable=None,
                  stdin=None, stdout=None, stderr=None,
                  preexec_fn=None, close_fds=_PLATFORM_DEFAULT_CLOSE_FDS,
@@ -721,7 +720,6 @@ class Popen(object):
         """Create new Popen instance."""
         _cleanup()
 
-        self._child_created = False
         self._input = None
         self._communication_started = False
         if bufsize is None:
@@ -810,6 +808,7 @@ class Popen(object):
             if universal_newlines:
                 self.stderr = io.TextIOWrapper(self.stderr)
 
+        self._closed_child_pipe_fds = False
         try:
             self._execute_child(args, executable, preexec_fn, close_fds,
                                 pass_fds, cwd, env,
@@ -826,19 +825,21 @@ class Popen(object):
                 except EnvironmentError:
                     pass  # Ignore EBADF or other errors.
 
-            # Make sure the child pipes are closed as well.
-            to_close = []
-            if stdin == PIPE:
-                to_close.append(p2cread)
-            if stdout == PIPE:
-                to_close.append(c2pwrite)
-            if stderr == PIPE:
-                to_close.append(errwrite)
-            for fd in to_close:
-                try:
-                    os.close(fd)
-                except EnvironmentError:
-                    pass
+            if not self._closed_child_pipe_fds:
+                to_close = []
+                if stdin == PIPE:
+                    to_close.append(p2cread)
+                if stdout == PIPE:
+                    to_close.append(c2pwrite)
+                if stderr == PIPE:
+                    to_close.append(errwrite)
+                if hasattr(self, '_devnull'):
+                    to_close.append(self._devnull)
+                for fd in to_close:
+                    try:
+                        os.close(fd)
+                    except EnvironmentError:
+                        pass
 
             raise
 
@@ -860,11 +861,8 @@ class Popen(object):
         # Wait for the process to terminate, to avoid zombies.
         self.wait()
 
-    def __del__(self, _maxsize=sys.maxsize, _active=_active):
-        # If __init__ hasn't had a chance to execute (e.g. if it
-        # was passed an undeclared keyword argument), we don't
-        # have a _child_created attribute at all.
-        if not getattr(self, '_child_created', False):
+    def __del__(self, _maxsize=sys.maxsize):
+        if not self._child_created:
             # We didn't get to successfully create a child process.
             return
         # In case the child hasn't been waited on, check if it's done.
@@ -1195,7 +1193,15 @@ class Popen(object):
                     try:
                         self.stdin.write(input)
                     except IOError as e:
-                        if e.errno != errno.EPIPE:
+                        if e.errno == errno.EPIPE:
+                            # ignore pipe full error
+                            pass
+                        elif (e.errno == errno.EINVAL
+                              and self.poll() is not None):
+                            # Issue #19612: stdin.write() fails with EINVAL
+                            # if the process already exited before the write
+                            pass
+                        else:
                             raise
                 self.stdin.close()
 
@@ -1383,14 +1389,18 @@ class Popen(object):
                     # be sure the FD is closed no matter what
                     os.close(errpipe_write)
 
-                if p2cread != -1 and p2cwrite != -1:
+                # self._devnull is not always defined.
+                devnull_fd = getattr(self, '_devnull', None)
+                if p2cread != -1 and p2cwrite != -1 and p2cread != devnull_fd:
                     os.close(p2cread)
-                if c2pwrite != -1 and c2pread != -1:
+                if c2pwrite != -1 and c2pread != -1 and c2pwrite != devnull_fd:
                     os.close(c2pwrite)
-                if errwrite != -1 and errread != -1:
+                if errwrite != -1 and errread != -1 and errwrite != devnull_fd:
                     os.close(errwrite)
-                if hasattr(self, '_devnull'):
-                    os.close(self._devnull)
+                if devnull_fd is not None:
+                    os.close(devnull_fd)
+                # Prevent a double close of these fds from __init__ on error.
+                self._closed_child_pipe_fds = True
 
                 # Wait for exec to fail or succeed; possibly raising an
                 # exception (limited in size)
@@ -1443,7 +1453,7 @@ class Popen(object):
                 _WTERMSIG=os.WTERMSIG, _WIFEXITED=os.WIFEXITED,
                 _WEXITSTATUS=os.WEXITSTATUS):
             # This method is called (indirectly) by __del__, so it cannot
-            # refer to anything outside of its local scope."""
+            # refer to anything outside of its local scope.
             if _WIFSIGNALED(sts):
                 self.returncode = -_WTERMSIG(sts)
             elif _WIFEXITED(sts):
@@ -1618,6 +1628,9 @@ class Popen(object):
 
             self._save_input(input)
 
+            if self._input:
+                input_view = memoryview(self._input)
+
             while self._fd2file:
                 timeout = self._remaining_time(endtime)
                 if timeout is not None and timeout < 0:
@@ -1635,8 +1648,8 @@ class Popen(object):
 
                 for fd, mode in ready:
                     if mode & select.POLLOUT:
-                        chunk = self._input[self._input_offset :
-                                            self._input_offset + _PIPE_BUF]
+                        chunk = input_view[self._input_offset :
+                                           self._input_offset + _PIPE_BUF]
                         try:
                             self._input_offset += os.write(fd, chunk)
                         except OSError as e:
@@ -1648,7 +1661,7 @@ class Popen(object):
                             if self._input_offset >= len(self._input):
                                 close_unregister_and_remove(fd)
                     elif mode & select_POLLIN_POLLPRI:
-                        data = os.read(fd, 4096)
+                        data = os.read(fd, 32768)
                         if not data:
                             close_unregister_and_remove(fd)
                         self._fd2output[fd].append(data)

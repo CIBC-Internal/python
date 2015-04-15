@@ -120,7 +120,13 @@ test_dict_inner(int count)
 
     for (i = 0; i < count; i++) {
         v = PyLong_FromLong(i);
-        PyDict_SetItem(dict, v, v);
+        if (v == NULL) {
+            return -1;
+        }
+        if (PyDict_SetItem(dict, v, v) < 0) {
+            Py_DECREF(v);
+            return -1;
+        }
         Py_DECREF(v);
     }
 
@@ -1629,7 +1635,7 @@ test_long_numbits(PyObject *self)
                      {-3L, 2, -1},
                      {4L, 3, 1},
                      {-4L, 3, -1},
-                     {0x7fffL, 15, 1},          /* one Python long digit */
+                     {0x7fffL, 15, 1},          /* one Python int digit */
              {-0x7fffL, 15, -1},
              {0xffffL, 16, 1},
              {-0xffffL, 16, -1},
@@ -1638,9 +1644,15 @@ test_long_numbits(PyObject *self)
     int i;
 
     for (i = 0; i < Py_ARRAY_LENGTH(testcases); ++i) {
-        PyObject *plong = PyLong_FromLong(testcases[i].input);
-        size_t nbits = _PyLong_NumBits(plong);
-        int sign = _PyLong_Sign(plong);
+        size_t nbits;
+        int sign;
+        PyObject *plong;
+
+        plong = PyLong_FromLong(testcases[i].input);
+        if (plong == NULL)
+            return NULL;
+        nbits = _PyLong_NumBits(plong);
+        sign = _PyLong_Sign(plong);
 
         Py_DECREF(plong);
         if (nbits != testcases[i].nbits)
@@ -2174,6 +2186,8 @@ profile_int(PyObject *self, PyObject* args)
     /* Test 3: Allocate a few integers, then release
        them all simultaneously. */
     multiple = malloc(sizeof(PyObject*) * 1000);
+    if (multiple == NULL)
+        return PyErr_NoMemory();
     gettimeofday(&start, NULL);
     for(k=0; k < 20000; k++) {
         for(i=0; i < 1000; i++) {
@@ -2185,10 +2199,13 @@ profile_int(PyObject *self, PyObject* args)
     }
     gettimeofday(&stop, NULL);
     print_delta(3, &start, &stop);
+    free(multiple);
 
     /* Test 4: Allocate many integers, then release
        them all simultaneously. */
     multiple = malloc(sizeof(PyObject*) * 1000000);
+    if (multiple == NULL)
+        return PyErr_NoMemory();
     gettimeofday(&start, NULL);
     for(k=0; k < 20; k++) {
         for(i=0; i < 1000000; i++) {
@@ -2200,9 +2217,12 @@ profile_int(PyObject *self, PyObject* args)
     }
     gettimeofday(&stop, NULL);
     print_delta(4, &start, &stop);
+    free(multiple);
 
     /* Test 5: Allocate many integers < 32000 */
     multiple = malloc(sizeof(PyObject*) * 1000000);
+    if (multiple == NULL)
+        return PyErr_NoMemory();
     gettimeofday(&start, NULL);
     for(k=0; k < 10; k++) {
         for(i=0; i < 1000000; i++) {
@@ -2214,6 +2234,7 @@ profile_int(PyObject *self, PyObject* args)
     }
     gettimeofday(&stop, NULL);
     print_delta(5, &start, &stop);
+    free(multiple);
 
     /* Test 6: Perform small int addition */
     op1 = PyLong_FromLong(1);
@@ -2228,10 +2249,12 @@ profile_int(PyObject *self, PyObject* args)
 
     /* Test 7: Perform medium int addition */
     op1 = PyLong_FromLong(1000);
+    if (op1 == NULL)
+        return NULL;
     gettimeofday(&start, NULL);
     for(i=0; i < 10000000; i++) {
         result = PyNumber_Add(op1, op1);
-        Py_DECREF(result);
+        Py_XDECREF(result);
     }
     gettimeofday(&stop, NULL);
     Py_DECREF(op1);
@@ -2454,6 +2477,95 @@ test_pytime_object_to_timespec(PyObject *self, PyObject *args)
     return Py_BuildValue("Nl", _PyLong_FromTime_t(sec), nsec);
 }
 
+#ifdef WITH_THREAD
+typedef struct {
+    PyThread_type_lock start_event;
+    PyThread_type_lock exit_event;
+    PyObject *callback;
+} test_c_thread_t;
+
+static void
+temporary_c_thread(void *data)
+{
+    test_c_thread_t *test_c_thread = data;
+    PyGILState_STATE state;
+    PyObject *res;
+
+    PyThread_release_lock(test_c_thread->start_event);
+
+    /* Allocate a Python thread state for this thread */
+    state = PyGILState_Ensure();
+
+    res = PyObject_CallFunction(test_c_thread->callback, "", NULL);
+    Py_CLEAR(test_c_thread->callback);
+
+    if (res == NULL) {
+        PyErr_Print();
+    }
+    else {
+        Py_DECREF(res);
+    }
+
+    /* Destroy the Python thread state for this thread */
+    PyGILState_Release(state);
+
+    PyThread_release_lock(test_c_thread->exit_event);
+
+    PyThread_exit_thread();
+}
+
+static PyObject *
+call_in_temporary_c_thread(PyObject *self, PyObject *callback)
+{
+    PyObject *res = NULL;
+    test_c_thread_t test_c_thread;
+    long thread;
+
+    PyEval_InitThreads();
+
+    test_c_thread.start_event = PyThread_allocate_lock();
+    test_c_thread.exit_event = PyThread_allocate_lock();
+    test_c_thread.callback = NULL;
+    if (!test_c_thread.start_event || !test_c_thread.exit_event) {
+        PyErr_SetString(PyExc_RuntimeError, "could not allocate lock");
+        goto exit;
+    }
+
+    Py_INCREF(callback);
+    test_c_thread.callback = callback;
+
+    PyThread_acquire_lock(test_c_thread.start_event, 1);
+    PyThread_acquire_lock(test_c_thread.exit_event, 1);
+
+    thread = PyThread_start_new_thread(temporary_c_thread, &test_c_thread);
+    if (thread == -1) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to start the thread");
+        PyThread_release_lock(test_c_thread.start_event);
+        PyThread_release_lock(test_c_thread.exit_event);
+        goto exit;
+    }
+
+    PyThread_acquire_lock(test_c_thread.start_event, 1);
+    PyThread_release_lock(test_c_thread.start_event);
+
+    Py_BEGIN_ALLOW_THREADS
+        PyThread_acquire_lock(test_c_thread.exit_event, 1);
+        PyThread_release_lock(test_c_thread.exit_event);
+    Py_END_ALLOW_THREADS
+
+    Py_INCREF(Py_None);
+    res = Py_None;
+
+exit:
+    Py_CLEAR(test_c_thread.callback);
+    if (test_c_thread.start_event)
+        PyThread_free_lock(test_c_thread.start_event);
+    if (test_c_thread.exit_event)
+        PyThread_free_lock(test_c_thread.exit_event);
+    return res;
+}
+#endif   /* WITH_THREAD */
+
 
 static PyMethodDef TestMethods[] = {
     {"raise_exception",         raise_exception,                 METH_VARARGS},
@@ -2551,6 +2663,10 @@ static PyMethodDef TestMethods[] = {
     {"pytime_object_to_time_t", test_pytime_object_to_time_t,  METH_VARARGS},
     {"pytime_object_to_timeval", test_pytime_object_to_timeval,  METH_VARARGS},
     {"pytime_object_to_timespec", test_pytime_object_to_timespec,  METH_VARARGS},
+#ifdef WITH_THREAD
+    {"call_in_temporary_c_thread", call_in_temporary_c_thread, METH_O,
+     PyDoc_STR("set_error_class(error_class) -> None")},
+#endif
     {NULL, NULL} /* sentinel */
 };
 

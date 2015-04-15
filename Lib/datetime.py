@@ -1,19 +1,7 @@
-"""Concrete date/time and related types -- prototype implemented in Python.
+"""Concrete date/time and related types.
 
-See http://www.zope.org/Members/fdrake/DateTimeWiki/FrontPage
-
-See also http://dir.yahoo.com/Reference/calendars/
-
-For a primer on DST, including many current DST rules, see
-http://webexhibits.org/daylightsaving/
-
-For more about DST than you ever wanted to know, see
-ftp://elsie.nci.nih.gov/pub/
-
-Sources for time zone and DST data: http://www.twinsun.com/tz/tz-link.htm
-
-This was originally copied from the sandbox of the CPython CVS repository.
-Thanks to Tim Peters for suggesting using it.
+See http://www.iana.org/time-zones/repository/tz-link.html for
+time zone and DST data sources.
 """
 
 import time as _time
@@ -61,7 +49,7 @@ def _days_in_month(year, month):
     return _DAYS_IN_MONTH[month]
 
 def _days_before_month(year, month):
-    "year, month -> number of days in year preceeding first day of month."
+    "year, month -> number of days in year preceding first day of month."
     assert 1 <= month <= 12, 'month must be in 1..12'
     return _DAYS_BEFORE_MONTH[month] + (month > 2 and _is_leap(year))
 
@@ -299,7 +287,7 @@ class timedelta:
     - add, subtract timedelta
     - unary plus, minus, abs
     - compare to timedelta
-    - multiply, divide by int/long
+    - multiply, divide by int
 
     In addition, datetime supports subtraction of two datetime objects
     returning a timedelta, and addition or subtraction of a datetime
@@ -1302,7 +1290,7 @@ class datetime(date):
     """datetime(year, month, day[, hour[, minute[, second[, microsecond[,tzinfo]]]]])
 
     The year, month and day arguments are required. tzinfo may be None, or an
-    instance of a tzinfo subclass. The remaining arguments may be ints or longs.
+    instance of a tzinfo subclass. The remaining arguments may be ints.
     """
 
     __slots__ = date.__slots__ + (
