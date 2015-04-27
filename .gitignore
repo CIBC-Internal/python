@@ -1,4 +1,5 @@
 *.o
+*.obj
 *.exe
 *.a
 *.so
@@ -25,3 +26,14 @@ Modules/Setup.local
 Modules/_testembed
 Modules/config.c
 Modules/ld_so_aix
+PC/pythonnt_rc_d.h
+PCbuild/Win32-temp-Debug
+PCbuild/Win32-temp-Release
+PCbuild/amd64
+PCbuild/make_buildinfo.pdb
+PCbuild/make_versioninfo_d.pdb
+PCbuild/pcbuild.opensdf
+PCbuild/x64-pgo
+PCbuild/x64-temp-Debug
+PCbuild/x64-temp-Release
+PCbuild/x64-temp-pgi
