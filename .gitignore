@@ -7,7 +7,8 @@
 *.pyc
 *.app
 *.framework
-Makefile*
+Makefile
+Makefile.pre
 __*
 config.log
 config.status
