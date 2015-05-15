@@ -7,7 +7,7 @@ import os
 from unicodedata import normalize, unidata_version
 
 TESTDATAFILE = "NormalizationTest.txt"
-TESTDATAURL = "http://www.unicode.org/Public/" + unidata_version + "/ucd/" + TESTDATAFILE
+TESTDATAURL = "http://www.pythontest.net/unicode/" + unidata_version + "/" + TESTDATAFILE
 
 def check_version(testfile):
     hdr = testfile.readline()
@@ -43,7 +43,7 @@ class NormalizationTest(unittest.TestCase):
         try:
             testdata = open_urlresource(TESTDATAURL, encoding="utf-8",
                                         check=check_version)
-        except (IOError, HTTPException):
+        except (OSError, HTTPException):
             self.skipTest("Could not retrieve " + TESTDATAURL)
         self.addCleanup(testdata.close)
         for line in testdata:

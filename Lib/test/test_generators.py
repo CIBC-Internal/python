@@ -1,3 +1,164 @@
+import gc
+import sys
+import unittest
+import weakref
+
+from test import support
+
+
+class FinalizationTest(unittest.TestCase):
+
+    def test_frame_resurrect(self):
+        # A generator frame can be resurrected by a generator's finalization.
+        def gen():
+            nonlocal frame
+            try:
+                yield
+            finally:
+                frame = sys._getframe()
+
+        g = gen()
+        wr = weakref.ref(g)
+        next(g)
+        del g
+        support.gc_collect()
+        self.assertIs(wr(), None)
+        self.assertTrue(frame)
+        del frame
+        support.gc_collect()
+
+    def test_refcycle(self):
+        # A generator caught in a refcycle gets finalized anyway.
+        old_garbage = gc.garbage[:]
+        finalized = False
+        def gen():
+            nonlocal finalized
+            try:
+                g = yield
+                yield 1
+            finally:
+                finalized = True
+
+        g = gen()
+        next(g)
+        g.send(g)
+        self.assertGreater(sys.getrefcount(g), 2)
+        self.assertFalse(finalized)
+        del g
+        support.gc_collect()
+        self.assertTrue(finalized)
+        self.assertEqual(gc.garbage, old_garbage)
+
+
+class ExceptionTest(unittest.TestCase):
+    # Tests for the issue #23353: check that the currently handled exception
+    # is correctly saved/restored in PyEval_EvalFrameEx().
+
+    def test_except_throw(self):
+        def store_raise_exc_generator():
+            try:
+                self.assertEqual(sys.exc_info()[0], None)
+                yield
+            except Exception as exc:
+                # exception raised by gen.throw(exc)
+                self.assertEqual(sys.exc_info()[0], ValueError)
+                self.assertIsNone(exc.__context__)
+                yield
+
+                # ensure that the exception is not lost
+                self.assertEqual(sys.exc_info()[0], ValueError)
+                yield
+
+                # we should be able to raise back the ValueError
+                raise
+
+        make = store_raise_exc_generator()
+        next(make)
+
+        try:
+            raise ValueError()
+        except Exception as exc:
+            try:
+                make.throw(exc)
+            except Exception:
+                pass
+
+        next(make)
+        with self.assertRaises(ValueError) as cm:
+            next(make)
+        self.assertIsNone(cm.exception.__context__)
+
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
+    def test_except_next(self):
+        def gen():
+            self.assertEqual(sys.exc_info()[0], ValueError)
+            yield "done"
+
+        g = gen()
+        try:
+            raise ValueError
+        except Exception:
+            self.assertEqual(next(g), "done")
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
+    def test_except_gen_except(self):
+        def gen():
+            try:
+                self.assertEqual(sys.exc_info()[0], None)
+                yield
+                # we are called from "except ValueError:", TypeError must
+                # inherit ValueError in its context
+                raise TypeError()
+            except TypeError as exc:
+                self.assertEqual(sys.exc_info()[0], TypeError)
+                self.assertEqual(type(exc.__context__), ValueError)
+            # here we are still called from the "except ValueError:"
+            self.assertEqual(sys.exc_info()[0], ValueError)
+            yield
+            self.assertIsNone(sys.exc_info()[0])
+            yield "done"
+
+        g = gen()
+        next(g)
+        try:
+            raise ValueError
+        except Exception:
+            next(g)
+
+        self.assertEqual(next(g), "done")
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
+    def test_except_throw_exception_context(self):
+        def gen():
+            try:
+                try:
+                    self.assertEqual(sys.exc_info()[0], None)
+                    yield
+                except ValueError:
+                    # we are called from "except ValueError:"
+                    self.assertEqual(sys.exc_info()[0], ValueError)
+                    raise TypeError()
+            except Exception as exc:
+                self.assertEqual(sys.exc_info()[0], TypeError)
+                self.assertEqual(type(exc.__context__), ValueError)
+            # we are still called from "except ValueError:"
+            self.assertEqual(sys.exc_info()[0], ValueError)
+            yield
+            self.assertIsNone(sys.exc_info()[0])
+            yield "done"
+
+        g = gen()
+        next(g)
+        try:
+            raise ValueError
+        except Exception as exc:
+            g.throw(exc)
+
+        self.assertEqual(next(g), "done")
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
+
 tutorial_tests = """
 Let's try a simple generator:
 
@@ -384,8 +545,8 @@ From the Iterators list, about the types of these things.
 >>> [s for s in dir(i) if not s.startswith('_')]
 ['close', 'gi_code', 'gi_frame', 'gi_running', 'send', 'throw']
 >>> from test.support import HAVE_DOCSTRINGS
->>> print(i.__next__.__doc__ if HAVE_DOCSTRINGS else 'x.__next__() <==> next(x)')
-x.__next__() <==> next(x)
+>>> print(i.__next__.__doc__ if HAVE_DOCSTRINGS else 'Implement next(self).')
+Implement next(self).
 >>> iter(i) is i
 True
 >>> import types
@@ -1729,9 +1890,7 @@ Our ill-behaved code should be invoked during GC:
 >>> g = f()
 >>> next(g)
 >>> del g
->>> sys.stderr.getvalue().startswith(
-...     "Exception RuntimeError: 'generator ignored GeneratorExit' in "
-... )
+>>> "RuntimeError: generator ignored GeneratorExit" in sys.stderr.getvalue()
 True
 >>> sys.stderr = old
 
@@ -1841,22 +2000,23 @@ to test.
 ...     sys.stderr = io.StringIO()
 ...     class Leaker:
 ...         def __del__(self):
-...             raise RuntimeError
+...             def invoke(message):
+...                 raise RuntimeError(message)
+...             invoke("test")
 ...
 ...     l = Leaker()
 ...     del l
 ...     err = sys.stderr.getvalue().strip()
-...     err.startswith(
-...         "Exception RuntimeError: RuntimeError() in <"
-...     )
-...     err.endswith("> ignored")
-...     len(err.splitlines())
+...     "Exception ignored in" in err
+...     "RuntimeError: test" in err
+...     "Traceback" in err
+...     "in invoke" in err
 ... finally:
 ...     sys.stderr = old
 True
 True
-1
-
+True
+True
 
 
 These refleak tests should perhaps be in a testfile of their own,
@@ -1881,6 +2041,7 @@ __test__ = {"tut":      tutorial_tests,
 # so this works as expected in both ways of running regrtest.
 def test_main(verbose=None):
     from test import support, test_generators
+    support.run_unittest(__name__)
     support.run_doctest(test_generators, verbose)
 
 # This part isn't needed for regrtest, but for running the test directly.

@@ -968,9 +968,9 @@ See the section on the default_ keyword argument for information on when the
 ``type`` argument is applied to default arguments.
 
 To ease the use of various types of files, the argparse module provides the
-factory FileType which takes the ``mode=`` and ``bufsize=`` arguments of the
-:func:`open` function.  For example, ``FileType('w')`` can be used to create a
-writable file::
+factory FileType which takes the ``mode=``, ``bufsize=``, ``encoding=`` and
+``errors=`` arguments of the :func:`open` function.  For example,
+``FileType('w')`` can be used to create a writable file::
 
    >>> parser = argparse.ArgumentParser()
    >>> parser.add_argument('bar', type=argparse.FileType('w'))
@@ -1235,16 +1235,16 @@ Action classes
 Action classes implement the Action API, a callable which returns a callable
 which processes arguments from the command-line. Any object which follows
 this API may be passed as the ``action`` parameter to
-:method:`add_argument`.
+:meth:`add_argument`.
 
-.. class:: Action(option_strings, dest, nargs=None, const=None, default=None,
-                  type=None, choices=None, required=False, help=None,
+.. class:: Action(option_strings, dest, nargs=None, const=None, default=None, \
+                  type=None, choices=None, required=False, help=None, \
                   metavar=None)
 
 Action objects are used by an ArgumentParser to represent the information
 needed to parse a single argument from one or more strings from the
 command line. The Action class must accept the two positional arguments
-plus any keyword arguments passed to :method:`ArgumentParser.add_argument`
+plus any keyword arguments passed to :meth:`ArgumentParser.add_argument`
 except for the ``action`` itself.
 
 Instances of Action (or return value of any callable to the ``action``
@@ -1521,12 +1521,15 @@ Sub-commands
    * parser_class - class which will be used to create sub-parser instances, by
      default the class of the current parser (e.g. ArgumentParser)
 
-   * dest - name of the attribute under which sub-command name will be
+   * action_ - the basic type of action to be taken when this argument is
+     encountered at the command line
+
+   * dest_ - name of the attribute under which sub-command name will be
      stored; by default None and no value is stored
 
-   * help - help for sub-parser group in help output, by default None
+   * help_ - help for sub-parser group in help output, by default None
 
-   * metavar - string presenting available sub-commands in help; by default it
+   * metavar_ - string presenting available sub-commands in help; by default it
      is None and presents sub-commands in form {cmd1, cmd2, ..}
 
    Some example usage::
@@ -1682,17 +1685,19 @@ Sub-commands
 FileType objects
 ^^^^^^^^^^^^^^^^
 
-.. class:: FileType(mode='r', bufsize=None)
+.. class:: FileType(mode='r', bufsize=-1, encoding=None, errors=None)
 
    The :class:`FileType` factory creates objects that can be passed to the type
    argument of :meth:`ArgumentParser.add_argument`.  Arguments that have
-   :class:`FileType` objects as their type will open command-line arguments as files
-   with the requested modes and buffer sizes::
+   :class:`FileType` objects as their type will open command-line arguments as
+   files with the requested modes, buffer sizes, encodings and error handling
+   (see the :func:`open` function for more details)::
 
       >>> parser = argparse.ArgumentParser()
-      >>> parser.add_argument('--output', type=argparse.FileType('wb', 0))
-      >>> parser.parse_args(['--output', 'out'])
-      Namespace(output=<_io.BufferedWriter name='out'>)
+      >>> parser.add_argument('--raw', type=argparse.FileType('wb', 0))
+      >>> parser.add_argument('out', type=argparse.FileType('w', encoding='UTF-8'))
+      >>> parser.parse_args(['--raw', 'raw.dat', 'file.txt'])
+      Namespace(out=<_io.TextIOWrapper name='file.txt' mode='w' encoding='UTF-8'>, raw=<_io.FileIO name='raw.dat' mode='wb'>)
 
    FileType objects understand the pseudo-argument ``'-'`` and automatically
    convert this into ``sys.stdin`` for readable :class:`FileType` objects and
@@ -1702,6 +1707,9 @@ FileType objects
       >>> parser.add_argument('infile', type=argparse.FileType('r'))
       >>> parser.parse_args(['-'])
       Namespace(infile=<_io.TextIOWrapper name='<stdin>' encoding='UTF-8'>)
+
+   .. versionadded:: 3.4
+      The *encodings* and *errors* keyword arguments.
 
 
 Argument groups
@@ -1943,6 +1951,16 @@ transparently, particularly with the changes required to support the new
 ``nargs=`` specifiers and better usage messages.  When most everything in
 :mod:`optparse` had either been copy-pasted over or monkey-patched, it no
 longer seemed practical to try to maintain the backwards compatibility.
+
+The :mod:`argparse` module improves on the standard library :mod:`optparse`
+module in a number of ways including:
+
+* Handling positional arguments.
+* Supporting sub-commands.
+* Allowing alternative option prefixes like ``+`` and ``/``.
+* Handling zero-or-more and one-or-more style arguments.
+* Producing more informative usage messages.
+* Providing a much simpler interface for custom ``type`` and ``action``.
 
 A partial upgrade path from :mod:`optparse` to :mod:`argparse`:
 

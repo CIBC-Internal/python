@@ -1135,6 +1135,51 @@ get_native_fmtchar(char *result, const char *fmt)
     return -1;
 }
 
+Py_LOCAL_INLINE(char *)
+get_native_fmtstr(const char *fmt)
+{
+    int at = 0;
+
+    if (fmt[0] == '@') {
+        at = 1;
+        fmt++;
+    }
+    if (fmt[0] == '\0' || fmt[1] != '\0') {
+        return NULL;
+    }
+
+#define RETURN(s) do { return at ? "@" s : s; } while (0)
+
+    switch (fmt[0]) {
+    case 'c': RETURN("c");
+    case 'b': RETURN("b");
+    case 'B': RETURN("B");
+    case 'h': RETURN("h");
+    case 'H': RETURN("H");
+    case 'i': RETURN("i");
+    case 'I': RETURN("I");
+    case 'l': RETURN("l");
+    case 'L': RETURN("L");
+    #ifdef HAVE_LONG_LONG
+    case 'q': RETURN("q");
+    case 'Q': RETURN("Q");
+    #endif
+    case 'n': RETURN("n");
+    case 'N': RETURN("N");
+    case 'f': RETURN("f");
+    case 'd': RETURN("d");
+    #ifdef HAVE_C99_BOOL
+    case '?': RETURN("?");
+    #else
+    case '?': RETURN("?");
+    #endif
+    case 'P': RETURN("P");
+    }
+
+    return NULL;
+}
+
+
 /* Cast a memoryview's data type to 'format'. The input array must be
    C-contiguous. At least one of input-format, output-format must have
    byte size. The output array is 1-D, with the same byte length as the
@@ -1184,10 +1229,13 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
         goto out;
     }
 
-    strncpy(mv->format, PyBytes_AS_STRING(asciifmt),
-            _Py_MEMORYVIEW_MAX_FORMAT);
-    mv->format[_Py_MEMORYVIEW_MAX_FORMAT-1] = '\0';
-    view->format = mv->format;
+    view->format = get_native_fmtstr(PyBytes_AS_STRING(asciifmt));
+    if (view->format == NULL) {
+        /* NOT_REACHED: get_native_fmtchar() already validates the format. */
+        PyErr_SetString(PyExc_RuntimeError,
+            "memoryview: internal error");
+        goto out;
+    }
     view->itemsize = itemsize;
 
     view->ndim = 1;
@@ -2402,7 +2450,7 @@ static PyMappingMethods memory_as_mapping = {
 
 /* As sequence */
 static PySequenceMethods memory_as_sequence = {
-        0,                                /* sq_length */
+        (lenfunc)memory_length,           /* sq_length */
         0,                                /* sq_concat */
         0,                                /* sq_repeat */
         (ssizeargfunc)memory_item,        /* sq_item */
@@ -2742,7 +2790,7 @@ memory_hash(PyMemoryViewObject *self)
         }
 
         /* Can't fail */
-        self->hash = _Py_HashBytes((unsigned char *)mem, view->len);
+        self->hash = _Py_HashBytes(mem, view->len);
 
         if (mem != view->buf)
             PyMem_Free(mem);

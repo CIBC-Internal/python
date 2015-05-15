@@ -76,13 +76,18 @@ The class can be used to simulate nested scopes and is useful in templating.
         be modified to change which mappings are searched.  The list should
         always contain at least one mapping.
 
-    .. method:: new_child()
+    .. method:: new_child(m=None)
 
-        Returns a new :class:`ChainMap` containing a new :class:`dict` followed by
-        all of the maps in the current instance.  A call to ``d.new_child()`` is
-        equivalent to: ``ChainMap({}, *d.maps)``.  This method is used for
+        Returns a new :class:`ChainMap` containing a new map followed by
+        all of the maps in the current instance.  If ``m`` is specified,
+        it becomes the new map at the front of the list of mappings; if not
+        specified, an empty dict is used, so that a call to ``d.new_child()``
+        is equivalent to: ``ChainMap({}, *d.maps)``.  This method is used for
         creating subcontexts that can be updated without altering values in any
         of the parent mappings.
+
+        .. versionchanged:: 3.4
+           The optional ``m`` parameter was added.
 
     .. attribute:: parents
 
@@ -104,7 +109,7 @@ The class can be used to simulate nested scopes and is useful in templating.
       writing to any mapping in the chain.
 
     * Django's `Context class
-      <http://code.djangoproject.com/browser/django/trunk/django/template/context.py>`_
+      <https://github.com/django/django/blob/master/django/template/context.py>`_
       for templating is a read-only chain of mappings.  It also features
       pushing and popping of contexts similar to the
       :meth:`~collections.ChainMap.new_child` method and the
@@ -368,10 +373,6 @@ or subtracting from an empty counter.
       negative counts.
 
 .. seealso::
-
-    * `Counter class <http://code.activestate.com/recipes/576611/>`_
-      adapted for Python 2.5 and an early `Bag recipe
-      <http://code.activestate.com/recipes/259174/>`_ for Python 2.4.
 
     * `Bag class <http://www.gnu.org/software/smalltalk/manual-base/html_node/Bag.html>`_
       in Smalltalk.
@@ -907,18 +908,17 @@ customize a prototype instance:
     >>> janes_account = default_account._replace(owner='Jane')
 
 Enumerated constants can be implemented with named tuples, but it is simpler
-and more efficient to use a simple class declaration:
+and more efficient to use a simple :class:`~enum.Enum`:
 
     >>> Status = namedtuple('Status', 'open pending closed')._make(range(3))
     >>> Status.open, Status.pending, Status.closed
     (0, 1, 2)
-    >>> class Status:
-        open, pending, closed = range(3)
+    >>> from enum import Enum
+    >>> class Status(Enum):
+    ...     open, pending, closed = range(3)
+
 
 .. seealso::
-
-    * `Named tuple recipe <http://code.activestate.com/recipes/500261/>`_
-      adapted for Python 2.4.
 
     * `Recipe for named tuple abstract base class with a metaclass mix-in
       <http://code.activestate.com/recipes/577629-namedtupleabc-abstract-base-class-mix-in-for-named/>`_
@@ -982,10 +982,6 @@ The :class:`OrderedDict` constructor and :meth:`update` method both accept
 keyword arguments, but their order is lost because Python's function call
 semantics pass-in keyword arguments using a regular unordered dictionary.
 
-.. seealso::
-
-    `Equivalent OrderedDict recipe <http://code.activestate.com/recipes/576693/>`_
-    that runs on Python 2.4 or later.
 
 :class:`OrderedDict` Examples and Recipes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

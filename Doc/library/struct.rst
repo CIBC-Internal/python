@@ -24,6 +24,14 @@ structs and the intended conversion to/from Python values.
    or omit implicit pad bytes, use ``standard`` size and alignment instead of
    ``native`` size and alignment: see :ref:`struct-alignment` for details.
 
+Several :mod:`struct` functions (and methods of :class:`Struct`) take a *buffer*
+argument.  This refers to objects that implement the :ref:`bufferobjects` and
+provide either a readable or read-writable buffer.  The most common types used
+for that purpose are :class:`bytes` and :class:`bytearray`, but many other types
+that can be viewed as an array of bytes implement the buffer protocol, so that
+they can be read/filled without additional copying from a :class:`bytes` object.
+
+
 Functions and Exceptions
 ------------------------
 
@@ -47,7 +55,7 @@ The module defines the following exception and functions:
 
    Pack the values *v1*, *v2*, ... according to the format string *fmt* and
    write the packed bytes into the writable buffer *buffer* starting at
-   position *offset*. Note that *offset* is a required argument.
+   position *offset*.  Note that *offset* is a required argument.
 
 
 .. function:: unpack(fmt, buffer)
@@ -64,6 +72,19 @@ The module defines the following exception and functions:
    string *fmt*.  The result is a tuple even if it contains exactly one
    item.  *buffer* must contain at least the amount of data required by the
    format (``len(buffer[offset:])`` must be at least ``calcsize(fmt)``).
+
+
+.. function:: iter_unpack(fmt, buffer)
+
+   Iteratively unpack from the buffer *buffer* according to the format
+   string *fmt*.  This function returns an iterator which will read
+   equally-sized chunks from the buffer until all its contents have been
+   consumed.  The buffer's size in bytes must be a multiple of the amount
+   of data required by the format, as reflected by :func:`calcsize`.
+
+   Each iteration yields a tuple as specified by the format string.
+
+   .. versionadded:: 3.4
 
 
 .. function:: calcsize(fmt)
@@ -387,6 +408,13 @@ The :mod:`struct` module also defines the following type:
       Identical to the :func:`unpack_from` function, using the compiled format.
       (``len(buffer[offset:])`` must be at least :attr:`self.size`).
 
+
+   .. method:: iter_unpack(buffer)
+
+      Identical to the :func:`iter_unpack` function, using the compiled format.
+      (``len(buffer)`` must be a multiple of :attr:`self.size`).
+
+      .. versionadded:: 3.4
 
    .. attribute:: format
 

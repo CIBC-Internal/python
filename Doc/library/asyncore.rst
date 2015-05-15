@@ -13,6 +13,11 @@
 
 --------------
 
+.. note::
+
+   This module exists for backwards compatibility only.  For new code we
+   recommend using :mod:`asyncio`.
+
 This module provides the basic infrastructure for writing asynchronous  socket
 service clients and servers.
 
@@ -210,6 +215,10 @@ any that have been added to the map during asynchronous service) is closed.
       Read at most *buffer_size* bytes from the socket's remote end-point.  An
       empty bytes object implies that the channel has been closed from the
       other end.
+
+      Note that :meth:`recv` may raise :exc:`BlockingIOError` , even though
+      :func:`select.select` or :func:`select.poll` has reported the socket
+      ready for reading.
 
 
    .. method:: listen(backlog)

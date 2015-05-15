@@ -23,11 +23,11 @@ In May 2000, Guido and the Python core development team moved to BeOpen.com to
 form the BeOpen PythonLabs team.  In October of the same year, the PythonLabs
 team moved to Digital Creations (now Zope Corporation; see
 http://www.zope.com/).  In 2001, the Python Software Foundation (PSF, see
-http://www.python.org/psf/) was formed, a non-profit organization created
+https://www.python.org/psf/) was formed, a non-profit organization created
 specifically to own Python-related Intellectual Property.  Zope Corporation is a
 sponsoring member of the PSF.
 
-All Python releases are Open Source (see http://www.opensource.org/ for the Open
+All Python releases are Open Source (see http://opensource.org/ for the Open
 Source Definition). Historically, most, but not all, Python releases have also
 been GPL-compatible; the table below summarizes the various releases.
 
@@ -84,9 +84,9 @@ Terms and conditions for accessing or otherwise using Python
    analyze, test, perform and/or display publicly, prepare derivative works,
    distribute, and otherwise use Python |release| alone or in any derivative
    version, provided, however, that PSF's License Agreement and PSF's notice of
-   copyright, i.e., "Copyright © 2001-2014 Python Software Foundation; All Rights
-   Reserved" are retained in Python |release| alone or in any derivative version
-   prepared by Licensee.
+   copyright, i.e., "Copyright © 2001-2015 Python Software Foundation; All
+   Rights Reserved" are retained in Python |release| alone or in any derivative
+   version prepared by Licensee.
 
 #. In the event Licensee prepares a derivative work that is based on or
    incorporates Python |release| or any part thereof, and wants to make the
@@ -590,6 +590,35 @@ The :mod:`select` and contains the following notice for the kqueue interface::
   SUCH DAMAGE.
 
 
+SipHash24
+---------
+
+The file :file:`Python/pyhash.c` contains Marek Majkowski' implementation of
+Dan Bernstein's SipHash24 algorithm. The contains the following note::
+
+  <MIT License>
+  Copyright (c) 2013  Marek Majkowski <marek@popcount.org>
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+  </MIT License>
+
+  Original location:
+     https://github.com/majek/csiphash/
+
+  Solution inspired by code from:
+     Samuel Neves (supercop/crypto_auth/siphash24/little)
+     djb (supercop/crypto_auth/siphash24/little2)
+     Jean-Philippe Aumasson (https://131002.net/siphash/siphash24.c)
+
+
 strtod and dtoa
 ---------------
 
@@ -625,9 +654,9 @@ OpenSSL
 
 The modules :mod:`hashlib`, :mod:`posix`, :mod:`ssl`, :mod:`crypt` use
 the OpenSSL library for added performance if made available by the
-operating system. Additionally, the Windows installers for Python
-include a copy of the OpenSSL libraries, so we include a copy of the
-OpenSSL license here::
+operating system. Additionally, the Windows and Mac OS X installers for
+Python may include a copy of the OpenSSL libraries, so we include a copy
+of the OpenSSL license here::
 
 
   LICENSE ISSUES
@@ -844,6 +873,47 @@ used for the build::
 
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
+
+
+cfuhash
+-------
+
+The implementation of the hash table used by the :mod:`tracemalloc` is based
+on the cfuhash project::
+
+   Copyright (c) 2005 Don Owens
+   All rights reserved.
+
+   This code is released under the BSD license:
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+
+     * Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+
+     * Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials provided
+       with the distribution.
+
+     * Neither the name of the author nor the names of its
+       contributors may be used to endorse or promote products derived
+       from this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+   COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+   INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+   (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+   STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+   OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 libmpdec

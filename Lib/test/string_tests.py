@@ -1,5 +1,5 @@
 """
-Common tests shared by test_str, test_unicode, test_userstring and test_string.
+Common tests shared by test_unicode, test_userstring and test_string.
 """
 
 import unittest, string, sys, struct
@@ -79,11 +79,9 @@ class BaseTest:
     def checkraises(self, exc, obj, methodname, *args):
         obj = self.fixtype(obj)
         args = self.fixtype(args)
-        self.assertRaises(
-            exc,
-            getattr(obj, methodname),
-            *args
-        )
+        with self.assertRaises(exc) as cm:
+            getattr(obj, methodname)(*args)
+        self.assertNotEqual(str(cm.exception), '')
 
     # call obj.method(*args) without any checks
     def checkcall(self, obj, methodname, *args):
@@ -327,13 +325,26 @@ class BaseTest:
         self.checkraises(TypeError, 'hello', 'upper', 42)
 
     def test_expandtabs(self):
-        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi', 'expandtabs')
-        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi', 'expandtabs', 8)
-        self.checkequal('abc\rab  def\ng   hi', 'abc\rab\tdef\ng\thi', 'expandtabs', 4)
-        self.checkequal('abc\r\nab  def\ng   hi', 'abc\r\nab\tdef\ng\thi', 'expandtabs', 4)
-        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi', 'expandtabs')
-        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi', 'expandtabs', 8)
-        self.checkequal('abc\r\nab\r\ndef\ng\r\nhi', 'abc\r\nab\r\ndef\ng\r\nhi', 'expandtabs', 4)
+        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi',
+                        'expandtabs')
+        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi',
+                        'expandtabs', 8)
+        self.checkequal('abc\rab  def\ng   hi', 'abc\rab\tdef\ng\thi',
+                        'expandtabs', 4)
+        self.checkequal('abc\r\nab      def\ng       hi', 'abc\r\nab\tdef\ng\thi',
+                        'expandtabs')
+        self.checkequal('abc\r\nab      def\ng       hi', 'abc\r\nab\tdef\ng\thi',
+                        'expandtabs', 8)
+        self.checkequal('abc\r\nab  def\ng   hi', 'abc\r\nab\tdef\ng\thi',
+                        'expandtabs', 4)
+        self.checkequal('abc\r\nab\r\ndef\ng\r\nhi', 'abc\r\nab\r\ndef\ng\r\nhi',
+                        'expandtabs', 4)
+        # check keyword args
+        self.checkequal('abc\rab      def\ng       hi', 'abc\rab\tdef\ng\thi',
+                        'expandtabs', tabsize=8)
+        self.checkequal('abc\rab  def\ng   hi', 'abc\rab\tdef\ng\thi',
+                        'expandtabs', tabsize=4)
+
         self.checkequal('  a\n b', ' \ta\n\tb', 'expandtabs', 1)
 
         self.checkraises(TypeError, 'hello', 'expandtabs', 42, 42)
@@ -1106,8 +1117,7 @@ class MixinStrUnicodeUserStringTest:
     def test_join(self):
         # join now works with any sequence type
         # moved here, because the argument order is
-        # different in string.join (see the test in
-        # test.test_string.StringTest.test_join)
+        # different in string.join
         self.checkequal('a b c d', ' ', 'join', ['a', 'b', 'c', 'd'])
         self.checkequal('abcd', '', 'join', ('a', 'b', 'c', 'd'))
         self.checkequal('bd', '', 'join', ('', 'b', '', 'd'))
@@ -1127,6 +1137,7 @@ class MixinStrUnicodeUserStringTest:
         self.checkequal('a b c', ' ', 'join', BadSeq2())
 
         self.checkraises(TypeError, ' ', 'join')
+        self.checkraises(TypeError, ' ', 'join', None)
         self.checkraises(TypeError, ' ', 'join', 7)
         self.checkraises(TypeError, ' ', 'join', [1, 2, bytes()])
         try:
@@ -1165,7 +1176,8 @@ class MixinStrUnicodeUserStringTest:
         self.checkraises(TypeError, 'abc', '__mod__')
         self.checkraises(TypeError, '%(foo)s', '__mod__', 42)
         self.checkraises(TypeError, '%s%s', '__mod__', (42,))
-        self.checkraises(TypeError, '%c', '__mod__', (None,))
+        with self.assertWarns(DeprecationWarning):
+            self.checkraises(TypeError, '%c', '__mod__', (None,))
         self.checkraises(ValueError, '%(foo', '__mod__', {})
         self.checkraises(TypeError, '%(foo)s %(bar)s', '__mod__', ('foo', 42))
         self.checkraises(TypeError, '%d', '__mod__', "42") # not numeric

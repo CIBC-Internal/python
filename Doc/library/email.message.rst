@@ -33,23 +33,31 @@ Here are the methods of the :class:`Message` class:
 
 .. class:: Message(policy=compat32)
 
-   The *policy* argument determiens the :mod:`~email.policy` that will be used
-   to update the message model.  The default value, :class:`compat32
-   <email.policy.Compat32>` maintains backward compatibility with the
-   Python 3.2 version of the email package.  For more information see the
+   If *policy* is specified (it must be an instance of a :mod:`~email.policy`
+   class) use the rules it specifies to update and serialize the representation
+   of the message.  If *policy* is not set, use the :class:`compat32
+   <email.policy.Compat32>` policy, which maintains backward compatibility with
+   the Python 3.2 version of the email package.  For more information see the
    :mod:`~email.policy` documentation.
 
    .. versionchanged:: 3.3 The *policy* keyword argument was added.
 
 
-   .. method:: as_string(unixfrom=False, maxheaderlen=0)
+   .. method:: as_string(unixfrom=False, maxheaderlen=0, policy=None)
 
       Return the entire message flattened as a string.  When optional *unixfrom*
-      is ``True``, the envelope header is included in the returned string.
-      *unixfrom* defaults to ``False``.  Flattening the message may trigger
-      changes to the :class:`Message` if defaults need to be filled in to
-      complete the transformation to a string (for example, MIME boundaries may
-      be generated or modified).
+      is true, the envelope header is included in the returned string.
+      *unixfrom* defaults to ``False``.  For backward compabitility reasons,
+      *maxheaderlen* defaults to ``0``, so if you want a different value you
+      must override it explicitly (the value specified for *max_line_length* in
+      the policy will be ignored by this method).  The *policy* argument may be
+      used to override the default policy obtained from the message instance.
+      This can be used to control some of the formatting produced by the
+      method, since the specified *policy* will be passed to the ``Generator``.
+
+      Flattening the message may trigger changes to the :class:`Message` if
+      defaults need to be filled in to complete the transformation to a string
+      (for example, MIME boundaries may be generated or modified).
 
       Note that this method is provided as a convenience and may not always
       format the message the way you want.  For example, by default it does
@@ -65,17 +73,69 @@ Here are the methods of the :class:`Message` class:
          g.flatten(msg)
          text = fp.getvalue()
 
+      If the message object contains binary data that is not encoded according
+      to RFC standards, the non-compliant data will be replaced by unicode
+      "unknown character" code points.  (See also :meth:`.as_bytes` and
+      :class:`~email.generator.BytesGenerator`.)
+
+      .. versionchanged:: 3.4 the *policy* keyword argument was added.
+
 
    .. method:: __str__()
 
-      Equivalent to ``as_string(unixfrom=True)``.
+      Equivalent to :meth:`.as_string()`.  Allows ``str(msg)`` to produce a
+      string containing the formatted message.
+
+
+   .. method:: as_bytes(unixfrom=False, policy=None)
+
+      Return the entire message flattened as a bytes object.  When optional
+      *unixfrom* is true, the envelope header is included in the returned
+      string.  *unixfrom* defaults to ``False``.  The *policy* argument may be
+      used to override the default policy obtained from the message instance.
+      This can be used to control some of the formatting produced by the
+      method, since the specified *policy* will be passed to the
+      ``BytesGenerator``.
+
+      Flattening the message may trigger changes to the :class:`Message` if
+      defaults need to be filled in to complete the transformation to a string
+      (for example, MIME boundaries may be generated or modified).
+
+      Note that this method is provided as a convenience and may not always
+      format the message the way you want.  For example, by default it does
+      not do the mangling of lines that begin with ``From`` that is
+      required by the unix mbox format.  For more flexibility, instantiate a
+      :class:`~email.generator.BytesGenerator` instance and use its
+      :meth:`~email.generator.BytesGenerator.flatten` method directly.
+      For example::
+
+         from io import BytesIO
+         from email.generator import BytesGenerator
+         fp = BytesIO()
+         g = BytesGenerator(fp, mangle_from_=True, maxheaderlen=60)
+         g.flatten(msg)
+         text = fp.getvalue()
+
+      .. versionadded:: 3.4
+
+
+   .. method:: __bytes__()
+
+      Equivalent to :meth:`.as_bytes()`.  Allows ``bytes(msg)`` to produce a
+      bytes object containing the formatted message.
+
+      .. versionadded:: 3.4
 
 
    .. method:: is_multipart()
 
       Return ``True`` if the message's payload is a list of sub-\
       :class:`Message` objects, otherwise return ``False``.  When
-      :meth:`is_multipart` returns ``False``, the payload should be a string object.
+      :meth:`is_multipart` returns ``False``, the payload should be a string
+      object.  (Note that :meth:`is_multipart` returning ``True`` does not
+      necessarily mean that "msg.get_content_maintype() == 'multipart'" will
+      return the ``True``.   For example, ``is_multipart`` will return ``True``
+      when the :class:`Message` is of type ``message/rfc822``.)
 
 
    .. method:: set_unixfrom(unixfrom)
@@ -410,7 +470,8 @@ Here are the methods of the :class:`Message` class:
       to ``False``.
 
 
-   .. method:: set_param(param, value, header='Content-Type', requote=True, charset=None, language='')
+   .. method:: set_param(param, value, header='Content-Type', requote=True, \
+                         charset=None, language='', replace=False)
 
       Set a parameter in the :mailheader:`Content-Type` header.  If the
       parameter already exists in the header, its value will be replaced with
@@ -426,6 +487,12 @@ Here are the methods of the :class:`Message` class:
       according to :rfc:`2231`. Optional *language* specifies the RFC 2231
       language, defaulting to the empty string.  Both *charset* and *language*
       should be strings.
+
+      If *replace* is ``False`` (the default) the header is moved to the
+      end of the list of headers.  If *replace* is ``True``, the header
+      will be updated in place.
+
+      .. versionchanged:: 3.4 ``replace`` keyword was added.
 
 
    .. method:: del_param(param, header='content-type', requote=True)
@@ -521,23 +588,56 @@ Here are the methods of the :class:`Message` class:
       Here's an example that prints the MIME type of every part of a multipart
       message structure:
 
-       .. testsetup::
+      .. testsetup::
 
-            >>> from email import message_from_binary_file
-            >>> with open('Lib/test/test_email/data/msg_16.txt', 'rb') as f:
-            ...     msg = message_from_binary_file(f)
+         >>> from email import message_from_binary_file
+         >>> with open('Lib/test/test_email/data/msg_16.txt', 'rb') as f:
+         ...     msg = message_from_binary_file(f)
+         >>> from email.iterators import _structure
 
-       .. doctest::
+      .. doctest::
 
-            >>> for part in msg.walk():
-            ...     print(part.get_content_type())
-            multipart/report
-            text/plain
-            message/delivery-status
-            text/plain
-            text/plain
-            message/rfc822
-            text/plain
+         >>> for part in msg.walk():
+         ...     print(part.get_content_type())
+         multipart/report
+         text/plain
+         message/delivery-status
+         text/plain
+         text/plain
+         message/rfc822
+         text/plain
+
+      ``walk`` iterates over the subparts of any part where
+      :meth:`is_multipart` returns ``True``, even though
+      ``msg.get_content_maintype() == 'multipart'`` may return ``False``.  We
+      can see this in our example by making use of the ``_structure`` debug
+      helper function:
+
+      .. doctest::
+
+         >>> for part in msg.walk():
+         ...     print(part.get_content_maintype() == 'multipart'),
+         ...           part.is_multipart())
+         True True
+         False False
+         False True
+         False False
+         False False
+         False True
+         False False
+         >>> _structure(msg)
+         multipart/report
+             text/plain
+         message/delivery-status
+             text/plain
+             text/plain
+         message/rfc822
+             text/plain
+
+      Here the ``message`` parts are not ``multiparts``, but they do contain
+      subparts. ``is_multipart()`` returns ``True`` and ``walk`` descends
+      into the subparts.
+
 
    :class:`Message` objects can also optionally contain two instance attributes,
    which can be used when generating the plain text of a MIME message.

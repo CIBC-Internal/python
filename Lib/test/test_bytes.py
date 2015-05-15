@@ -13,9 +13,11 @@ import functools
 import pickle
 import tempfile
 import unittest
+
 import test.support
 import test.string_tests
 import test.buffer_tests
+from test.support import bigaddrspacetest, MAX_Py_ssize_t
 
 
 if sys.flags.bytes_warning:
@@ -98,6 +100,14 @@ class BaseBytesTest:
         self.assertRaises(TypeError, self.type2test, [0.0])
         self.assertRaises(TypeError, self.type2test, [None])
         self.assertRaises(TypeError, self.type2test, [C()])
+        self.assertRaises(TypeError, self.type2test, 0, 'ascii')
+        self.assertRaises(TypeError, self.type2test, b'', 'ascii')
+        self.assertRaises(TypeError, self.type2test, 0, errors='ignore')
+        self.assertRaises(TypeError, self.type2test, b'', errors='ignore')
+        self.assertRaises(TypeError, self.type2test, '')
+        self.assertRaises(TypeError, self.type2test, '', errors='ignore')
+        self.assertRaises(TypeError, self.type2test, '', b'ascii')
+        self.assertRaises(TypeError, self.type2test, '', 'ascii', b'ignore')
 
     def test_constructor_value_errors(self):
         self.assertRaises(ValueError, self.type2test, [-1])
@@ -110,6 +120,17 @@ class BaseBytesTest:
         self.assertRaises(ValueError, self.type2test, [sys.maxsize])
         self.assertRaises(ValueError, self.type2test, [sys.maxsize+1])
         self.assertRaises(ValueError, self.type2test, [10**100])
+
+    @bigaddrspacetest
+    def test_constructor_overflow(self):
+        size = MAX_Py_ssize_t
+        self.assertRaises((OverflowError, MemoryError), self.type2test, size)
+        try:
+            # Should either pass or raise an error (e.g. on debug builds with
+            # additional malloc() overhead), but shouldn't crash.
+            bytearray(size - 4)
+        except (OverflowError, MemoryError):
+            pass
 
     def test_compare(self):
         b1 = self.type2test([1, 2, 3])
@@ -288,8 +309,23 @@ class BaseBytesTest:
             self.assertEqual(self.type2test(b"").join(lst), b"abc")
             self.assertEqual(self.type2test(b"").join(tuple(lst)), b"abc")
             self.assertEqual(self.type2test(b"").join(iter(lst)), b"abc")
-        self.assertEqual(self.type2test(b".").join([b"ab", b"cd"]), b"ab.cd")
-        # XXX more...
+        dot_join = self.type2test(b".:").join
+        self.assertEqual(dot_join([b"ab", b"cd"]), b"ab.:cd")
+        self.assertEqual(dot_join([memoryview(b"ab"), b"cd"]), b"ab.:cd")
+        self.assertEqual(dot_join([b"ab", memoryview(b"cd")]), b"ab.:cd")
+        self.assertEqual(dot_join([bytearray(b"ab"), b"cd"]), b"ab.:cd")
+        self.assertEqual(dot_join([b"ab", bytearray(b"cd")]), b"ab.:cd")
+        # Stress it with many items
+        seq = [b"abc"] * 1000
+        expected = b"abc" + b".:abc" * 999
+        self.assertEqual(dot_join(seq), expected)
+        self.assertRaises(TypeError, self.type2test(b" ").join, None)
+        # Error handling and cleanup when some item in the middle of the
+        # sequence has the wrong type.
+        with self.assertRaises(TypeError):
+            dot_join([bytearray(b"ab"), "cd", b"ef"])
+        with self.assertRaises(TypeError):
+            dot_join([memoryview(b"ab"), "cd", b"ef"])
 
     def test_count(self):
         b = self.type2test(b'mississippi')
@@ -519,22 +555,23 @@ class BaseBytesTest:
                 self.assertEqual(b, q)
 
     def test_iterator_pickling(self):
-        for b in b"", b"a", b"abc", b"\xffab\x80", b"\0\0\377\0\0":
-            it = itorg = iter(self.type2test(b))
-            data = list(self.type2test(b))
-            d = pickle.dumps(it)
-            it = pickle.loads(d)
-            self.assertEqual(type(itorg), type(it))
-            self.assertEqual(list(it), data)
+        for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+            for b in b"", b"a", b"abc", b"\xffab\x80", b"\0\0\377\0\0":
+                it = itorg = iter(self.type2test(b))
+                data = list(self.type2test(b))
+                d = pickle.dumps(it, proto)
+                it = pickle.loads(d)
+                self.assertEqual(type(itorg), type(it))
+                self.assertEqual(list(it), data)
 
-            it = pickle.loads(d)
-            try:
-                next(it)
-            except StopIteration:
-                continue
-            d = pickle.dumps(it)
-            it = pickle.loads(d)
-            self.assertEqual(list(it), data[1:])
+                it = pickle.loads(d)
+                try:
+                    next(it)
+                except StopIteration:
+                    continue
+                d = pickle.dumps(it, proto)
+                it = pickle.loads(d)
+                self.assertEqual(list(it), data[1:])
 
     def test_strip(self):
         b = self.type2test(b'mississippi')
@@ -686,7 +723,7 @@ class BytesTest(BaseBytesTest, unittest.TestCase):
     type2test = bytes
 
     def test_buffer_is_readonly(self):
-        fd = os.dup(sys.stdin.fileno())
+        fd = os.open(__file__, os.O_RDONLY)
         with open(fd, "rb", buffering=0) as f:
             self.assertRaises(TypeError, f.readinto, b"")
 
@@ -765,7 +802,7 @@ class ByteArrayTest(BaseBytesTest, unittest.TestCase):
         finally:
             try:
                 os.remove(tfn)
-            except os.error:
+            except OSError:
                 pass
 
     def test_reverse(self):
@@ -900,6 +937,15 @@ class ByteArrayTest(BaseBytesTest, unittest.TestCase):
         for elem in [[254, 255, 256], [-256, 9000]]:
             with self.assertRaises(ValueError):
                 b[3:4] = elem
+
+    def test_setslice_extend(self):
+        # Exercise the resizing logic (see issue #19087)
+        b = bytearray(range(100))
+        self.assertEqual(list(b), list(range(100)))
+        del b[:10]
+        self.assertEqual(list(b), list(range(10, 100)))
+        b.extend(range(100, 110))
+        self.assertEqual(list(b), list(range(10, 110)))
 
     def test_extended_set_del_slice(self):
         indices = (0, None, 1, 3, 19, 300, 1<<333, -1, -2, -31, -300)
@@ -1280,6 +1326,11 @@ class BytearrayPEP3137Test(unittest.TestCase,
             self.assertEqual(val, newval)
             self.assertTrue(val is not newval,
                             expr+' returned val on a mutable object')
+        sep = self.marshal(b'')
+        newval = sep.join([val])
+        self.assertEqual(val, newval)
+        self.assertIsNot(val, newval)
+
 
 class FixedStringTest(test.string_tests.BaseTest):
 

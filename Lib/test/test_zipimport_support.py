@@ -57,7 +57,7 @@ class ZipSupportTests(unittest.TestCase):
     # This used to use the ImportHooksBaseTestCase to restore
     # the state of the import related information
     # in the sys module after each test. However, that restores
-    # *too much* information and breaks for the invocation of
+    # *too much* information and breaks for the invocation
     # of test_doctest. So we do our own thing and leave
     # sys.modules alone.
     # We also clear the linecache and zipimport cache
@@ -227,13 +227,15 @@ class ZipSupportTests(unittest.TestCase):
             p = spawn_python(script_name)
             p.stdin.write(b'l\n')
             data = kill_python(p)
-            self.assertIn(script_name.encode('utf-8'), data)
+            # bdb/pdb applies normcase to its filename before displaying
+            self.assertIn(os.path.normcase(script_name.encode('utf-8')), data)
             zip_name, run_name = make_zip_script(d, "test_zip",
                                                 script_name, '__main__.py')
             p = spawn_python(zip_name)
             p.stdin.write(b'l\n')
             data = kill_python(p)
-            self.assertIn(run_name.encode('utf-8'), data)
+            # bdb/pdb applies normcase to its filename before displaying
+            self.assertIn(os.path.normcase(run_name.encode('utf-8')), data)
 
 
 def test_main():

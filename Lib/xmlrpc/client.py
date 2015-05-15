@@ -49,6 +49,7 @@
 # 2003-07-12 gp  Correct marshalling of Faults
 # 2003-10-31 mvl Add multicall support
 # 2004-08-20 mvl Bump minimum supported Python version to 2.1
+# 2014-12-02 ch/doko  Add workaround for gzip bomb vulnerability
 #
 # Copyright (c) 1999-2002 by Secret Labs AB.
 # Copyright (c) 1999-2002 by Fredrik Lundh.
@@ -134,7 +135,6 @@ from datetime import datetime
 import http.client
 import urllib.parse
 from xml.parsers import expat
-import socket
 import errno
 from io import BytesIO
 try:
@@ -1031,10 +1031,13 @@ def gzip_encode(data):
 # in the HTTP header, as described in RFC 1952
 #
 # @param data The encoded data
+# @keyparam max_decode Maximum bytes to decode (20MB default), use negative
+#    values for unlimited decoding
 # @return the unencoded data
 # @raises ValueError if data is not correctly coded.
+# @raises ValueError if max gzipped payload length exceeded
 
-def gzip_decode(data):
+def gzip_decode(data, max_decode=20971520):
     """gzip encoded data -> unencoded data
 
     Decode data using the gzip content encoding as described in RFC 1952
@@ -1044,11 +1047,16 @@ def gzip_decode(data):
     f = BytesIO(data)
     gzf = gzip.GzipFile(mode="rb", fileobj=f)
     try:
-        decoded = gzf.read()
-    except IOError:
+        if max_decode < 0: # no limit
+            decoded = gzf.read()
+        else:
+            decoded = gzf.read(max_decode + 1)
+    except OSError:
         raise ValueError("invalid data")
     f.close()
     gzf.close()
+    if max_decode >= 0 and len(decoded) > max_decode:
+        raise ValueError("max gzipped payload length exceeded")
     return decoded
 
 ##
@@ -1130,8 +1138,9 @@ class Transport:
         for i in (0, 1):
             try:
                 return self.single_request(host, handler, request_body, verbose)
-            except socket.error as e:
-                if i or e.errno not in (errno.ECONNRESET, errno.ECONNABORTED, errno.EPIPE):
+            except OSError as e:
+                if i or e.errno not in (errno.ECONNRESET, errno.ECONNABORTED,
+                                        errno.EPIPE):
                     raise
             except http.client.BadStatusLine: #close after we sent request
                 if i:
@@ -1323,6 +1332,11 @@ class Transport:
 class SafeTransport(Transport):
     """Handles an HTTPS transaction to an XML-RPC server."""
 
+    def __init__(self, use_datetime=False, use_builtin_types=False, *,
+                 context=None):
+        super().__init__(use_datetime=use_datetime, use_builtin_types=use_builtin_types)
+        self.context = context
+
     # FIXME: mostly untested
 
     def make_connection(self, host):
@@ -1336,7 +1350,7 @@ class SafeTransport(Transport):
         # host may be a string, or a (host, x509-dict) tuple
         chost, self._extra_headers, x509 = self.get_host_info(host)
         self._connection = host, http.client.HTTPSConnection(chost,
-            None, **(x509 or {}))
+            None, context=self.context, **(x509 or {}))
         return self._connection[1]
 
 ##
@@ -1379,13 +1393,14 @@ class ServerProxy:
     """
 
     def __init__(self, uri, transport=None, encoding=None, verbose=False,
-                 allow_none=False, use_datetime=False, use_builtin_types=False):
+                 allow_none=False, use_datetime=False, use_builtin_types=False,
+                 *, context=None):
         # establish a "logical" server connection
 
         # get the url
         type, uri = urllib.parse.splittype(uri)
         if type not in ("http", "https"):
-            raise IOError("unsupported XML-RPC protocol")
+            raise OSError("unsupported XML-RPC protocol")
         self.__host, self.__handler = urllib.parse.splithost(uri)
         if not self.__handler:
             self.__handler = "/RPC2"
@@ -1393,10 +1408,13 @@ class ServerProxy:
         if transport is None:
             if type == "https":
                 handler = SafeTransport
+                extra_kwargs = {"context": context}
             else:
                 handler = Transport
+                extra_kwargs = {}
             transport = handler(use_datetime=use_datetime,
-                                use_builtin_types=use_builtin_types)
+                                use_builtin_types=use_builtin_types,
+                                **extra_kwargs)
         self.__transport = transport
 
         self.__encoding = encoding or 'utf-8'

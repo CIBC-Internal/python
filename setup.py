@@ -1,8 +1,10 @@
 # Autodetecting setup.py script for building the Python extensions
 #
 
-import sys, os, imp, re, optparse
+import sys, os, importlib.machinery, re, optparse
 from glob import glob
+import importlib._bootstrap
+import importlib.util
 import sysconfig
 
 from distutils import log
@@ -16,6 +18,12 @@ from distutils.command.build_scripts import build_scripts
 from distutils.spawn import find_executable
 
 cross_compiling = "_PYTHON_HOST_PLATFORM" in os.environ
+
+# Add special CFLAGS reserved for building the interpreter and the stdlib
+# modules (Issue #21121).
+cflags = sysconfig.get_config_var('CFLAGS')
+py_cflags_nodist = sysconfig.get_config_var('PY_CFLAGS_NODIST')
+sysconfig.get_config_vars()['CFLAGS'] = cflags + ' ' + py_cflags_nodist
 
 def get_platform():
     # cross build
@@ -244,7 +252,7 @@ class PyBuildExt(build_ext):
 
         build_ext.build_extensions(self)
 
-        longest = max([len(e.name) for e in self.extensions])
+        longest = max([len(e.name) for e in self.extensions], default=0)
         if self.failed:
             longest = max(longest, max([len(name) for name in self.failed]))
 
@@ -259,8 +267,9 @@ class PyBuildExt(build_ext):
 
         if missing:
             print()
-            print("Python build finished, but the necessary bits to build "
-                   "these modules were not found:")
+            print("Python build finished successfully!")
+            print("The necessary bits to build these optional modules were not "
+                  "found:")
             print_three_column(missing)
             print("To find the necessary bits, look in setup.py in"
                   " detect_modules() for the module's name.")
@@ -325,8 +334,11 @@ class PyBuildExt(build_ext):
         if cross_compiling:
             return
 
+        loader = importlib.machinery.ExtensionFileLoader(ext.name, ext_filename)
+        spec = importlib.util.spec_from_file_location(ext.name, ext_filename,
+                                                      loader=loader)
         try:
-            imp.load_dynamic(ext.name, ext_filename)
+            importlib._bootstrap._SpecMethods(spec).load()
         except ImportError as why:
             self.failed.append(ext.name)
             self.announce('*** WARNING: renaming "%s" since importing it'
@@ -588,10 +600,14 @@ class PyBuildExt(build_ext):
                                depends=['testcapi_long.h']) )
         # Python PEP-3118 (buffer protocol) test module
         exts.append( Extension('_testbuffer', ['_testbuffer.c']) )
+        # Test loading multiple modules from one compiled file (http://bugs.python.org/issue16421)
+        exts.append( Extension('_testimportmultiple', ['_testimportmultiple.c']) )
         # profiler (_lsprof is for cProfile.py)
         exts.append( Extension('_lsprof', ['_lsprof.c', 'rotatingtree.c']) )
         # static Unicode character database
         exts.append( Extension('unicodedata', ['unicodedata.c']) )
+        # _opcode module
+        exts.append( Extension('_opcode', ['_opcode.c']) )
 
         # Modules with some UNIX dependencies -- on by default:
         # (If you have a really backward UNIX, select and socket may not be
@@ -687,7 +703,9 @@ class PyBuildExt(build_ext):
         if host_platform == 'darwin':
             os_release = int(os.uname()[2].split('.')[0])
             dep_target = sysconfig.get_config_var('MACOSX_DEPLOYMENT_TARGET')
-            if dep_target and dep_target.split('.') < ['10', '5']:
+            if (dep_target and
+                    (tuple(int(n) for n in dep_target.split('.')[0:2])
+                        < (10, 5) ) ):
                 os_release = 8
             if os_release < 9:
                 # MacOSX 10.4 has a broken readline. Don't try to build
@@ -784,10 +802,10 @@ class PyBuildExt(build_ext):
                     for line in incfile:
                         m = openssl_ver_re.match(line)
                         if m:
-                            openssl_ver = eval(m.group(1))
+                            openssl_ver = int(m.group(1), 16)
+                            break
             except IOError as msg:
                 print("IOError while reading opensshv.h:", msg)
-                pass
 
         #print('openssl_ver = 0x%08x' % openssl_ver)
         min_openssl_ver = 0x00907000
@@ -1012,8 +1030,16 @@ class PyBuildExt(build_ext):
             if db_setup_debug:
                 print("bsddb using BerkeleyDB lib:", db_ver, dblib)
                 print("bsddb lib dir:", dblib_dir, " inc dir:", db_incdir)
-            db_incs = [db_incdir]
             dblibs = [dblib]
+            # Only add the found library and include directories if they aren't
+            # already being searched. This avoids an explicit runtime library
+            # dependency.
+            if db_incdir in inc_dirs:
+                db_incs = None
+            else:
+                db_incs = [db_incdir]
+            if dblib_dir[0] in lib_dirs:
+                dblib_dir = None
         else:
             if db_setup_debug: print("db: no appropriate library found")
             db_incs = None
@@ -1124,6 +1150,9 @@ class PyBuildExt(build_ext):
             # can end up with a bad search path order.
             if sqlite_incdir not in self.compiler.include_dirs:
                 include_dirs.append(sqlite_incdir)
+            # avoid a runtime library path for a system library dir
+            if sqlite_libdir and sqlite_libdir[0] in lib_dirs:
+                sqlite_libdir = None
             exts.append(Extension('_sqlite3', sqlite_srcs,
                                   define_macros=sqlite_defines,
                                   include_dirs=include_dirs,
@@ -1192,7 +1221,7 @@ class PyBuildExt(build_ext):
                                 libraries = gdbm_libs)
                             break
                 elif cand == "bdb":
-                    if db_incs is not None:
+                    if dblibs:
                         if dbm_setup_debug: print("building dbm using bdb")
                         dbmext = Extension('_dbm', ['_dbmmodule.c'],
                                            library_dirs=dblib_dir,
@@ -1508,10 +1537,6 @@ class PyBuildExt(build_ext):
 
         if host_platform == 'darwin':
             exts.append(
-                       Extension('_gestalt', ['_gestalt.c'],
-                       extra_link_args=['-framework', 'Carbon'])
-                       )
-            exts.append(
                        Extension('_scproxy', ['_scproxy.c'],
                        extra_link_args=[
                            '-framework', 'SystemConfiguration',
@@ -1532,7 +1557,7 @@ class PyBuildExt(build_ext):
 
         if 'd' not in sys.abiflags:
             ext = Extension('xxlimited', ['xxlimited.c'],
-                            define_macros=[('Py_LIMITED_API', 1)])
+                            define_macros=[('Py_LIMITED_API', '0x03040000')])
             self.extensions.append(ext)
 
         return missing
@@ -2155,7 +2180,7 @@ is also usable as an extension language for applications that need a
 programmable interface.
 
 The Python implementation is portable: it runs on many brands of UNIX,
-on Windows, DOS, OS/2, Mac, Amiga... If your favorite system isn't
+on Windows, DOS, Mac, Amiga... If your favorite system isn't
 listed here, it may still be supported, if there's a C compiler for
 it. Ask around on comp.lang.python -- or just try compiling Python
 yourself.

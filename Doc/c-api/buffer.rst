@@ -198,6 +198,9 @@ a buffer, see :c:func:`PyObject_GetBuffer`.
       indicates that no de-referencing should occur (striding in a contiguous
       memory block).
 
+      If all suboffsets are negative (i.e. no de-referencing is needed, then
+      this field must be NULL (the default value).
+
       This type of array representation is used by the Python Imaging Library
       (PIL). See `complex arrays`_ for further information how to access elements
       of such an array.
@@ -489,8 +492,8 @@ Buffer-related functions
    :c:member:`view->obj` to *NULL* and return -1;
 
    If this function is used as part of a :ref:`getbufferproc <buffer-structs>`,
-   *exporter* MUST be set to the exporting object. Otherwise, *exporter* MUST
-   be NULL.
+   *exporter* MUST be set to the exporting object and *flags* must be passed
+   unmodified. Otherwise, *exporter* MUST be NULL.
 
 
 

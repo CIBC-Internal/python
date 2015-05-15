@@ -3,16 +3,16 @@ __all__ = ['deque', 'defaultdict', 'namedtuple', 'UserDict', 'UserList',
 
 # For backwards compatibility, continue to make the collections ABCs
 # available through the collections module.
-from collections.abc import *
-import collections.abc
-__all__ += collections.abc.__all__
+from _collections_abc import *
+import _collections_abc
+__all__ += _collections_abc.__all__
 
 from _collections import deque, defaultdict
 from operator import itemgetter as _itemgetter, eq as _eq
 from keyword import iskeyword as _iskeyword
 import sys as _sys
 import heapq as _heapq
-from weakref import proxy as _proxy
+from _weakref import proxy as _proxy
 from itertools import repeat as _repeat, chain as _chain, starmap as _starmap
 from reprlib import recursive_repr as _recursive_repr
 
@@ -38,12 +38,16 @@ class OrderedDict(dict):
     # Individual links are kept alive by the hard reference in self.__map.
     # Those hard references disappear when a key is deleted from an OrderedDict.
 
-    def __init__(self, *args, **kwds):
+    def __init__(*args, **kwds):
         '''Initialize an ordered dictionary.  The signature is the same as
         regular dictionaries, but keyword arguments are not recommended because
         their insertion order is arbitrary.
 
         '''
+        if not args:
+            raise TypeError("descriptor '__init__' of 'OrderedDict' object "
+                            "needs an argument")
+        self, *args = args
         if len(args) > 1:
             raise TypeError('expected at most 1 arguments, got %d' % len(args))
         try:
@@ -199,13 +203,10 @@ class OrderedDict(dict):
 
     def __reduce__(self):
         'Return state information for pickling'
-        items = [[k, self[k]] for k in self]
         inst_dict = vars(self).copy()
         for k in vars(OrderedDict()):
             inst_dict.pop(k, None)
-        if inst_dict:
-            return (self.__class__, (items,), inst_dict)
-        return self.__class__, (items,)
+        return self.__class__, (), inst_dict or None, None, iter(self.items())
 
     def copy(self):
         'od.copy() -> a shallow copy of od'
@@ -277,9 +278,7 @@ class {typename}(tuple):
         return OrderedDict(zip(self._fields, self))
 
     def _asdict(self):
-        '''Return a new OrderedDict which maps field names to their values.
-           This method is obsolete.  Use vars(nt) or nt.__dict__ instead.
-        '''
+        'Return a new OrderedDict which maps field names to their values.'
         return self.__dict__
 
     def __getnewargs__(self):
@@ -328,6 +327,7 @@ def namedtuple(typename, field_names, verbose=False, rename=False):
     if isinstance(field_names, str):
         field_names = field_names.replace(',', ' ').split()
     field_names = list(map(str, field_names))
+    typename = str(typename)
     if rename:
         seen = set()
         for index, name in enumerate(field_names):
@@ -338,6 +338,8 @@ def namedtuple(typename, field_names, verbose=False, rename=False):
                 field_names[index] = '_%d' % index
             seen.add(name)
     for name in [typename] + field_names:
+        if type(name) != str:
+            raise TypeError('Type names and field names must be strings')
         if not name.isidentifier():
             raise ValueError('Type names and field names must be valid '
                              'identifiers: %r' % name)
@@ -452,7 +454,7 @@ class Counter(dict):
     #   http://code.activestate.com/recipes/259174/
     #   Knuth, TAOCP Vol. II section 4.6.3
 
-    def __init__(self, iterable=None, **kwds):
+    def __init__(*args, **kwds):
         '''Create a new, empty Counter object.  And if given, count elements
         from an input iterable.  Or, initialize the count from another mapping
         of elements to their counts.
@@ -463,8 +465,14 @@ class Counter(dict):
         >>> c = Counter(a=4, b=2)                   # a new counter from keyword args
 
         '''
-        super().__init__()
-        self.update(iterable, **kwds)
+        if not args:
+            raise TypeError("descriptor '__init__' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        super(Counter, self).__init__()
+        self.update(*args, **kwds)
 
     def __missing__(self, key):
         'The count of elements not in the Counter is zero.'
@@ -515,7 +523,7 @@ class Counter(dict):
         raise NotImplementedError(
             'Counter.fromkeys() is undefined.  Use Counter(iterable) instead.')
 
-    def update(self, iterable=None, **kwds):
+    def update(*args, **kwds):
         '''Like dict.update() but add counts instead of replacing them.
 
         Source can be an iterable, a dictionary, or another Counter instance.
@@ -535,6 +543,13 @@ class Counter(dict):
         # contexts.  Instead, we implement straight-addition.  Both the inputs
         # and outputs are allowed to contain zero and negative counts.
 
+        if not args:
+            raise TypeError("descriptor 'update' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        iterable = args[0] if args else None
         if iterable is not None:
             if isinstance(iterable, Mapping):
                 if self:
@@ -542,13 +557,13 @@ class Counter(dict):
                     for elem, count in iterable.items():
                         self[elem] = count + self_get(elem, 0)
                 else:
-                    super().update(iterable) # fast path when counter is empty
+                    super(Counter, self).update(iterable) # fast path when counter is empty
             else:
                 _count_elements(self, iterable)
         if kwds:
             self.update(kwds)
 
-    def subtract(self, iterable=None, **kwds):
+    def subtract(*args, **kwds):
         '''Like dict.update() but subtracts counts instead of replacing them.
         Counts can be reduced below zero.  Both the inputs and outputs are
         allowed to contain zero and negative counts.
@@ -564,6 +579,13 @@ class Counter(dict):
         -1
 
         '''
+        if not args:
+            raise TypeError("descriptor 'subtract' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        iterable = args[0] if args else None
         if iterable is not None:
             self_get = self.get
             if isinstance(iterable, Mapping):
@@ -822,9 +844,14 @@ class ChainMap(MutableMapping):
 
     __copy__ = copy
 
-    def new_child(self):                        # like Django's Context.push()
-        'New ChainMap with a new dict followed by all previous maps.'
-        return self.__class__({}, *self.maps)
+    def new_child(self, m=None):                # like Django's Context.push()
+        '''
+        New ChainMap with a new map followed by all previous maps. If no
+        map is provided, an empty dict is used.
+        '''
+        if m is None:
+            m = {}
+        return self.__class__(m, *self.maps)
 
     @property
     def parents(self):                          # like Django's Context.pop()

@@ -92,32 +92,6 @@ PrintError(char *msg, ...)
 }
 
 
-/* after code that pyrex generates */
-void _ctypes_add_traceback(char *funcname, char *filename, int lineno)
-{
-    PyObject *py_globals = 0;
-    PyCodeObject *py_code = 0;
-    PyFrameObject *py_frame = 0;
-
-    py_globals = PyDict_New();
-    if (!py_globals) goto bad;
-    py_code = PyCode_NewEmpty(filename, funcname, lineno);
-    if (!py_code) goto bad;
-    py_frame = PyFrame_New(
-        PyThreadState_Get(), /*PyThreadState *tstate,*/
-        py_code,             /*PyCodeObject *code,*/
-        py_globals,          /*PyObject *globals,*/
-        0                    /*PyObject *locals*/
-        );
-    if (!py_frame) goto bad;
-    py_frame->f_lineno = lineno;
-    PyTraceBack_Here(py_frame);
-  bad:
-    Py_XDECREF(py_globals);
-    Py_XDECREF(py_code);
-    Py_XDECREF(py_frame);
-}
-
 #ifdef MS_WIN32
 /*
  * We must call AddRef() on non-NULL COM pointers we receive as arguments
@@ -237,7 +211,7 @@ static void _CallPythonObject(void *mem,
     }
 
 #define CHECK(what, x) \
-if (x == NULL) _ctypes_add_traceback(what, "_ctypes/callbacks.c", __LINE__ - 1), PyErr_Print()
+if (x == NULL) _PyTraceback_Add(what, "_ctypes/callbacks.c", __LINE__ - 1), PyErr_Print()
 
     if (flags & (FUNCFLAG_USE_ERRNO | FUNCFLAG_USE_LASTERROR)) {
         error_object = _ctypes_get_errobj(&space);

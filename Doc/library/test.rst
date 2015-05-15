@@ -85,7 +85,7 @@ A basic boilerplate is often used::
 
 This code pattern allows the testing suite to be run by :mod:`test.regrtest`,
 on its own as a script that supports the :mod:`unittest` CLI, or via the
-`python -m unittest` CLI.
+``python -m unittest`` CLI.
 
 The goal for regression testing is to try to break code. This leads to a few
 guidelines to be followed:
@@ -141,9 +141,9 @@ guidelines to be followed:
          arg = (1, 2, 3)
 
   When using this pattern, remember that all classes that inherit from
-  `unittest.TestCase` are run as tests.  The `Mixin` class in the example above
+  :class:`unittest.TestCase` are run as tests.  The :class:`Mixin` class in the example above
   does not have any data and so can't be run by itself, thus it does not
-  inherit from `unittest.TestCase`.
+  inherit from :class:`unittest.TestCase`.
 
 
 .. seealso::
@@ -443,13 +443,6 @@ The :mod:`test.support` module defines the following functions:
    A decorator for running tests that require support for symbolic links.
 
 
-.. function:: suppress_crash_popup()
-
-   A context manager that disables Windows Error Reporting dialogs using
-   `SetErrorMode <http://msdn.microsoft.com/en-us/library/windows/desktop/ms680621%28v=vs.85%29.aspx>`_.
-   On other platforms it's a no-op.
-
-
 .. decorator:: anticipate_failure(condition)
 
    A decorator to conditionally mark tests with
@@ -468,7 +461,7 @@ The :mod:`test.support` module defines the following functions:
 .. function:: make_bad_fd()
 
    Create an invalid file descriptor by opening and closing a temporary file,
-   and returning its descripor.
+   and returning its descriptor.
 
 
 .. function:: import_module(name, deprecated=False)
@@ -561,6 +554,21 @@ The :mod:`test.support` module defines the following functions:
    run simultaneously, which is a problem for buildbots.
 
 
+.. function:: load_package_tests(pkg_dir, loader, standard_tests, pattern)
+
+   Generic implementation of the :mod:`unittest` ``load_tests`` protocol for
+   use in test packages.  *pkg_dir* is the root directory of the package;
+   *loader*, *standard_tests*, and *pattern* are the arguments expected by
+   ``load_tests``.  In simple cases, the test package's ``__init__.py``
+   can be the following::
+
+      import os
+      from test.support import load_package_tests
+
+      def load_tests(*args):
+          return load_package_tests(os.path.dirname(__file__), *args)
+
+
 The :mod:`test.support` module defines the following classes:
 
 .. class:: TransientResource(exc, **kwargs)
@@ -592,6 +600,21 @@ The :mod:`test.support` module defines the following classes:
 .. method:: EnvironmentVarGuard.unset(envvar)
 
    Temporarily unset the environment variable ``envvar``.
+
+
+.. class:: SuppressCrashReport()
+
+   A context manager used to try to prevent crash dialog popups on tests that
+   are expected to crash a subprocess.
+
+   On Windows, it disables Windows Error Reporting dialogs using
+   `SetErrorMode <http://msdn.microsoft.com/en-us/library/windows/desktop/ms680621.aspx>`_.
+
+   On UNIX, :func:`resource.setrlimit` is used to set
+   :attr:`resource.RLIMIT_CORE`'s soft limit to 0 to prevent coredump file
+   creation.
+
+   On both platforms, the old value is restored by :meth:`__exit__`.
 
 
 .. class:: WarningsRecorder()

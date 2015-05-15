@@ -1,6 +1,7 @@
 # Copyright (C) 2003 Python Software Foundation
 
 import unittest
+import unittest.mock
 import shutil
 import tempfile
 import sys
@@ -10,6 +11,7 @@ import os.path
 import errno
 import functools
 import subprocess
+from contextlib import ExitStack
 from test import support
 from test.support import TESTFN
 from os.path import splitdrive
@@ -18,7 +20,8 @@ from shutil import (_make_tarball, _make_zipfile, make_archive,
                     register_archive_format, unregister_archive_format,
                     get_archive_formats, Error, unpack_archive,
                     register_unpack_format, RegistryError,
-                    unregister_unpack_format, get_unpack_formats)
+                    unregister_unpack_format, get_unpack_formats,
+                    SameFileError)
 import tarfile
 import warnings
 
@@ -115,7 +118,9 @@ class TestShutil(unittest.TestCase):
         write_file(os.path.join(victim, 'somefile'), 'foo')
         victim = os.fsencode(victim)
         self.assertIsInstance(victim, bytes)
-        shutil.rmtree(victim)
+        win = (os.name == 'nt')
+        with self.assertWarns(DeprecationWarning) if win else ExitStack():
+            shutil.rmtree(victim)
 
     @support.skip_unless_symlink
     def test_rmtree_fails_on_symlink(self):
@@ -746,13 +751,27 @@ class TestShutil(unittest.TestCase):
         shutil.copytree(src_dir, dst_dir)
         self.assertEqual(os.stat(src_dir).st_mode, os.stat(dst_dir).st_mode)
         self.assertEqual(os.stat(os.path.join(src_dir, 'permissive.txt')).st_mode,
-                         os.stat(os.path.join(dst_dir, 'permissive.txt')).st_mode)
+                          os.stat(os.path.join(dst_dir, 'permissive.txt')).st_mode)
         self.assertEqual(os.stat(os.path.join(src_dir, 'restrictive.txt')).st_mode,
-                         os.stat(os.path.join(dst_dir, 'restrictive.txt')).st_mode)
+                          os.stat(os.path.join(dst_dir, 'restrictive.txt')).st_mode)
         restrictive_subdir_dst = os.path.join(dst_dir,
                                               os.path.split(restrictive_subdir)[1])
         self.assertEqual(os.stat(restrictive_subdir).st_mode,
-                         os.stat(restrictive_subdir_dst).st_mode)
+                          os.stat(restrictive_subdir_dst).st_mode)
+
+    @unittest.mock.patch('os.chmod')
+    def test_copytree_winerror(self, mock_patch):
+        # When copying to VFAT, copystat() raises OSError. On Windows, the
+        # exception object has a meaningful 'winerror' attribute, but not
+        # on other operating systems. Do not assume 'winerror' is set.
+        src_dir = tempfile.mkdtemp()
+        dst_dir = os.path.join(tempfile.mkdtemp(), 'destination')
+        self.addCleanup(shutil.rmtree, src_dir)
+        self.addCleanup(shutil.rmtree, os.path.dirname(dst_dir))
+
+        mock_patch.side_effect = PermissionError('ka-boom')
+        with self.assertRaises(shutil.Error):
+            shutil.copytree(src_dir, dst_dir)
 
     @unittest.skipIf(os.name == 'nt', 'temporarily disabled on Windows')
     @unittest.skipUnless(hasattr(os, 'link'), 'requires os.link')
@@ -765,7 +784,7 @@ class TestShutil(unittest.TestCase):
             with open(src, 'w') as f:
                 f.write('cheddar')
             os.link(src, dst)
-            self.assertRaises(shutil.Error, shutil.copyfile, src, dst)
+            self.assertRaises(shutil.SameFileError, shutil.copyfile, src, dst)
             with open(src, 'r') as f:
                 self.assertEqual(f.read(), 'cheddar')
             os.remove(dst)
@@ -785,7 +804,7 @@ class TestShutil(unittest.TestCase):
             # to TESTFN/TESTFN/cheese, while it should point at
             # TESTFN/cheese.
             os.symlink('cheese', dst)
-            self.assertRaises(shutil.Error, shutil.copyfile, src, dst)
+            self.assertRaises(shutil.SameFileError, shutil.copyfile, src, dst)
             with open(src, 'r') as f:
                 self.assertEqual(f.read(), 'cheddar')
             os.remove(dst)
@@ -1122,6 +1141,21 @@ class TestShutil(unittest.TestCase):
         finally:
             unregister_archive_format('xxx')
 
+    def test_make_tarfile_in_curdir(self):
+        # Issue #21280
+        root_dir = self.mkdtemp()
+        with support.change_cwd(root_dir):
+            self.assertEqual(make_archive('test', 'tar'), 'test.tar')
+            self.assertTrue(os.path.isfile('test.tar'))
+
+    @requires_zlib
+    def test_make_zipfile_in_curdir(self):
+        # Issue #21280
+        root_dir = self.mkdtemp()
+        with support.change_cwd(root_dir):
+            self.assertEqual(make_archive('test', 'zip'), 'test.zip')
+            self.assertTrue(os.path.isfile('test.zip'))
+
     def test_register_archive_format(self):
 
         self.assertRaises(TypeError, register_archive_format, 'xxx', 1)
@@ -1292,6 +1326,16 @@ class TestShutil(unittest.TestCase):
         rv = shutil.copyfile(src_file, dst_file)
         self.assertTrue(os.path.exists(rv))
         self.assertEqual(read_file(src_file), read_file(dst_file))
+
+    def test_copyfile_same_file(self):
+        # copyfile() should raise SameFileError if the source and destination
+        # are the same.
+        src_dir = self.mkdtemp()
+        src_file = os.path.join(src_dir, 'foo')
+        write_file(src_file, 'foo')
+        self.assertRaises(SameFileError, shutil.copyfile, src_file, src_file)
+        # But Error should work too, to stay backward compatible.
+        self.assertRaises(Error, shutil.copyfile, src_file, src_file)
 
     def test_copytree_return_value(self):
         # copytree returns its destination path.
@@ -1601,7 +1645,7 @@ class TestCopyFile(unittest.TestCase):
             self._exited_with = exc_type, exc_val, exc_tb
             if self._raise_in_exit:
                 self._raised = True
-                raise IOError("Cannot close")
+                raise OSError("Cannot close")
             return self._suppress_at_exit
 
     def tearDown(self):
@@ -1615,12 +1659,12 @@ class TestCopyFile(unittest.TestCase):
     def test_w_source_open_fails(self):
         def _open(filename, mode='r'):
             if filename == 'srcfile':
-                raise IOError('Cannot open "srcfile"')
+                raise OSError('Cannot open "srcfile"')
             assert 0  # shouldn't reach here.
 
         self._set_shutil_open(_open)
 
-        self.assertRaises(IOError, shutil.copyfile, 'srcfile', 'destfile')
+        self.assertRaises(OSError, shutil.copyfile, 'srcfile', 'destfile')
 
     def test_w_dest_open_fails(self):
 
@@ -1630,14 +1674,14 @@ class TestCopyFile(unittest.TestCase):
             if filename == 'srcfile':
                 return srcfile
             if filename == 'destfile':
-                raise IOError('Cannot open "destfile"')
+                raise OSError('Cannot open "destfile"')
             assert 0  # shouldn't reach here.
 
         self._set_shutil_open(_open)
 
         shutil.copyfile('srcfile', 'destfile')
         self.assertTrue(srcfile._entered)
-        self.assertTrue(srcfile._exited_with[0] is IOError)
+        self.assertTrue(srcfile._exited_with[0] is OSError)
         self.assertEqual(srcfile._exited_with[1].args,
                          ('Cannot open "destfile"',))
 
@@ -1659,7 +1703,7 @@ class TestCopyFile(unittest.TestCase):
         self.assertTrue(srcfile._entered)
         self.assertTrue(destfile._entered)
         self.assertTrue(destfile._raised)
-        self.assertTrue(srcfile._exited_with[0] is IOError)
+        self.assertTrue(srcfile._exited_with[0] is OSError)
         self.assertEqual(srcfile._exited_with[1].args,
                          ('Cannot close',))
 
@@ -1677,7 +1721,7 @@ class TestCopyFile(unittest.TestCase):
 
         self._set_shutil_open(_open)
 
-        self.assertRaises(IOError,
+        self.assertRaises(OSError,
                           shutil.copyfile, 'srcfile', 'destfile')
         self.assertTrue(srcfile._entered)
         self.assertTrue(destfile._entered)
@@ -1748,9 +1792,23 @@ class TermsizeTests(unittest.TestCase):
         self.assertEqual(expected, actual)
 
 
-def test_main():
-    support.run_unittest(TestShutil, TestMove, TestCopyFile,
-                         TermsizeTests, TestWhich)
+class PublicAPITests(unittest.TestCase):
+    """Ensures that the correct values are exposed in the public API."""
+
+    def test_module_all_attribute(self):
+        self.assertTrue(hasattr(shutil, '__all__'))
+        target_api = ['copyfileobj', 'copyfile', 'copymode', 'copystat',
+                      'copy', 'copy2', 'copytree', 'move', 'rmtree', 'Error',
+                      'SpecialFileError', 'ExecError', 'make_archive',
+                      'get_archive_formats', 'register_archive_format',
+                      'unregister_archive_format', 'get_unpack_formats',
+                      'register_unpack_format', 'unregister_unpack_format',
+                      'unpack_archive', 'ignore_patterns', 'chown', 'which',
+                      'get_terminal_size', 'SameFileError']
+        if hasattr(os, 'statvfs') or os.name == 'nt':
+            target_api.append('disk_usage')
+        self.assertEqual(set(shutil.__all__), set(target_api))
+
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

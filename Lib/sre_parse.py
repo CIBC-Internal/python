@@ -12,9 +12,8 @@
 
 # XXX: show string offset and offending character for all errors
 
-import sys
-
 from sre_constants import *
+from _sre import MAXREPEAT
 
 SPECIAL_CHARS = ".\\[{()*+?^$|"
 REPEAT_CHARS = "*+?{"
@@ -95,33 +94,45 @@ class SubPattern:
         self.data = data
         self.width = None
     def dump(self, level=0):
-        nl = 1
+        nl = True
         seqtypes = (tuple, list)
         for op, av in self.data:
-            print(level*"  " + op, end=' '); nl = 0
-            if op == "in":
+            print(level*"  " + op, end='')
+            if op == IN:
                 # member sublanguage
-                print(); nl = 1
+                print()
                 for op, a in av:
                     print((level+1)*"  " + op, a)
-            elif op == "branch":
-                print(); nl = 1
-                i = 0
-                for a in av[1]:
-                    if i > 0:
+            elif op == BRANCH:
+                print()
+                for i, a in enumerate(av[1]):
+                    if i:
                         print(level*"  " + "or")
-                    a.dump(level+1); nl = 1
-                    i = i + 1
+                    a.dump(level+1)
+            elif op == GROUPREF_EXISTS:
+                condgroup, item_yes, item_no = av
+                print('', condgroup)
+                item_yes.dump(level+1)
+                if item_no:
+                    print(level*"  " + "else")
+                    item_no.dump(level+1)
             elif isinstance(av, seqtypes):
+                nl = False
                 for a in av:
                     if isinstance(a, SubPattern):
-                        if not nl: print()
-                        a.dump(level+1); nl = 1
+                        if not nl:
+                            print()
+                        a.dump(level+1)
+                        nl = True
                     else:
-                        print(a, end=' ') ; nl = 0
+                        if not nl:
+                            print(' ', end='')
+                        print(a, end='')
+                        nl = False
+                if not nl:
+                    print()
             else:
-                print(av, end=' ') ; nl = 0
-            if not nl: print()
+                print('', av)
     def __repr__(self):
         return repr(self.data)
     def __len__(self):
@@ -617,7 +628,8 @@ def _parse(source, state):
                                         "%r" % name)
                         gid = state.groupdict.get(name)
                         if gid is None:
-                            raise error("unknown group name")
+                            msg = "unknown group name: {0!r}".format(name)
+                            raise error(msg)
                         subpatternappend((GROUPREF, gid))
                         continue
                     else:
@@ -670,7 +682,8 @@ def _parse(source, state):
                     if condname.isidentifier():
                         condgroup = state.groupdict.get(condname)
                         if condgroup is None:
-                            raise error("unknown group name")
+                            msg = "unknown group name: {0!r}".format(condname)
+                            raise error(msg)
                     else:
                         try:
                             condgroup = int(condname)
@@ -768,35 +781,33 @@ def parse_template(source, pattern):
     # group references
     s = Tokenizer(source)
     sget = s.get
-    p = []
-    a = p.append
-    def literal(literal, p=p, pappend=a):
-        if p and p[-1][0] is LITERAL:
-            p[-1] = LITERAL, p[-1][1] + literal
-        else:
-            pappend((LITERAL, literal))
-    sep = source[:0]
-    if isinstance(sep, str):
-        makechar = chr
-    else:
-        makechar = chr
-    while 1:
+    groups = []
+    literals = []
+    literal = []
+    lappend = literal.append
+    def addgroup(index):
+        if literal:
+            literals.append(''.join(literal))
+            del literal[:]
+        groups.append((len(literals), index))
+        literals.append(None)
+    while True:
         this = sget()
         if this is None:
             break # end of replacement string
-        if this and this[0] == "\\":
+        if this[0] == "\\":
             # group
-            c = this[1:2]
+            c = this[1]
             if c == "g":
                 name = ""
                 if s.match("<"):
-                    while 1:
+                    while True:
                         char = sget()
                         if char is None:
                             raise error("unterminated group name")
                         if char == ">":
                             break
-                        name = name + char
+                        name += char
                 if not name:
                     raise error("missing group name")
                 try:
@@ -809,51 +820,40 @@ def parse_template(source, pattern):
                     try:
                         index = pattern.groupindex[name]
                     except KeyError:
-                        raise IndexError("unknown group name")
-                a((MARK, index))
+                        msg = "unknown group name: {0!r}".format(name)
+                        raise IndexError(msg)
+                addgroup(index)
             elif c == "0":
                 if s.next in OCTDIGITS:
-                    this = this + sget()
+                    this += sget()
                     if s.next in OCTDIGITS:
-                        this = this + sget()
-                literal(makechar(int(this[1:], 8) & 0xff))
+                        this += sget()
+                lappend(chr(int(this[1:], 8) & 0xff))
             elif c in DIGITS:
                 isoctal = False
                 if s.next in DIGITS:
-                    this = this + sget()
+                    this += sget()
                     if (c in OCTDIGITS and this[2] in OCTDIGITS and
                         s.next in OCTDIGITS):
-                        this = this + sget()
+                        this += sget()
                         isoctal = True
-                        literal(makechar(int(this[1:], 8) & 0xff))
+                        lappend(chr(int(this[1:], 8) & 0xff))
                 if not isoctal:
-                    a((MARK, int(this[1:])))
+                    addgroup(int(this[1:]))
             else:
                 try:
-                    this = makechar(ESCAPES[this][1])
+                    this = chr(ESCAPES[this][1])
                 except KeyError:
                     pass
-                literal(this)
+                lappend(this)
         else:
-            literal(this)
-    # convert template to groups and literals lists
-    i = 0
-    groups = []
-    groupsappend = groups.append
-    literals = [None] * len(p)
-    if isinstance(source, str):
-        encode = lambda x: x
-    else:
+            lappend(this)
+    if literal:
+        literals.append(''.join(literal))
+    if not isinstance(source, str):
         # The tokenizer implicitly decodes bytes objects as latin-1, we must
         # therefore re-encode the final representation.
-        encode = lambda x: x.encode('latin-1')
-    for c, s in p:
-        if c is MARK:
-            groupsappend((i, s))
-            # literal[i] is already None
-        else:
-            literals[i] = encode(s)
-        i = i + 1
+        literals = [None if s is None else s.encode('latin-1') for s in literals]
     return groups, literals
 
 def expand_template(template, match):

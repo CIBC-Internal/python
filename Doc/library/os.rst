@@ -53,8 +53,8 @@ Notes on the availability of these functions:
 .. data:: name
 
    The name of the operating system dependent module imported.  The following
-   names have currently been registered: ``'posix'``, ``'nt'``, ``'mac'``,
-   ``'os2'``, ``'ce'``, ``'java'``.
+   names have currently been registered: ``'posix'``, ``'nt'``,
+   ``'ce'``, ``'java'``.
 
    .. seealso::
       :attr:`sys.platform` has a finer granularity.  :func:`os.uname` gives
@@ -65,6 +65,7 @@ Notes on the availability of these functions:
 
 
 .. _os-filenames:
+.. _filesystem-encoding:
 
 File Names, Command Line Arguments, and Environment Variables
 -------------------------------------------------------------
@@ -280,10 +281,10 @@ process and user.
 .. function:: getlogin()
 
    Return the name of the user logged in on the controlling terminal of the
-   process.  For most purposes, it is more useful to use the environment variables
-   :envvar:`LOGNAME` or :envvar:`USERNAME` to find out who the user is, or
-   ``pwd.getpwuid(os.getuid())[0]`` to get the login name of the currently
-   effective user id.
+   process.  For most purposes, it is more useful to use the environment
+   variables :envvar:`LOGNAME` or :envvar:`USERNAME` to find out who the user
+   is, or ``pwd.getpwuid(os.getuid())[0]`` to get the login name of the current
+   real user id.
 
    Availability: Unix, Windows.
 
@@ -379,7 +380,7 @@ process and user.
 
    .. index:: single: user; id
 
-   Return the current process's user id.
+   Return the current process's real user id.
 
    Availability: Unix.
 
@@ -687,16 +688,29 @@ as internal buffering of data.
 
 .. function:: dup(fd)
 
-   Return a duplicate of file descriptor *fd*.
+   Return a duplicate of file descriptor *fd*. The new file descriptor is
+   :ref:`non-inheritable <fd_inheritance>`.
+
+   On Windows, when duplicating a standard stream (0: stdin, 1: stdout,
+   2: stderr), the new file descriptor is :ref:`inheritable
+   <fd_inheritance>`.
 
    Availability: Unix, Windows.
 
+   .. versionchanged:: 3.4
+      The new file descriptor is now non-inheritable.
 
-.. function:: dup2(fd, fd2)
+
+.. function:: dup2(fd, fd2, inheritable=True)
 
    Duplicate file descriptor *fd* to *fd2*, closing the latter first if necessary.
+   The file descriptor *fd2* is :ref:`inheritable <fd_inheritance>` by default,
+   or non-inheritable if *inheritable* is ``False``.
 
    Availability: Unix, Windows.
+
+   .. versionchanged:: 3.4
+      Add the optional *inheritable* parameter.
 
 
 .. function:: fchmod(fd, mode)
@@ -751,8 +765,14 @@ as internal buffering of data.
 
 .. function:: fstat(fd)
 
-   Return status for file descriptor *fd*, like :func:`~os.stat`.  As of Python
-   3.3, this is equivalent to ``os.stat(fd)``.
+   Get the status of the file descriptor *fd*. Return a :class:`stat_result`
+   object.
+
+   As of Python 3.3, this is equivalent to ``os.stat(fd)``.
+
+   .. seealso::
+
+      The :func:`stat` function.
 
    Availability: Unix, Windows.
 
@@ -848,16 +868,20 @@ as internal buffering of data.
    Open the file *file* and set various flags according to *flags* and possibly
    its mode according to *mode*.  When computing *mode*, the current umask value
    is first masked out.  Return the file descriptor for the newly opened file.
+   The new file descriptor is :ref:`non-inheritable <fd_inheritance>`.
 
    For a description of the flag and mode values, see the C run-time documentation;
    flag constants (like :const:`O_RDONLY` and :const:`O_WRONLY`) are defined in
-   this module too (see :ref:`open-constants`).  In particular, on Windows adding
+   the :mod:`os` module.  In particular, on Windows adding
    :const:`O_BINARY` is needed to open files in binary mode.
 
    This function can support :ref:`paths relative to directory descriptors
-   <dir_fd>`.
+   <dir_fd>` with the *dir_fd* parameter.
 
    Availability: Unix, Windows.
+
+   .. versionchanged:: 3.4
+      The new file descriptor is now non-inheritable.
 
    .. note::
 
@@ -869,24 +893,92 @@ as internal buffering of data.
    .. versionadded:: 3.3
       The *dir_fd* argument.
 
+The following constants are options for the *flags* parameter to the
+:func:`~os.open` function.  They can be combined using the bitwise OR operator
+``|``.  Some of them are not available on all platforms.  For descriptions of
+their availability and use, consult the :manpage:`open(2)` manual page on Unix
+or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Windows.
+
+
+.. data:: O_RDONLY
+          O_WRONLY
+          O_RDWR
+          O_APPEND
+          O_CREAT
+          O_EXCL
+          O_TRUNC
+
+   These constants are available on Unix and Windows.
+
+
+.. data:: O_DSYNC
+          O_RSYNC
+          O_SYNC
+          O_NDELAY
+          O_NONBLOCK
+          O_NOCTTY
+          O_SHLOCK
+          O_EXLOCK
+          O_CLOEXEC
+
+   These constants are only available on Unix.
+
+   .. versionchanged:: 3.3
+      Add :data:`O_CLOEXEC` constant.
+
+.. data:: O_BINARY
+          O_NOINHERIT
+          O_SHORT_LIVED
+          O_TEMPORARY
+          O_RANDOM
+          O_SEQUENTIAL
+          O_TEXT
+
+   These constants are only available on Windows.
+
+
+.. data:: O_ASYNC
+          O_DIRECT
+          O_DIRECTORY
+          O_NOFOLLOW
+          O_NOATIME
+          O_PATH
+          O_TMPFILE
+
+   These constants are GNU extensions and not present if they are not defined by
+   the C library.
+
+   .. versionchanged:: 3.4
+      Add :data:`O_PATH` on systems that support it.
+      Add :data:`O_TMPFILE`, only available on Linux Kernel 3.11
+        or newer.
+
 
 .. function:: openpty()
 
    .. index:: module: pty
 
-   Open a new pseudo-terminal pair. Return a pair of file descriptors ``(master,
-   slave)`` for the pty and the tty, respectively. For a (slightly) more portable
-   approach, use the :mod:`pty` module.
+   Open a new pseudo-terminal pair. Return a pair of file descriptors
+   ``(master, slave)`` for the pty and the tty, respectively. The new file
+   descriptors are :ref:`non-inheritable <fd_inheritance>`. For a (slightly) more
+   portable approach, use the :mod:`pty` module.
 
    Availability: some flavors of Unix.
+
+   .. versionchanged:: 3.4
+      The new file descriptors are now non-inheritable.
 
 
 .. function:: pipe()
 
-   Create a pipe.  Return a pair of file descriptors ``(r, w)`` usable for reading
-   and writing, respectively.
+   Create a pipe.  Return a pair of file descriptors ``(r, w)`` usable for
+   reading and writing, respectively. The new file descriptor is
+   :ref:`non-inheritable <fd_inheritance>`.
 
    Availability: Unix, Windows.
+
+   .. versionchanged:: 3.4
+      The new file descriptors are now non-inheritable.
 
 
 .. function:: pipe2(flags)
@@ -952,10 +1044,10 @@ as internal buffering of data.
    .. versionadded:: 3.3
 
 
-.. function:: pwrite(fd, string, offset)
+.. function:: pwrite(fd, str, offset)
 
-   Write *string* to a file descriptor, *fd*, from *offset*, leaving the file
-   offset unchanged.
+   Write *bytestring* to a file descriptor, *fd*, from *offset*,
+   leaving the file offset unchanged.
 
    Availability: Unix.
 
@@ -1002,7 +1094,15 @@ as internal buffering of data.
    All platforms support sockets as *out* file descriptor, and some platforms
    allow other types (e.g. regular file, pipe) as well.
 
+   Cross-platform applications should not use *headers*, *trailers* and *flags*
+   arguments.
+
    Availability: Unix.
+
+   .. note::
+
+      For a higher-level wrapper of :func:`sendfile`, see
+      :mod:`socket.socket.sendfile`.
 
    .. versionadded:: 3.3
 
@@ -1027,7 +1127,7 @@ as internal buffering of data.
    sequence to hold the rest of the data. :func:`~os.readv` returns the total
    number of bytes read (which may be less than the total capacity of all the
    objects).
-          
+
    Availability: Unix.
 
    .. versionadded:: 3.3
@@ -1080,80 +1180,8 @@ as internal buffering of data.
    sequence of :term:`bytes-like objects <bytes-like object>`.
    :func:`~os.writev` writes the contents of each object to the file descriptor
    and returns the total number of bytes written.
-   
+
    Availability: Unix.
-
-   .. versionadded:: 3.3
-
-
-.. _open-constants:
-
-``open()`` flag constants
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The following constants are options for the *flags* parameter to the
-:func:`~os.open` function.  They can be combined using the bitwise OR operator
-``|``.  Some of them are not available on all platforms.  For descriptions of
-their availability and use, consult the :manpage:`open(2)` manual page on Unix
-or `the MSDN <http://msdn.microsoft.com/en-us/library/z0kc8e3z.aspx>`_ on Windows.
-
-
-.. data:: O_RDONLY
-          O_WRONLY
-          O_RDWR
-          O_APPEND
-          O_CREAT
-          O_EXCL
-          O_TRUNC
-
-   These constants are available on Unix and Windows.
-
-
-.. data:: O_DSYNC
-          O_RSYNC
-          O_SYNC
-          O_NDELAY
-          O_NONBLOCK
-          O_NOCTTY
-          O_SHLOCK
-          O_EXLOCK
-          O_CLOEXEC
-
-   These constants are only available on Unix.
-
-   .. versionchanged:: 3.3
-      Add :data:`O_CLOEXEC` constant.
-
-.. data:: O_BINARY
-          O_NOINHERIT
-          O_SHORT_LIVED
-          O_TEMPORARY
-          O_RANDOM
-          O_SEQUENTIAL
-          O_TEXT
-
-   These constants are only available on Windows.
-
-
-.. data:: O_ASYNC
-          O_DIRECT
-          O_DIRECTORY
-          O_NOFOLLOW
-          O_NOATIME
-
-   These constants are GNU extensions and not present if they are not defined by
-   the C library.
-
-
-.. data:: RTLD_LAZY
-          RTLD_NOW
-          RTLD_GLOBAL
-          RTLD_LOCAL
-          RTLD_NODELETE
-          RTLD_NOLOAD
-          RTLD_DEEPBIND
-
-   See the Unix manual page :manpage:`dlopen(3)`.
 
    .. versionadded:: 3.3
 
@@ -1193,6 +1221,49 @@ Querying the size of a terminal
    .. attribute:: lines
 
       Height of the terminal window in characters.
+
+
+.. _fd_inheritance:
+
+Inheritance of File Descriptors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. versionadded:: 3.4
+
+A file descriptor has an "inheritable" flag which indicates if the file descriptor
+can be inherited by child processes.  Since Python 3.4, file descriptors
+created by Python are non-inheritable by default.
+
+On UNIX, non-inheritable file descriptors are closed in child processes at the
+execution of a new program, other file descriptors are inherited.
+
+On Windows, non-inheritable handles and file descriptors are closed in child
+processes, except for standard streams (file descriptors 0, 1 and 2: stdin, stdout
+and stderr), which are always inherited.  Using :func:`spawn\* <spawnl>` functions,
+all inheritable handles and all inheritable file descriptors are inherited.
+Using the :mod:`subprocess` module, all file descriptors except standard
+streams are closed, and inheritable handles are only inherited if the
+*close_fds* parameter is ``False``.
+
+.. function:: get_inheritable(fd)
+
+   Get the "inheritable" flag of the specified file descriptor (a boolean).
+
+.. function:: set_inheritable(fd, inheritable)
+
+   Set the "inheritable" flag of the specified file descriptor.
+
+.. function:: get_handle_inheritable(handle)
+
+   Get the "inheritable" flag of the specified handle (a boolean).
+
+   Availability: Windows.
+
+.. function:: set_handle_inheritable(handle, inheritable)
+
+   Set the "inheritable" flag of the specified handle.
+
+   Availability: Windows.
 
 
 .. _os-file-dir:
@@ -1513,16 +1584,24 @@ features:
       Added support for specifying an open file descriptor for *path*.
 
 
-.. function:: lstat(path, *, dir_fd=None)
+.. function:: lstat(path, \*, dir_fd=None)
 
    Perform the equivalent of an :c:func:`lstat` system call on the given path.
-   Similar to :func:`~os.stat`, but does not follow symbolic links.  On
-   platforms that do not support symbolic links, this is an alias for
-   :func:`~os.stat`.  As of Python 3.3, this is equivalent to ``os.stat(path,
-   dir_fd=dir_fd, follow_symlinks=False)``.
+   Similar to :func:`~os.stat`, but does not follow symbolic links. Return a
+   :class:`stat_result` object.
+
+   On platforms that do not support symbolic links, this is an alias for
+   :func:`~os.stat`.
+
+   As of Python 3.3, this is equivalent to ``os.stat(path, dir_fd=dir_fd,
+   follow_symlinks=False)``.
 
    This function can also support :ref:`paths relative to directory descriptors
    <dir_fd>`.
+
+   .. seealso::
+
+      The :func:`stat` function.
 
    .. versionchanged:: 3.2
       Added support for Windows 6.0 (Vista) symbolic links.
@@ -1551,7 +1630,7 @@ features:
       The *dir_fd* argument.
 
 
-.. function:: makedirs(path, mode=0o777, exist_ok=False)
+.. function:: makedirs(name, mode=0o777, exist_ok=False)
 
    .. index::
       single: directory; creating
@@ -1576,12 +1655,12 @@ features:
    .. versionadded:: 3.2
       The *exist_ok* parameter.
 
-   .. versionchanged:: 3.3.6
+   .. versionchanged:: 3.4.1
 
-      Before Python 3.3.6, if *exist_ok* was ``True`` and the directory existed,
+      Before Python 3.4.1, if *exist_ok* was ``True`` and the directory existed,
       :func:`makedirs` would still raise an error if *mode* did not match the
       mode of the existing directory. Since this behavior was impossible to
-      implement safely, it was removed in Python 3.3.6. See :issue:`21082`.
+      implement safely, it was removed in Python 3.4.1. See :issue:`21082`.
 
 
 .. function:: mkfifo(path, mode=0o666, *, dir_fd=None)
@@ -1711,7 +1790,7 @@ features:
       The *dir_fd* argument.
 
 
-.. function:: removedirs(path)
+.. function:: removedirs(name)
 
    .. index:: single: directory; deleting
 
@@ -1790,55 +1869,116 @@ features:
       The *dir_fd* parameter.
 
 
-.. function:: stat(path, *, dir_fd=None, follow_symlinks=True)
+.. function:: stat(path, \*, dir_fd=None, follow_symlinks=True)
 
-   Perform the equivalent of a :c:func:`stat` system call on the given path.
-   *path* may be specified as either a string or as an open file descriptor.
-   (This function normally follows symlinks; to stat a symlink add the argument
-   ``follow_symlinks=False``, or use :func:`lstat`.)
+   Get the status of a file or a file descriptor. Perform the equivalent of a
+   :c:func:`stat` system call on the given path. *path* may be specified as
+   either a string or as an open file descriptor. Return a :class:`stat_result`
+   object.
 
-   The return value is an object whose attributes correspond roughly
-   to the members of the :c:type:`stat` structure, namely:
+   This function normally follows symlinks; to stat a symlink add the argument
+   ``follow_symlinks=False``, or use :func:`lstat`.
 
-   * :attr:`st_mode` - protection bits,
-   * :attr:`st_ino` - inode number,
-   * :attr:`st_dev` - device,
-   * :attr:`st_nlink` - number of hard links,
-   * :attr:`st_uid` - user id of owner,
-   * :attr:`st_gid` - group id of owner,
-   * :attr:`st_size` - size of file, in bytes,
-   * :attr:`st_atime` - time of most recent access expressed in seconds,
-   * :attr:`st_mtime` - time of most recent content modification
-     expressed in seconds,
-   * :attr:`st_ctime` - platform dependent; time of most recent metadata
-     change on Unix, or the time of creation on Windows, expressed in seconds
-   * :attr:`st_atime_ns` - time of most recent access
-     expressed in nanoseconds as an integer,
-   * :attr:`st_mtime_ns` - time of most recent content modification
-     expressed in nanoseconds as an integer,
-   * :attr:`st_ctime_ns` - platform dependent; time of most recent metadata
-     change on Unix, or the time of creation on Windows,
-     expressed in nanoseconds as an integer
+   This function can support :ref:`specifying a file descriptor <path_fd>` and
+   :ref:`not following symlinks <follow_symlinks>`.
 
-   On some Unix systems (such as Linux), the following attributes may also be
-   available:
+   .. index:: module: stat
 
-   * :attr:`st_blocks` - number of 512-byte blocks allocated for file
-   * :attr:`st_blksize` - filesystem blocksize for efficient file system I/O
-   * :attr:`st_rdev` - type of device if an inode device
-   * :attr:`st_flags` - user defined flags for file
+   Example::
 
-   On other Unix systems (such as FreeBSD), the following attributes may be
-   available (but may be only filled out if root tries to use them):
+      >>> import os
+      >>> statinfo = os.stat('somefile.txt')
+      >>> statinfo
+      os.stat_result(st_mode=33188, st_ino=7876932, st_dev=234881026,
+      st_nlink=1, st_uid=501, st_gid=501, st_size=264, st_atime=1297230295,
+      st_mtime=1297230027, st_ctime=1297230027)
+      >>> statinfo.st_size
+      264
 
-   * :attr:`st_gen` - file generation number
-   * :attr:`st_birthtime` - time of file creation
+   Availability: Unix, Windows.
 
-   On Mac OS systems, the following attributes may also be available:
+   .. seealso::
 
-   * :attr:`st_rsize`
-   * :attr:`st_creator`
-   * :attr:`st_type`
+      :func:`fstat` and :func:`lstat` functions.
+
+   .. versionadded:: 3.3
+      Added the *dir_fd* and *follow_symlinks* arguments, specifying a file
+      descriptor instead of a path.
+
+
+.. class:: stat_result
+
+   Object whose attributes correspond roughly to the members of the
+   :c:type:`stat` structure. It is used for the result of :func:`os.stat`,
+   :func:`os.fstat` and :func:`os.lstat`.
+
+   Attributes:
+
+   .. attribute:: st_mode
+
+      File mode: file type and file mode bits (permissions).
+
+   .. attribute:: st_ino
+
+      Inode number.
+
+   .. attribute:: st_dev
+
+      Identifier of the device on which this file resides.
+
+   .. attribute:: st_nlink
+
+      Number of hard links.
+
+   .. attribute:: st_uid
+
+      User identifier of the file owner.
+
+   .. attribute:: st_gid
+
+      Group identifier of the file owner.
+
+   .. attribute:: st_size
+
+      Size of the file in bytes, if it is a regular file or a symbolic link.
+      The size of a symbolic link is the length of the pathname it contains,
+      without a terminating null byte.
+
+   Timestamps:
+
+   .. attribute:: st_atime
+
+      Time of most recent access expressed in seconds.
+
+   .. attribute:: st_mtime
+
+      Time of most recent content modification expressed in seconds.
+
+   .. attribute:: st_ctime
+
+      Platform dependent:
+
+      * the time of most recent metadata change on Unix,
+      * the time of creation on Windows, expressed in seconds.
+
+   .. attribute:: st_atime_ns
+
+      Time of most recent access expressed in nanoseconds as an integer.
+
+   .. attribute:: st_mtime_ns
+
+      Time of most recent content modification expressed in nanoseconds as an
+      integer.
+
+   .. attribute:: st_ctime_ns
+
+      Platform dependent:
+
+      * the time of most recent metadata change on Unix,
+      * the time of creation on Windows, expressed in nanoseconds as an
+        integer.
+
+   See also the :func:`stat_float_times` function.
 
    .. note::
 
@@ -1848,6 +1988,7 @@ features:
       or FAT32 file systems, :attr:`st_mtime` has 2-second resolution, and
       :attr:`st_atime` has only 1-day resolution.  See your operating system
       documentation for details.
+
       Similarly, although :attr:`st_atime_ns`, :attr:`st_mtime_ns`,
       and :attr:`st_ctime_ns` are always expressed in nanoseconds, many
       systems do not provide nanosecond precision.  On systems that do
@@ -1857,41 +1998,68 @@ features:
       If you need the exact timestamps you should always use
       :attr:`st_atime_ns`, :attr:`st_mtime_ns`, and :attr:`st_ctime_ns`.
 
-   For backward compatibility, the return value of :func:`~os.stat` is also
+   On some Unix systems (such as Linux), the following attributes may also be
+   available:
+
+   .. attribute:: st_blocks
+
+      Number of 512-byte blocks allocated for file.
+      This may be smaller than :attr:`st_size`/512 when the file has holes.
+
+   .. attribute:: st_blksize
+
+      "Preferred" blocksize for efficient file system I/O. Writing to a file in
+      smaller chunks may cause an inefficient read-modify-rewrite.
+
+   .. attribute:: st_rdev
+
+      Type of device if an inode device.
+
+   .. attribute:: st_flags
+
+      User defined flags for file.
+
+   On other Unix systems (such as FreeBSD), the following attributes may be
+   available (but may be only filled out if root tries to use them):
+
+   .. attribute:: st_gen
+
+      File generation number.
+
+   .. attribute:: st_birthtime
+
+      Time of file creation.
+
+   On Mac OS systems, the following attributes may also be available:
+
+   .. attribute:: st_rsize
+
+      Real size of the file.
+
+   .. attribute:: st_creator
+
+      Creator of the file.
+
+   .. attribute:: st_type
+
+      File type.
+
+   The standard module :mod:`stat` defines functions and constants that are
+   useful for extracting information from a :c:type:`stat` structure. (On
+   Windows, some items are filled with dummy values.)
+
+   For backward compatibility, a :class:`stat_result` instance is also
    accessible as a tuple of at least 10 integers giving the most important (and
    portable) members of the :c:type:`stat` structure, in the order
    :attr:`st_mode`, :attr:`st_ino`, :attr:`st_dev`, :attr:`st_nlink`,
    :attr:`st_uid`, :attr:`st_gid`, :attr:`st_size`, :attr:`st_atime`,
    :attr:`st_mtime`, :attr:`st_ctime`. More items may be added at the end by
-   some implementations.
-
-   This function can support :ref:`specifying a file descriptor <path_fd>` and
-   :ref:`not following symlinks <follow_symlinks>`.
-
-   .. index:: module: stat
-
-   The standard module :mod:`stat` defines functions and constants that are useful
-   for extracting information from a :c:type:`stat` structure. (On Windows, some
-   items are filled with dummy values.)
-
-   Example::
-
-      >>> import os
-      >>> statinfo = os.stat('somefile.txt')
-      >>> statinfo
-      posix.stat_result(st_mode=33188, st_ino=7876932, st_dev=234881026,
-      st_nlink=1, st_uid=501, st_gid=501, st_size=264, st_atime=1297230295,
-      st_mtime=1297230027, st_ctime=1297230027)
-      >>> statinfo.st_size
-      264
-
-   Availability: Unix, Windows.
+   some implementations. For compatibility with older Python versions,
+   accessing :class:`stat_result` as a tuple always returns integers.
 
    .. versionadded:: 3.3
-      Added the *dir_fd* and *follow_symlinks* arguments,
-      specifying a file descriptor instead of a path,
-      and the :attr:`st_atime_ns`, :attr:`st_mtime_ns`,
-      and :attr:`st_ctime_ns` members.
+      Added the :attr:`st_atime_ns`, :attr:`st_mtime_ns`, and
+      :attr:`st_ctime_ns` members.
 
 
 .. function:: stat_float_times([newvalue])
@@ -1935,10 +2103,25 @@ features:
    read-only, and if :const:`ST_NOSUID` is set, the semantics of
    setuid/setgid bits are disabled or not supported.
 
+   Additional module-level constants are defined for GNU/glibc based systems.
+   These are :const:`ST_NODEV` (disallow access to device special files),
+   :const:`ST_NOEXEC` (disallow program execution), :const:`ST_SYNCHRONOUS`
+   (writes are synced at once), :const:`ST_MANDLOCK` (allow mandatory locks on an FS),
+   :const:`ST_WRITE` (write on file/directory/symlink), :const:`ST_APPEND`
+   (append-only file), :const:`ST_IMMUTABLE` (immutable file), :const:`ST_NOATIME`
+   (do not update access times), :const:`ST_NODIRATIME` (do not update directory access
+   times), :const:`ST_RELATIME` (update atime relative to mtime/ctime).
+
    This function can support :ref:`specifying a file descriptor <path_fd>`.
 
    .. versionchanged:: 3.2
       The :const:`ST_RDONLY` and :const:`ST_NOSUID` constants were added.
+
+   .. versionchanged:: 3.4
+      The :const:`ST_NODEV`, :const:`ST_NOEXEC`, :const:`ST_SYNCHRONOUS`,
+      :const:`ST_MANDLOCK`, :const:`ST_WRITE`, :const:`ST_APPEND`,
+      :const:`ST_IMMUTABLE`, :const:`ST_NOATIME`, :const:`ST_NODIRATIME`,
+      and :const:`ST_RELATIME` constants were added.
 
    Availability: Unix.
 
@@ -2157,9 +2340,11 @@ features:
 
    If optional argument *topdown* is ``True`` or not specified, the triple for a
    directory is generated before the triples for any of its subdirectories
-   (directories are generated top-down).  If *topdown* is ``False``, the triple for a
-   directory is generated after the triples for all of its subdirectories
-   (directories are generated bottom-up).
+   (directories are generated top-down).  If *topdown* is ``False``, the triple
+   for a directory is generated after the triples for all of its subdirectories
+   (directories are generated bottom-up). No matter the value of *topdown*, the
+   list of subdirectories is retrieved before the tuples for the directory and
+   its subdirectories are generated.
 
    When *topdown* is ``True``, the caller can modify the *dirnames* list in-place
    (perhaps using :keyword:`del` or slice assignment), and :func:`walk` will only
@@ -2589,7 +2774,7 @@ written in Python, such as a mail server's external command delivery program.
    Fork a child process.  Return ``0`` in the child and the child's process id in the
    parent.  If an error occurs :exc:`OSError` is raised.
 
-   Note that some platforms including FreeBSD <= 6.3, Cygwin and OS/2 EMX have
+   Note that some platforms including FreeBSD <= 6.3 and Cygwin have
    known issues when using fork() from a thread.
 
    .. warning::
@@ -2659,10 +2844,27 @@ written in Python, such as a mail server's external command delivery program.
    Availability: Unix.
 
 
-.. function:: popen(...)
+.. function:: popen(command, mode='r', buffering=-1)
 
-   Run child processes, returning opened pipes for communications.  These functions
-   are described in section :ref:`os-newstreams`.
+   Open a pipe to or from *command*.  The return value is an open file object
+   connected to the pipe, which can be read or written depending on whether *mode*
+   is ``'r'`` (default) or ``'w'``. The *buffering* argument has the same meaning as
+   the corresponding argument to the built-in :func:`open` function. The
+   returned file object reads or writes text strings rather than bytes.
+
+   The ``close`` method returns :const:`None` if the subprocess exited
+   successfully, or the subprocess's return code if there was an
+   error. On POSIX systems, if the return code is positive it
+   represents the return value of the process left-shifted by one
+   byte.  If the return code is negative, the process was terminated
+   by the signal given by the negated value of the return code.  (For
+   example, the return value might be ``- signal.SIGKILL`` if the
+   subprocess was killed.)  On Windows systems, the return value
+   contains the signed integer return code from the child process.
+
+   This is implemented using :class:`subprocess.Popen`; see that class's
+   documentation for more powerful ways to manage and communicate with
+   subprocesses.
 
 
 .. function:: spawnl(mode, path, ...)
@@ -2835,7 +3037,6 @@ written in Python, such as a mail server's external command delivery program.
    :manpage:`times(2)` or the corresponding Windows Platform API documentation.
    On Windows, only :attr:`user` and :attr:`system` are known; the other
    attributes are zero.
-   On OS/2, only :attr:`elapsed` is known; the other attributes are zero.
 
    Availability: Unix, Windows.
 
@@ -3057,7 +3258,7 @@ information, consult your Unix manpages.
 
 .. versionadded:: 3.3
 
-The following scheduling policies are exposed if they are a supported by the
+The following scheduling policies are exposed if they are supported by the
 operating system.
 
 .. data:: SCHED_OTHER
@@ -3166,10 +3367,6 @@ operating system.
    Return the set of CPUs the process with PID *pid* (or the current process
    if zero) is restricted to.
 
-   .. seealso::
-      :func:`multiprocessing.cpu_count` returns the number of CPUs in the
-      system.
-
 
 .. _os-path:
 
@@ -3205,6 +3402,13 @@ Miscellaneous System Information
    determine the set of names known to the system.
 
    Availability: Unix.
+
+
+.. function:: cpu_count()
+
+   Return the number of CPUs in the system. Returns None if undetermined.
+
+   .. versionadded:: 3.4
 
 
 .. function:: getloadavg()
@@ -3305,6 +3509,19 @@ Higher-level operations on pathnames are defined in the :mod:`os.path` module.
    The file path of the null device. For example: ``'/dev/null'`` for
    POSIX, ``'nul'`` for Windows.  Also available via :mod:`os.path`.
 
+.. data:: RTLD_LAZY
+          RTLD_NOW
+          RTLD_GLOBAL
+          RTLD_LOCAL
+          RTLD_NODELETE
+          RTLD_NOLOAD
+          RTLD_DEEPBIND
+
+   Flags for use with the :func:`~sys.setdlopenflags` and
+   :func:`~sys.getdlopenflags` functions.  See the Unix manual page
+   :manpage:`dlopen(3)` for what the different flags mean.
+
+   .. versionadded:: 3.3
 
 .. _os-miscfunc:
 

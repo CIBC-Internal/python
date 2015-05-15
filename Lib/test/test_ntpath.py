@@ -258,6 +258,41 @@ class TestNtpath(unittest.TestCase):
             check('%spam%bar', '%sbar' % nonascii)
             check('%{}%bar'.format(nonascii), 'ham%sbar' % nonascii)
 
+    def test_expanduser(self):
+        tester('ntpath.expanduser("test")', 'test')
+
+        with support.EnvironmentVarGuard() as env:
+            env.clear()
+            tester('ntpath.expanduser("~test")', '~test')
+
+            env['HOMEPATH'] = 'eric\\idle'
+            env['HOMEDRIVE'] = 'C:\\'
+            tester('ntpath.expanduser("~test")', 'C:\\eric\\test')
+            tester('ntpath.expanduser("~")', 'C:\\eric\\idle')
+
+            del env['HOMEDRIVE']
+            tester('ntpath.expanduser("~test")', 'eric\\test')
+            tester('ntpath.expanduser("~")', 'eric\\idle')
+
+            env.clear()
+            env['USERPROFILE'] = 'C:\\eric\\idle'
+            tester('ntpath.expanduser("~test")', 'C:\\eric\\test')
+            tester('ntpath.expanduser("~")', 'C:\\eric\\idle')
+
+            env.clear()
+            env['HOME'] = 'C:\\idle\\eric'
+            tester('ntpath.expanduser("~test")', 'C:\\idle\\test')
+            tester('ntpath.expanduser("~")', 'C:\\idle\\eric')
+
+            tester('ntpath.expanduser("~test\\foo\\bar")',
+                   'C:\\idle\\test\\foo\\bar')
+            tester('ntpath.expanduser("~test/foo/bar")',
+                   'C:\\idle\\test/foo/bar')
+            tester('ntpath.expanduser("~\\foo\\bar")',
+                   'C:\\idle\\eric\\foo\\bar')
+            tester('ntpath.expanduser("~/foo/bar")',
+                   'C:\\idle\\eric/foo/bar')
+
     def test_abspath(self):
         # ntpath.abspath() can only be used on a system with the "nt" module
         # (reasonably), so we protect this test with "import nt".  This allows
@@ -271,13 +306,14 @@ class TestNtpath(unittest.TestCase):
             self.skipTest('nt module not available')
 
     def test_relpath(self):
-        currentdir = os.path.split(os.getcwd())[-1]
         tester('ntpath.relpath("a")', 'a')
         tester('ntpath.relpath(os.path.abspath("a"))', 'a')
         tester('ntpath.relpath("a/b")', 'a\\b')
         tester('ntpath.relpath("../a/b")', '..\\a\\b')
-        tester('ntpath.relpath("a", "../b")', '..\\'+currentdir+'\\a')
-        tester('ntpath.relpath("a/b", "../c")', '..\\'+currentdir+'\\a\\b')
+        with support.temp_cwd(support.TESTFN) as cwd_dir:
+            currentdir = os.path.basename(cwd_dir)
+            tester('ntpath.relpath("a", "../b")', '..\\'+currentdir+'\\a')
+            tester('ntpath.relpath("a/b", "../c")', '..\\'+currentdir+'\\a\\b')
         tester('ntpath.relpath("a", "b/c")', '..\\..\\a')
         tester('ntpath.relpath("c:/foo/bar/bat", "c:/x/y")', '..\\..\\foo\\bar\\bat')
         tester('ntpath.relpath("//conky/mountpoint/a", "//conky/mountpoint/b/c")', '..\\..\\a')
@@ -306,6 +342,40 @@ class TestNtpath(unittest.TestCase):
                     # dialogs (#4804)
                     ntpath.sameopenfile(-1, -1)
 
+    def test_ismount(self):
+        self.assertTrue(ntpath.ismount("c:\\"))
+        self.assertTrue(ntpath.ismount("C:\\"))
+        self.assertTrue(ntpath.ismount("c:/"))
+        self.assertTrue(ntpath.ismount("C:/"))
+        self.assertTrue(ntpath.ismount("\\\\.\\c:\\"))
+        self.assertTrue(ntpath.ismount("\\\\.\\C:\\"))
+
+        self.assertTrue(ntpath.ismount(b"c:\\"))
+        self.assertTrue(ntpath.ismount(b"C:\\"))
+        self.assertTrue(ntpath.ismount(b"c:/"))
+        self.assertTrue(ntpath.ismount(b"C:/"))
+        self.assertTrue(ntpath.ismount(b"\\\\.\\c:\\"))
+        self.assertTrue(ntpath.ismount(b"\\\\.\\C:\\"))
+
+        with support.temp_dir() as d:
+            self.assertFalse(ntpath.ismount(d))
+
+        if sys.platform == "win32":
+            #
+            # Make sure the current folder isn't the root folder
+            # (or any other volume root). The drive-relative
+            # locations below cannot then refer to mount points
+            #
+            drive, path = ntpath.splitdrive(sys.executable)
+            with support.change_cwd(os.path.dirname(sys.executable)):
+                self.assertFalse(ntpath.ismount(drive.lower()))
+                self.assertFalse(ntpath.ismount(drive.upper()))
+
+            self.assertTrue(ntpath.ismount("\\\\localhost\\c$"))
+            self.assertTrue(ntpath.ismount("\\\\localhost\\c$\\"))
+
+            self.assertTrue(ntpath.ismount(b"\\\\localhost\\c$"))
+            self.assertTrue(ntpath.ismount(b"\\\\localhost\\c$\\"))
 
 class NtCommonTest(test_genericpath.CommonTest, unittest.TestCase):
     pathmodule = ntpath

@@ -14,6 +14,7 @@ import re
 import base64
 import shutil
 import urllib.parse
+import html
 import http.client
 import tempfile
 from io import BytesIO
@@ -92,6 +93,13 @@ class BaseHTTPServerTestCase(BaseTestCase):
         def do_KEYERROR(self):
             self.send_error(999)
 
+        def do_NOTFOUND(self):
+            self.send_error(404)
+
+        def do_EXPLAINERROR(self):
+            self.send_error(999, "Short Message",
+                            "This is a long \n explaination")
+
         def do_CUSTOM(self):
             self.send_response(999)
             self.send_header('Content-Type', 'text/html')
@@ -118,7 +126,7 @@ class BaseHTTPServerTestCase(BaseTestCase):
 
     def test_request_line_trimming(self):
         self.con._http_vsn_str = 'HTTP/1.1\n'
-        self.con.putrequest('GET', '/')
+        self.con.putrequest('XYZBOGUS', '/')
         self.con.endheaders()
         res = self.con.getresponse()
         self.assertEqual(res.status, 501)
@@ -145,8 +153,9 @@ class BaseHTTPServerTestCase(BaseTestCase):
         self.assertEqual(res.status, 501)
 
     def test_version_none(self):
+        # Test that a valid method is rejected when not HTTP/1.x
         self.con._http_vsn_str = ''
-        self.con.putrequest('PUT', '/')
+        self.con.putrequest('CUSTOM', '/')
         self.con.endheaders()
         res = self.con.getresponse()
         self.assertEqual(res.status, 400)
@@ -203,6 +212,12 @@ class BaseHTTPServerTestCase(BaseTestCase):
         res = self.con.getresponse()
         self.assertEqual(res.status, 999)
 
+    def test_return_explain_error(self):
+        self.con.request('EXPLAINERROR', '/')
+        res = self.con.getresponse()
+        self.assertEqual(res.status, 999)
+        self.assertTrue(int(res.getheader('Content-Length')))
+
     def test_latin1_header(self):
         self.con.request('LATINONEHEADER', '/', headers={
             'X-Special-Incoming':       'Ärger mit Unicode'
@@ -210,6 +225,14 @@ class BaseHTTPServerTestCase(BaseTestCase):
         res = self.con.getresponse()
         self.assertEqual(res.getheader('X-Special'), 'Dängerous Mind')
         self.assertEqual(res.read(), 'Ärger mit Unicode'.encode('utf-8'))
+
+    def test_error_content_length(self):
+        # Issue #16088: standard error responses should have a content-length
+        self.con.request('NOTFOUND', '/')
+        res = self.con.getresponse()
+        self.assertEqual(res.status, 404)
+        data = res.read()
+        self.assertEqual(int(res.getheader('Content-Length')), len(data))
 
 
 class SimpleHTTPServerTestCase(BaseTestCase):
@@ -244,6 +267,33 @@ class SimpleHTTPServerTestCase(BaseTestCase):
         self.assertIsNotNone(response.reason)
         if data:
             self.assertEqual(data, body)
+        return body
+
+    @support.requires_mac_ver(10, 5)
+    @unittest.skipUnless(support.TESTFN_UNDECODABLE,
+                         'need support.TESTFN_UNDECODABLE')
+    def test_undecodable_filename(self):
+        enc = sys.getfilesystemencoding()
+        filename = os.fsdecode(support.TESTFN_UNDECODABLE) + '.txt'
+        with open(os.path.join(self.tempdir, filename), 'wb') as f:
+            f.write(support.TESTFN_UNDECODABLE)
+        response = self.request(self.tempdir_name + '/')
+        if sys.platform == 'darwin':
+            # On Mac OS the HFS+ filesystem replaces bytes that aren't valid
+            # UTF-8 into a percent-encoded value.
+            for name in os.listdir(self.tempdir):
+                if name != 'test': # Ignore a filename created in setUp().
+                    filename = name
+                    break
+        body = self.check_status_and_reason(response, 200)
+        quotedname = urllib.parse.quote(filename, errors='surrogatepass')
+        self.assertIn(('href="%s"' % quotedname)
+                      .encode(enc, 'surrogateescape'), body)
+        self.assertIn(('>%s<' % html.escape(filename))
+                      .encode(enc, 'surrogateescape'), body)
+        response = self.request(self.tempdir_name + '/' + quotedname)
+        self.check_status_and_reason(response, 200,
+                                     data=support.TESTFN_UNDECODABLE)
 
     def test_get(self):
         #constructs the path relative to the root directory of the HTTPServer
@@ -256,6 +306,12 @@ class SimpleHTTPServerTestCase(BaseTestCase):
         self.check_status_and_reason(response, 200)
         response = self.request(self.tempdir_name)
         self.check_status_and_reason(response, 301)
+        response = self.request(self.tempdir_name + '/?hi=2')
+        self.check_status_and_reason(response, 200)
+        response = self.request(self.tempdir_name + '?hi=1')
+        self.check_status_and_reason(response, 301)
+        self.assertEqual(response.getheader("Location"),
+                         self.tempdir_name + "/?hi=1")
         response = self.request('/ThisDoesNotExist')
         self.check_status_and_reason(response, 404)
         response = self.request('/' + 'ThisDoesNotExist' + '/')
@@ -284,7 +340,7 @@ class SimpleHTTPServerTestCase(BaseTestCase):
         response = self.request('/', method='FOO')
         self.check_status_and_reason(response, 501)
         # requests must be case sensitive,so this should fail too
-        response = self.request('/', method='get')
+        response = self.request('/', method='custom')
         self.check_status_and_reason(response, 501)
         response = self.request('/', method='GETs')
         self.check_status_and_reason(response, 501)

@@ -11,6 +11,9 @@
    import operator
    from operator import itemgetter, iadd
 
+**Source code:** :source:`Lib/operator.py`
+
+--------------
 
 The :mod:`operator` module exports a set of efficient functions corresponding to
 the intrinsic operators of Python.  For example, ``operator.add(x, y)`` is
@@ -225,15 +228,14 @@ Operations which work with sequences (some of them with mappings too) include:
 
    Set the value of *a* at index *b* to *c*.
 
-Example: Build a dictionary that maps the ordinals from ``0`` to ``255`` to
-their character equivalents.
 
-   >>> d = {}
-   >>> keys = range(256)
-   >>> vals = map(chr, keys)
-   >>> map(operator.setitem, [d]*len(keys), keys, vals)   # doctest: +SKIP
+.. function:: length_hint(obj, default=0)
 
-.. XXX: find a better, readable, example
+   Return an estimated length for the object *o*. First try to return its
+   actual length, then an estimate using :meth:`object.__length_hint__`, and
+   finally return the default value.
+
+   .. versionadded:: 3.4
 
 The :mod:`operator` module also defines tools for generalized attribute and item
 lookups.  These are useful for making fast field extractors as arguments for

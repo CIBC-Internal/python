@@ -16,7 +16,7 @@ authentication, redirections, cookies and more.
 The :mod:`urllib.request` module defines the following functions:
 
 
-.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None, cadefault=False)
+.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None, cadefault=False, context=None)
 
    Open the URL *url*, which can be either a string or a
    :class:`Request` object.
@@ -47,21 +47,17 @@ The :mod:`urllib.request` module defines the following functions:
    the global default timeout setting will be used).  This actually
    only works for HTTP, HTTPS and FTP connections.
 
+   If *context* is specified, it must be a :class:`ssl.SSLContext` instance
+   describing the various SSL options. See :class:`~http.client.HTTPSConnection`
+   for more details.
+
    The optional *cafile* and *capath* parameters specify a set of trusted
    CA certificates for HTTPS requests.  *cafile* should point to a single
    file containing a bundle of CA certificates, whereas *capath* should
    point to a directory of hashed certificate files.  More information can
    be found in :meth:`ssl.SSLContext.load_verify_locations`.
 
-   The *cadefault* parameter specifies whether to fall back to loading a
-   default certificate store defined by the underlying OpenSSL library if the
-   *cafile* and *capath* parameters are omitted.  This will only work on
-   some non-Windows platforms.
-
-   .. warning::
-      If neither *cafile* nor *capath* is specified, and *cadefault* is ``False``,
-      an HTTPS request will not do any verification of the server's
-      certificate.
+   The *cadefault* parameter is ignored.
 
    For http and https urls, this function returns a
    :class:`http.client.HTTPResponse` object which has the following
@@ -110,6 +106,9 @@ The :mod:`urllib.request` module defines the following functions:
 
    .. versionchanged:: 3.3
       *cadefault* was added.
+
+   .. versionchanged:: 3.4.3
+      *context* was added.
 
 .. function:: install_opener(opener)
 
@@ -218,11 +217,16 @@ The following classes are provided:
    fetching of the image, this should be true.
 
    *method* should be a string that indicates the HTTP request method that
-   will be used (e.g. ``'HEAD'``).  Its value is stored in the
+   will be used (e.g. ``'HEAD'``).  If provided, its value is stored in the
    :attr:`~Request.method` attribute and is used by :meth:`get_method()`.
+   Subclasses may indicate a default method by setting the
+   :attr:`~Request.method` attribute in the class itself.
 
    .. versionchanged:: 3.3
       :attr:`Request.method` argument is added to the Request class.
+
+   .. versionchanged:: 3.4
+      Default :attr:`Request.method` may be indicated at the class level.
 
 
 .. class:: OpenerDirector()
@@ -356,6 +360,11 @@ The following classes are provided:
 
    Open local files.
 
+.. class:: DataHandler()
+
+   Open data URLs.
+
+   .. versionadded:: 3.4
 
 .. class:: FTPHandler()
 
@@ -391,6 +400,12 @@ request.
 
    The original URL passed to the constructor.
 
+   .. versionchanged:: 3.4
+
+   Request.full_url is a property with setter, getter and a deleter. Getting
+   :attr:`~Request.full_url` returns the original request URL with the
+   fragment, if it was present.
+
 .. attribute:: Request.type
 
    The URI scheme.
@@ -413,6 +428,10 @@ request.
 
    The entity body for the request, or None if not specified.
 
+   .. versionchanged:: 3.4
+      Changing value of :attr:`Request.data` now deletes "Content-Length"
+      header if it was previously set or calculated.
+
 .. attribute:: Request.unverifiable
 
    boolean, indicates whether the request is unverifiable as defined
@@ -420,12 +439,19 @@ request.
 
 .. attribute:: Request.method
 
-   The HTTP request method to use.  This value is used by
-   :meth:`~Request.get_method` to override the computed HTTP request
-   method that would otherwise be returned.  This attribute is initialized with
-   the value of the *method* argument passed to the constructor.
+   The HTTP request method to use.  By default its value is :const:`None`,
+   which means that :meth:`~Request.get_method` will do its normal computation
+   of the method to be used.  Its value can be set (thus overriding the default
+   computation in :meth:`~Request.get_method`) either by providing a default
+   value by setting it at the class level in a :class:`Request` subclass, or by
+   passing a value in to the :class:`Request` constructor via the *method*
+   argument.
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.4
+      A default value can now be set in subclasses; previously it could only
+      be set via the constructor argument.
 
 
 .. method:: Request.get_method()
@@ -461,9 +487,21 @@ request.
    unredirected).
 
 
+.. method:: Request.remove_header(header)
+
+   Remove named header from the request instance (both from regular and
+   unredirected headers).
+
+   .. versionadded:: 3.4
+
+
 .. method:: Request.get_full_url()
 
    Return the URL given in the constructor.
+
+   .. versionchanged:: 3.4
+
+   Returns :attr:`Request.full_url`
 
 
 .. method:: Request.set_proxy(host, type)
@@ -472,54 +510,6 @@ request.
    replace those of the instance, and the instance's selector will be the original
    URL given in the constructor.
 
-
-.. method:: Request.add_data(data)
-
-   Set the :class:`Request` data to *data*.  This is ignored by all handlers except
-   HTTP handlers --- and there it should be a byte string, and will change the
-   request to be ``POST`` rather than ``GET``.  Deprecated in 3.3, use
-   :attr:`Request.data`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.has_data()
-
-   Return whether the instance has a non-\ ``None`` data. Deprecated in 3.3,
-   use :attr:`Request.data`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.get_data()
-
-   Return the instance's data.  Deprecated in 3.3, use :attr:`Request.data`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.get_type()
-
-   Return the type of the URL --- also known as the scheme.  Deprecated in 3.3,
-   use :attr:`Request.type`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.get_host()
-
-   Return the host to which a connection will be made. Deprecated in 3.3, use
-   :attr:`Request.host`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.get_selector()
-
-   Return the selector --- the part of the URL that is sent to the server.
-   Deprecated in 3.3, use :attr:`Request.selector`.
-
-   .. deprecated-removed:: 3.3 3.4
 
 .. method:: Request.get_header(header_name, default=None)
 
@@ -531,25 +521,10 @@ request.
 
    Return a list of tuples (header_name, header_value) of the Request headers.
 
-
-.. method:: Request.set_proxy(host, type)
-
-.. method:: Request.get_origin_req_host()
-
-   Return the request-host of the origin transaction, as defined by
-   :rfc:`2965`.  See the documentation for the :class:`Request` constructor.
-   Deprecated in 3.3, use :attr:`Request.origin_req_host`.
-
-   .. deprecated-removed:: 3.3 3.4
-
-
-.. method:: Request.is_unverifiable()
-
-   Return whether the request is unverifiable, as defined by RFC 2965. See the
-   documentation for the :class:`Request` constructor.  Deprecated in 3.3, use
-   :attr:`Request.unverifiable`.
-
-   .. deprecated-removed:: 3.3 3.4
+.. versionchanged:: 3.4
+   The request methods add_data, has_data, get_data, get_type, get_host,
+   get_selector, get_origin_req_host and is_unverifiable that were deprecated
+   since 3.3 have been removed.
 
 
 .. _opener-director-objects:
@@ -983,6 +958,21 @@ FileHandler Objects
       hostname is given, an :exc:`~urllib.error.URLError` is raised.
 
 
+.. _data-handler-objects:
+
+DataHandler Objects
+-------------------
+
+.. method:: DataHandler.data_open(req)
+
+   Read a data URL. This kind of URL contains the content encoded in the URL
+   itself. The data URL syntax is specified in :rfc:`2397`. This implementation
+   ignores white spaces in base64 encoded data URLs so the URL may be wrapped
+   in whatever source file it comes from. But even though some browsers don't
+   mind about a missing padding at the end of a base64 encoded data URL, this
+   implementation will raise an :exc:`ValueError` in that case.
+
+
 .. _ftp-handler-objects:
 
 FTPHandler Objects
@@ -1398,7 +1388,9 @@ some point in the future.
      pair: FTP; protocol
 
 * Currently, only the following protocols are supported: HTTP (versions 0.9 and
-  1.0), FTP, and local files.
+  1.0), FTP, local files, and data URLs.
+
+  .. versionchanged:: 3.4 Added support for data URLs.
 
 * The caching feature of :func:`urlretrieve` has been disabled until someone
   finds the time to hack proper processing of Expiration time headers.

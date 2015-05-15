@@ -101,7 +101,7 @@ Object Protocol
    This is the equivalent of the Python statement ``del o.attr_name``.
 
 
-.. c:function:: PyObject* PyType_GenericGetDict(PyObject *o, void *context)
+.. c:function:: PyObject* PyObject_GenericGetDict(PyObject *o, void *context)
 
    A generic implementation for the getter of a ``__dict__`` descriptor. It
    creates the dictionary if necessary.
@@ -109,7 +109,7 @@ Object Protocol
    .. versionadded:: 3.3
 
 
-.. c:function:: int PyType_GenericSetDict(PyObject *o, void *context)
+.. c:function:: int PyObject_GenericSetDict(PyObject *o, void *context)
 
    A generic implementation for the setter of a ``__dict__`` descriptor. This
    implementation does not allow the dictionary to be deleted.
@@ -149,6 +149,9 @@ Object Protocol
    representation on success, *NULL* on failure.  This is the equivalent of the
    Python expression ``repr(o)``.  Called by the :func:`repr` built-in function.
 
+   .. versionchanged:: 3.4
+      This function now includes a debug assertion to help ensure that it
+      does not silently discard an active exception.
 
 .. c:function:: PyObject* PyObject_ASCII(PyObject *o)
 
@@ -170,6 +173,10 @@ Object Protocol
    Python expression ``str(o)``.  Called by the :func:`str` built-in function
    and, therefore, by the :func:`print` function.
 
+   .. versionchanged:: 3.4
+      This function now includes a debug assertion to help ensure that it
+      does not silently discard an active exception.
+
 .. c:function:: PyObject* PyObject_Bytes(PyObject *o)
 
    .. index:: builtin: bytes
@@ -180,40 +187,45 @@ Object Protocol
    a TypeError is raised when *o* is an integer instead of a zero-initialized
    bytes object.
 
-.. c:function:: int PyObject_IsInstance(PyObject *inst, PyObject *cls)
-
-   Returns ``1`` if *inst* is an instance of the class *cls* or a subclass of
-   *cls*, or ``0`` if not.  On error, returns ``-1`` and sets an exception.  If
-   *cls* is a type object rather than a class object, :c:func:`PyObject_IsInstance`
-   returns ``1`` if *inst* is of type *cls*.  If *cls* is a tuple, the check will
-   be done against every entry in *cls*. The result will be ``1`` when at least one
-   of the checks returns ``1``, otherwise it will be ``0``. If *inst* is not a
-   class instance and *cls* is neither a type object, nor a class object, nor a
-   tuple, *inst* must have a :attr:`~instance.__class__` attribute --- the
-   class relationship of the value of that attribute with *cls* will be used
-   to determine the result of this function.
-
-
-Subclass determination is done in a fairly straightforward way, but includes a
-wrinkle that implementors of extensions to the class system may want to be aware
-of.  If :class:`A` and :class:`B` are class objects, :class:`B` is a subclass of
-:class:`A` if it inherits from :class:`A` either directly or indirectly.  If
-either is not a class object, a more general mechanism is used to determine the
-class relationship of the two objects.  When testing if *B* is a subclass of
-*A*, if *A* is *B*, :c:func:`PyObject_IsSubclass` returns true.  If *A* and *B*
-are different objects, *B*'s :attr:`~class.__bases__` attribute is searched in
-a depth-first fashion for *A* --- the presence of the :attr:`~class.__bases__`
-attribute is considered sufficient for this determination.
-
 
 .. c:function:: int PyObject_IsSubclass(PyObject *derived, PyObject *cls)
 
-   Returns ``1`` if the class *derived* is identical to or derived from the class
-   *cls*, otherwise returns ``0``.  In case of an error, returns ``-1``. If *cls*
-   is a tuple, the check will be done against every entry in *cls*. The result will
-   be ``1`` when at least one of the checks returns ``1``, otherwise it will be
-   ``0``. If either *derived* or *cls* is not an actual class object (or tuple),
-   this function uses the generic algorithm described above.
+   Return ``1`` if the class *derived* is identical to or derived from the class
+   *cls*, otherwise return ``0``.  In case of an error, return ``-1``.
+
+   If *cls* is a tuple, the check will be done against every entry in *cls*.
+   The result will be ``1`` when at least one of the checks returns ``1``,
+   otherwise it will be ``0``.
+
+   If *cls* has a :meth:`~class.__subclasscheck__` method, it will be called to
+   determine the subclass status as described in :pep:`3119`.  Otherwise,
+   *derived* is a subclass of *cls* if it is a direct or indirect subclass,
+   i.e. contained in ``cls.__mro__``.
+
+   Normally only class objects, i.e. instances of :class:`type` or a derived
+   class, are considered classes.  However, objects can override this by haivng
+   a :attr:`__bases__` attribute (which must be a tuple of base classes).
+
+
+.. c:function:: int PyObject_IsInstance(PyObject *inst, PyObject *cls)
+
+   Return ``1`` if *inst* is an instance of the class *cls* or a subclass of
+   *cls*, or ``0`` if not.  On error, returns ``-1`` and sets an exception.
+
+   If *cls* is a tuple, the check will be done against every entry in *cls*.
+   The result will be ``1`` when at least one of the checks returns ``1``,
+   otherwise it will be ``0``.
+
+   If *cls* has a :meth:`~class.__instancecheck__` method, it will be called to
+   determine the subclass status as described in :pep:`3119`.  Otherwise, *inst*
+   is an instance of *cls* if its class is a subclass of *cls*.
+
+   An instance *inst* can override what is considered its class by having a
+   :attr:`__class__` attribute.
+
+   An object *cls* can override if it is considered a class, and what its base
+   classes are, by having a :attr:`__bases__` attribute (which must be a tuple
+   of base classes).
 
 
 .. c:function:: int PyCallable_Check(PyObject *o)
@@ -240,7 +252,7 @@ attribute is considered sufficient for this determination.
    of the Python expression ``callable_object(*args)``.
 
 
-.. c:function:: PyObject* PyObject_CallFunction(PyObject *callable, char *format, ...)
+.. c:function:: PyObject* PyObject_CallFunction(PyObject *callable, const char *format, ...)
 
    Call a callable Python object *callable*, with a variable number of C arguments.
    The C arguments are described using a :c:func:`Py_BuildValue` style format
@@ -250,8 +262,11 @@ attribute is considered sufficient for this determination.
    pass :c:type:`PyObject \*` args, :c:func:`PyObject_CallFunctionObjArgs` is a
    faster alternative.
 
+   .. versionchanged:: 3.4
+      The type of *format* was changed from ``char *``.
 
-.. c:function:: PyObject* PyObject_CallMethod(PyObject *o, char *method, char *format, ...)
+
+.. c:function:: PyObject* PyObject_CallMethod(PyObject *o, const char *method, const char *format, ...)
 
    Call the method named *method* of object *o* with a variable number of C
    arguments.  The C arguments are described by a :c:func:`Py_BuildValue` format
@@ -260,6 +275,9 @@ attribute is considered sufficient for this determination.
    on failure.  This is the equivalent of the Python expression ``o.method(args)``.
    Note that if you only pass :c:type:`PyObject \*` args,
    :c:func:`PyObject_CallMethodObjArgs` is a faster alternative.
+
+   .. versionchanged:: 3.4
+      The types of *method* and *format* were changed from ``char *``.
 
 
 .. c:function:: PyObject* PyObject_CallFunctionObjArgs(PyObject *callable, ..., NULL)
@@ -340,6 +358,16 @@ attribute is considered sufficient for this determination.
    Return the length of object *o*.  If the object *o* provides either the sequence
    and mapping protocols, the sequence length is returned.  On error, ``-1`` is
    returned.  This is the equivalent to the Python expression ``len(o)``.
+
+
+.. c:function:: Py_ssize_t PyObject_LengthHint(PyObject *o, Py_ssize_t default)
+
+   Return an estimated length for the object *o*. First try to return its
+   actual length, then an estimate using :meth:`~object.__length_hint__`, and
+   finally return the default value. On error return ``-1``. This is the
+   equivalent to the Python expression ``operator.length_hint(o, default)``.
+
+   .. versionadded:: 3.4
 
 
 .. c:function:: PyObject* PyObject_GetItem(PyObject *o, PyObject *key)

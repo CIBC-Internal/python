@@ -743,7 +743,7 @@ do_run_installscript(HINSTANCE hPython, char *pathname, int argc, char **argv)
     if (pathname == NULL || pathname[0] == '\0')
         return 2;
 
-    fh = open(pathname, _O_RDONLY);
+    fh = open(pathname, _O_RDONLY | O_NOINHERIT);
     if (-1 == fh) {
         fprintf(stderr, "Could not open postinstall-script %s\n",
             pathname);
@@ -1774,6 +1774,16 @@ static BOOL OpenLogfile(char *dir)
 
     sprintf(buffer, "%s\\%s-wininst.log", dir, meta_name);
     logfile = fopen(buffer, "a");
+    if (!logfile) {
+        char error[1024];
+
+        sprintf(error, "Can't create \"%s\" (%s).\n\n"
+                "Try to execute the installer as administrator.",
+                buffer, strerror(errno));
+        MessageBox(GetFocus(), error, NULL, MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+
     time(&ltime);
     now = localtime(&ltime);
     strftime(buffer, sizeof(buffer),

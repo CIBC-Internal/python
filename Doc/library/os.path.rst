@@ -22,6 +22,11 @@ Functions such as :func:`expanduser` and :func:`expandvars` can be invoked
 explicitly when an application desires shell-like path expansion.  (See also
 the :mod:`glob` module.)
 
+
+.. seealso::
+   The :mod:`pathlib` module offers high-level path objects.
+
+
 .. note::
 
    All of these functions accept either only bytes or only string objects as
@@ -42,7 +47,6 @@ the :mod:`glob` module.)
    * :mod:`posixpath` for UNIX-style paths
    * :mod:`ntpath` for Windows paths
    * :mod:`macpath` for old-style MacOS paths
-   * :mod:`os2emxpath` for OS/2 EMX paths
 
 
 .. function:: abspath(path)
@@ -184,29 +188,40 @@ the :mod:`glob` module.)
 .. function:: islink(path)
 
    Return ``True`` if *path* refers to a directory entry that is a symbolic link.
-   Always ``False`` if symbolic links are not supported.
+   Always ``False`` if symbolic links are not supported by the python runtime.
 
 
 .. function:: ismount(path)
 
-   Return ``True`` if pathname *path* is a :dfn:`mount point`: a point in a file
-   system where a different file system has been mounted.  The function checks
-   whether *path*'s parent, :file:`path/..`, is on a different device than *path*,
-   or whether :file:`path/..` and *path* point to the same i-node on the same
-   device --- this should detect mount points for all Unix and POSIX variants.
+   Return ``True`` if pathname *path* is a :dfn:`mount point`: a point in a
+   file system where a different file system has been mounted.  On POSIX, the
+   function checks whether *path*'s parent, :file:`path/..`, is on a different
+   device than *path*, or whether :file:`path/..` and *path* point to the same
+   i-node on the same device --- this should detect mount points for all Unix
+   and POSIX variants.  On Windows, a drive letter root and a share UNC are
+   always mount points, and for any other path ``GetVolumePathName`` is called
+   to see if it is different from the input path.
+
+   .. versionadded:: 3.4
+      Support for detecting non-root mount points on Windows.
 
 
-.. function:: join(path1[, path2[, ...]])
+.. function:: join(path, *paths)
 
-   Join one or more path components intelligently.  If any component is an absolute
-   path, all previous components (on Windows, including the previous drive letter,
-   if there was one) are thrown away, and joining continues.  The return value is
-   the concatenation of *path1*, and optionally *path2*, etc., with exactly one
-   directory separator (``os.sep``) following each non-empty part except the last.
-   (This means that an empty last part will result in a path that ends with a
-   separator.)  Note that on Windows, since there is a current directory for
-   each drive, ``os.path.join("c:", "foo")`` represents a path relative to the
-   current directory on drive :file:`C:` (:file:`c:foo`), not :file:`c:\\foo`.
+   Join one or more path components intelligently.  The return value is the
+   concatenation of *path* and any members of *\*paths* with exactly one
+   directory separator (``os.sep``) following each non-empty part except the
+   last, meaning that the result will only end in a separator if the last
+   part is empty.  If a component is an absolute path, all previous
+   components are thrown away and joining continues from the absolute path
+   component.
+
+   On Windows, the drive letter is not reset when an absolute path component
+   (e.g., ``r'\foo'``) is encountered.  If a component contains a drive
+   letter, all previous components are thrown away and the drive letter is
+   reset.  Note that since there is a current directory for each drive,
+   ``os.path.join("c:", "foo")`` represents a path relative to the current
+   directory on drive :file:`C:` (:file:`c:foo`), not :file:`c:\\foo`.
 
 
 .. function:: normcase(path)
@@ -232,7 +247,7 @@ the :mod:`glob` module.)
    links encountered in the path (if they are supported by the operating system).
 
 
-.. function:: relpath(path, start=None)
+.. function:: relpath(path, start=os.curdir)
 
    Return a relative filepath to *path* either from the current directory or
    from an optional *start* directory.  This is a path computation:  the
@@ -247,17 +262,16 @@ the :mod:`glob` module.)
 .. function:: samefile(path1, path2)
 
    Return ``True`` if both pathname arguments refer to the same file or directory.
-   On Unix, this is determined by the device number and i-node number and raises an
+   This is determined by the device number and i-node number and raises an
    exception if a :func:`os.stat` call on either pathname fails.
-
-   On Windows, two files are the same if they resolve to the same final path
-   name using the Windows API call GetFinalPathNameByHandle. This function
-   raises an exception if handles cannot be obtained to either file.
 
    Availability: Unix, Windows.
 
    .. versionchanged:: 3.2
       Added Windows support.
+
+   .. versionchanged:: 3.4
+      Windows now uses the same implementation as all other platforms.
 
 
 .. function:: sameopenfile(fp1, fp2)
@@ -277,7 +291,10 @@ the :mod:`glob` module.)
    :func:`os.lstat`, or :func:`os.stat`.  This function implements the
    underlying comparison used by :func:`samefile` and :func:`sameopenfile`.
 
-   Availability: Unix.
+   Availability: Unix, Windows.
+
+   .. versionchanged:: 3.4
+      Added Windows support.
 
 
 .. function:: split(path)

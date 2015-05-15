@@ -15,14 +15,14 @@ this should open a window demonstrating a simple Tk interface.
 
 .. seealso::
 
-   `Python Tkinter Resources <http://www.python.org/topics/tkinter/>`_
+   `Python Tkinter Resources <https://wiki.python.org/moin/TkInter>`_
       The Python Tkinter Topic Guide provides a great deal of information on using Tk
       from Python and links to other sources of information on Tk.
 
    `TKDocs <http://www.tkdocs.com/>`_
       Extensive tutorial plus friendlier widget pages for some of the widgets.
 
-   `Tkinter reference: a GUI for Python <http://infohost.nmt.edu/tcc/help/pubs/tkinter/>`_
+   `Tkinter reference: a GUI for Python <http://infohost.nmt.edu/tcc/help/pubs/tkinter/web/index.html>`_
       On-line reference material.
 
    `Tkinter docs from effbot <http://effbot.org/tkinterbook/>`_
@@ -746,32 +746,6 @@ Entry widget indexes (index, view index, etc.)
    Entry widgets have options that refer to character positions in the text being
    displayed.  You can use these :mod:`tkinter` functions to access these special
    points in text widgets:
-
-.. function:: AtEnd()
-      refers to the last position in the text
-
-   .. deprecated:: 3.3
-
-.. function:: AtInsert()
-      refers to the point where the text cursor is
-
-   .. deprecated:: 3.3
-
-.. function:: AtSelFirst()
-      indicates the beginning point of the selected text
-
-   .. deprecated:: 3.3
-
-.. function:: AtSelLast()
-      denotes the last point of the selected text and finally
-
-   .. deprecated:: 3.3
-
-.. function:: At(x[, y])
-      refers to the character at pixel location *x*, *y* (with *y* not used in the
-      case of a text entry widget, which contains a single line of text).
-
-   .. deprecated:: 3.3
 
 Text widget indexes
    The index notation for Text widgets is very rich and is best described in the Tk

@@ -12,13 +12,58 @@ import contextlib
 import shutil
 import zipfile
 
-from imp import source_from_cache
+from importlib.util import source_from_cache
 from test.support import make_legacy_pyc, strip_python_stderr, temp_dir
+
+
+# Cached result of the expensive test performed in the function below.
+__cached_interp_requires_environment = None
+
+def _interpreter_requires_environment():
+    """
+    Returns True if our sys.executable interpreter requires environment
+    variables in order to be able to run at all.
+
+    This is designed to be used with @unittest.skipIf() to annotate tests
+    that need to use an assert_python*() function to launch an isolated
+    mode (-I) or no environment mode (-E) sub-interpreter process.
+
+    A normal build & test does not run into this situation but it can happen
+    when trying to run the standard library test suite from an interpreter that
+    doesn't have an obvious home with Python's current home finding logic.
+
+    Setting PYTHONHOME is one way to get most of the testsuite to run in that
+    situation.  PYTHONPATH or PYTHONUSERSITE are other common envirnonment
+    variables that might impact whether or not the interpreter can start.
+    """
+    global __cached_interp_requires_environment
+    if __cached_interp_requires_environment is None:
+        # Try running an interpreter with -E to see if it works or not.
+        try:
+            subprocess.check_call([sys.executable, '-E',
+                                   '-c', 'import sys; sys.exit(0)'])
+        except subprocess.CalledProcessError:
+            __cached_interp_requires_environment = True
+        else:
+            __cached_interp_requires_environment = False
+
+    return __cached_interp_requires_environment
+
 
 # Executing the interpreter in a subprocess
 def _assert_python(expected_success, *args, **env_vars):
-    cmd_line = [sys.executable]
-    if not env_vars:
+    env_required = _interpreter_requires_environment()
+    if '__isolated' in env_vars:
+        isolated = env_vars.pop('__isolated')
+    else:
+        isolated = not env_vars and not env_required
+    cmd_line = [sys.executable, '-X', 'faulthandler']
+    if isolated:
+        # isolated mode: ignore Python environment variables, ignore user
+        # site-packages, and don't add the current directory to sys.path
+        cmd_line.append('-I')
+    elif not env_vars and not env_required:
+        # ignore Python environment variables
         cmd_line.append('-E')
     # Need to preserve the original environment, for in-place testing of
     # shared library builds.
@@ -39,35 +84,59 @@ def _assert_python(expected_success, *args, **env_vars):
         p.stdout.close()
         p.stderr.close()
     rc = p.returncode
-    err =  strip_python_stderr(err)
+    err = strip_python_stderr(err)
     if (rc and expected_success) or (not rc and not expected_success):
         raise AssertionError(
-            "Process return code is %d, "
-            "stderr follows:\n%s" % (rc, err.decode('ascii', 'ignore')))
+            "Process return code is %d, command line was: %r, "
+            "stderr follows:\n%s" % (rc, cmd_line,
+                                     err.decode('ascii', 'ignore')))
     return rc, out, err
 
 def assert_python_ok(*args, **env_vars):
     """
     Assert that running the interpreter with `args` and optional environment
-    variables `env_vars` is ok and return a (return code, stdout, stderr) tuple.
+    variables `env_vars` succeeds (rc == 0) and return a (return code, stdout,
+    stderr) tuple.
+
+    If the __cleanenv keyword is set, env_vars is used a fresh environment.
+
+    Python is started in isolated mode (command line option -I),
+    except if the __isolated keyword is set to False.
     """
     return _assert_python(True, *args, **env_vars)
 
 def assert_python_failure(*args, **env_vars):
     """
     Assert that running the interpreter with `args` and optional environment
-    variables `env_vars` fails and return a (return code, stdout, stderr) tuple.
+    variables `env_vars` fails (rc != 0) and return a (return code, stdout,
+    stderr) tuple.
+
+    See assert_python_ok() for more options.
     """
     return _assert_python(False, *args, **env_vars)
 
-def spawn_python(*args, **kw):
+def spawn_python(*args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw):
+    """Run a Python subprocess with the given arguments.
+
+    kw is extra keyword args to pass to subprocess.Popen. Returns a Popen
+    object.
+    """
     cmd_line = [sys.executable, '-E']
     cmd_line.extend(args)
+    # Under Fedora (?), GNU readline can output junk on stderr when initialized,
+    # depending on the TERM setting.  Setting TERM=vt100 is supposed to disable
+    # that.  References:
+    # - http://reinout.vanrees.org/weblog/2009/08/14/readline-invisible-character-hack.html
+    # - http://stackoverflow.com/questions/15760712/python-readline-module-prints-escape-character-during-import
+    # - http://lists.gnu.org/archive/html/bug-readline/2007-08/msg00004.html
+    env = kw.setdefault('env', dict(os.environ))
+    env['TERM'] = 'vt100'
     return subprocess.Popen(cmd_line, stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdout=stdout, stderr=stderr,
                             **kw)
 
 def kill_python(p):
+    """Run the given Popen process until completion and return stdout."""
     p.stdin.close()
     data = p.stdout.read()
     p.stdout.close()
@@ -77,8 +146,10 @@ def kill_python(p):
     subprocess._cleanup()
     return data
 
-def make_script(script_dir, script_basename, source):
-    script_filename = script_basename+os.extsep+'py'
+def make_script(script_dir, script_basename, source, omit_suffix=False):
+    script_filename = script_basename
+    if not omit_suffix:
+        script_filename += os.extsep + 'py'
     script_name = os.path.join(script_dir, script_filename)
     # The script should be encoded to UTF-8, the default string encoding
     script_file = open(script_name, 'w', encoding='utf-8')
@@ -121,8 +192,8 @@ def make_zip_pkg(zip_dir, zip_basename, pkg_name, script_basename,
     script_name = make_script(zip_dir, script_basename, source)
     unlink.append(script_name)
     if compiled:
-        init_name = py_compile(init_name, doraise=True)
-        script_name = py_compile(script_name, doraise=True)
+        init_name = py_compile.compile(init_name, doraise=True)
+        script_name = py_compile.compile(script_name, doraise=True)
         unlink.extend((init_name, script_name))
     pkg_names = [os.sep.join([pkg_name]*i) for i in range(1, depth+1)]
     script_name_in_zip = os.path.join(pkg_names[-1], os.path.basename(script_name))

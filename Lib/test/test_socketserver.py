@@ -3,7 +3,6 @@ Test suite for socketserver.
 """
 
 import contextlib
-import imp
 import os
 import select
 import signal
@@ -29,7 +28,7 @@ HOST = test.support.HOST
 HAVE_UNIX_SOCKETS = hasattr(socket, "AF_UNIX")
 requires_unix_sockets = unittest.skipUnless(HAVE_UNIX_SOCKETS,
                                             'requires Unix sockets')
-HAVE_FORKING = hasattr(os, "fork") and os.name != "os2"
+HAVE_FORKING = hasattr(os, "fork")
 requires_forking = unittest.skipUnless(HAVE_FORKING, 'requires forking')
 
 def signal_alarm(n):
@@ -85,7 +84,7 @@ class SocketServerTest(unittest.TestCase):
         for fn in self.test_files:
             try:
                 os.remove(fn)
-            except os.error:
+            except OSError:
                 pass
         self.test_files[:] = []
 
@@ -96,21 +95,7 @@ class SocketServerTest(unittest.TestCase):
             # XXX: We need a way to tell AF_UNIX to pick its own name
             # like AF_INET provides port==0.
             dir = None
-            if os.name == 'os2':
-                dir = '\socket'
             fn = tempfile.mktemp(prefix='unix_socket.', dir=dir)
-            if os.name == 'os2':
-                # AF_UNIX socket names on OS/2 require a specific prefix
-                # which can't include a drive letter and must also use
-                # backslashes as directory separators
-                if fn[1] == ':':
-                    fn = fn[2:]
-                if fn[0] in (os.sep, os.altsep):
-                    fn = fn[1:]
-                if os.sep == '/':
-                    fn = fn.replace(os.sep, os.altsep)
-                else:
-                    fn = fn.replace(os.altsep, os.sep)
             self.test_files.append(fn)
             return fn
 
@@ -316,13 +301,29 @@ class SocketServerTest(unittest.TestCase):
             t.join()
             s.server_close()
 
+    def test_tcpserver_bind_leak(self):
+        # Issue #22435: the server socket wouldn't be closed if bind()/listen()
+        # failed.
+        # Create many servers for which bind() will fail, to see if this result
+        # in FD exhaustion.
+        for i in range(1024):
+            with self.assertRaises(OverflowError):
+                socketserver.TCPServer((HOST, -1),
+                                       socketserver.StreamRequestHandler)
 
-def test_main():
-    if imp.lock_held():
-        # If the import lock is held, the threads will hang
-        raise unittest.SkipTest("can't run when import lock is held")
 
-    test.support.run_unittest(SocketServerTest)
+class MiscTestCase(unittest.TestCase):
+
+    def test_all(self):
+        # objects defined in the module should be in __all__
+        expected = []
+        for name in dir(socketserver):
+            if not name.startswith('_'):
+                mod_object = getattr(socketserver, name)
+                if getattr(mod_object, '__module__', None) == 'socketserver':
+                    expected.append(name)
+        self.assertCountEqual(socketserver.__all__, expected)
+
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

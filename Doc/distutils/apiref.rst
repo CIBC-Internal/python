@@ -78,7 +78,7 @@ setup script). Indirectly provides the  :class:`distutils.dist.Distribution` and
    |                    | be built                       | :class:`distutils.core.Extension`                           |
    +--------------------+--------------------------------+-------------------------------------------------------------+
    | *classifiers*      | A list of categories for the   | a list of strings; valid classifiers are listed on `PyPI    |
-   |                    | package                        | <http://pypi.python.org/pypi?:action=list_classifiers>`_.   |
+   |                    | package                        | <https://pypi.python.org/pypi?:action=list_classifiers>`_.  |
    +--------------------+--------------------------------+-------------------------------------------------------------+
    | *distclass*        | the :class:`Distribution`      | a subclass of                                               |
    |                    | class to use                   | :class:`distutils.core.Distribution`                        |
@@ -853,17 +853,6 @@ Windows.  It also contains the Mingw32CCompiler class which handles the mingw32
 port of GCC (same as cygwin in no-cygwin mode).
 
 
-:mod:`distutils.emxccompiler` --- OS/2 EMX Compiler
-===================================================
-
-.. module:: distutils.emxccompiler
-   :synopsis: OS/2 EMX Compiler support
-
-
-This module provides the EMXCCompiler class, a subclass of
-:class:`UnixCCompiler` that handles the EMX port of the GNU C compiler to OS/2.
-
-
 :mod:`distutils.archive_util` ---  Archiving utilities
 ======================================================
 
@@ -975,7 +964,7 @@ directories.
 .. function:: create_tree(base_dir, files[, mode=0o777, verbose=0, dry_run=0])
 
    Create all the empty directories under *base_dir* needed to put *files* there.
-   *base_dir* is just the a name of a directory which doesn't necessarily exist
+   *base_dir* is just the name of a directory which doesn't necessarily exist
    yet; *files* is a list of filenames to be interpreted relative to *base_dir*.
    *base_dir* + the directory portion of every file in *files* will be created if
    it doesn't already exist.  *mode*, *verbose* and *dry_run* flags  are as for
@@ -1004,7 +993,7 @@ directories.
 
    Files in *src* that begin with :file:`.nfs` are skipped (more information on
    these files is available in answer D2 of the `NFS FAQ page
-   <http://nfs.sourceforge.net/#section_d>`_.
+   <http://nfs.sourceforge.net/#section_d>`_).
 
    .. versionchanged:: 3.3.1
       NFS files are ignored.

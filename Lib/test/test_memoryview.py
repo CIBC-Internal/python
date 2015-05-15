@@ -352,6 +352,36 @@ class AbstractMemoryTests:
             self.assertIs(wr(), None)
             self.assertIs(L[0], b)
 
+    def test_reversed(self):
+        for tp in self._types:
+            b = tp(self._source)
+            m = self._view(b)
+            aslist = list(reversed(m.tolist()))
+            self.assertEqual(list(reversed(m)), aslist)
+            self.assertEqual(list(reversed(m)), list(m[::-1]))
+
+    def test_issue22668(self):
+        a = array.array('H', [256, 256, 256, 256])
+        x = memoryview(a)
+        m = x.cast('B')
+        b = m.cast('H')
+        c = b[0:2]
+        d = memoryview(b)
+
+        del b
+ 
+        self.assertEqual(c[0], 256)
+        self.assertEqual(d[0], 256)
+        self.assertEqual(c.format, "H")
+        self.assertEqual(d.format, "H")
+ 
+        _ = m.cast('I')
+        self.assertEqual(c[0], 256)
+        self.assertEqual(d[0], 256)
+        self.assertEqual(c.format, "H")
+        self.assertEqual(d.format, "H")
+
+
 # Variations on source objects for the buffer: bytes-like objects, then arrays
 # with itemsize > 1.
 # NOTE: support for multi-dimensional objects is unimplemented.

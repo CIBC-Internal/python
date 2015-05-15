@@ -1,4 +1,5 @@
 import unittest
+import operator
 import sys
 import pickle
 
@@ -65,20 +66,21 @@ class N:
 class PickleTest:
     # Helper to check picklability
     def check_pickle(self, itorg, seq):
-        d = pickle.dumps(itorg)
-        it = pickle.loads(d)
-        self.assertEqual(type(itorg), type(it))
-        self.assertEqual(list(it), seq)
+        for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+            d = pickle.dumps(itorg, proto)
+            it = pickle.loads(d)
+            self.assertEqual(type(itorg), type(it))
+            self.assertEqual(list(it), seq)
 
-        it = pickle.loads(d)
-        try:
-            next(it)
-        except StopIteration:
-            self.assertFalse(seq[1:])
-            return
-        d = pickle.dumps(it)
-        it = pickle.loads(d)
-        self.assertEqual(list(it), seq[1:])
+            it = pickle.loads(d)
+            try:
+                next(it)
+            except StopIteration:
+                self.assertFalse(seq[1:])
+                continue
+            d = pickle.dumps(it, proto)
+            it = pickle.loads(d)
+            self.assertEqual(list(it), seq[1:])
 
 class EnumerateTestCase(unittest.TestCase, PickleTest):
 
@@ -168,15 +170,12 @@ class TestReversed(unittest.TestCase, PickleTest):
         x = range(1)
         self.assertEqual(type(reversed(x)), type(iter(x)))
 
-    @support.cpython_only
     def test_len(self):
-        # This is an implementation detail, not an interface requirement
-        from test.test_iterlen import len
         for s in ('hello', tuple('hello'), list('hello'), range(5)):
-            self.assertEqual(len(reversed(s)), len(s))
+            self.assertEqual(operator.length_hint(reversed(s)), len(s))
             r = reversed(s)
             list(r)
-            self.assertEqual(len(r), 0)
+            self.assertEqual(operator.length_hint(r), 0)
         class SeqWithWeirdLen:
             called = False
             def __len__(self):
@@ -187,7 +186,7 @@ class TestReversed(unittest.TestCase, PickleTest):
             def __getitem__(self, index):
                 return index
         r = reversed(SeqWithWeirdLen())
-        self.assertRaises(ZeroDivisionError, len, r)
+        self.assertRaises(ZeroDivisionError, operator.length_hint, r)
 
 
     def test_gc(self):

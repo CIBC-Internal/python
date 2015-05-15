@@ -20,6 +20,7 @@ This module defines four dictionaries, :data:`html5`,
    Note that the trailing semicolon is included in the name (e.g. ``'gt;'``),
    however some of the names are accepted by the standard even without the
    semicolon: in this case the name is present with and without the ``';'``.
+   See also :func:`html.unescape`.
 
    .. versionadded:: 3.3
 
@@ -32,12 +33,12 @@ This module defines four dictionaries, :data:`html5`,
 
 .. data:: name2codepoint
 
-   A dictionary that maps HTML entity names to the Unicode codepoints.
+   A dictionary that maps HTML entity names to the Unicode code points.
 
 
 .. data:: codepoint2name
 
-   A dictionary that maps Unicode codepoints to HTML entity names.
+   A dictionary that maps Unicode code points to HTML entity names.
 
 
 .. rubric:: Footnotes

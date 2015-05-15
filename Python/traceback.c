@@ -13,13 +13,18 @@
 
 #define OFF(x) offsetof(PyTracebackObject, x)
 
-#define PUTS(fd, str) write(fd, str, strlen(str))
+#define PUTS(fd, str) write(fd, str, (int)strlen(str))
 #define MAX_STRING_LENGTH 500
 #define MAX_FRAME_DEPTH 100
 #define MAX_NTHREADS 100
 
 /* Function from Parser/tokenizer.c */
 extern char * PyTokenizer_FindEncodingFilename(int, PyObject *);
+
+_Py_IDENTIFIER(TextIOWrapper);
+_Py_IDENTIFIER(close);
+_Py_IDENTIFIER(open);
+_Py_IDENTIFIER(path);
 
 static PyObject *
 tb_dir(PyTracebackObject *self)
@@ -137,6 +142,39 @@ PyTraceBack_Here(PyFrameObject *frame)
     return 0;
 }
 
+/* Insert a frame into the traceback for (funcname, filename, lineno). */
+void _PyTraceback_Add(char *funcname, char *filename, int lineno)
+{
+    PyObject *globals = NULL;
+    PyCodeObject *code = NULL;
+    PyFrameObject *frame = NULL;
+    PyObject *exception, *value, *tb;
+
+    /* Save and clear the current exception. Python functions must not be
+       called with an exception set. Calling Python functions happens when
+       the codec of the filesystem encoding is implemented in pure Python. */
+    PyErr_Fetch(&exception, &value, &tb);
+
+    globals = PyDict_New();
+    if (!globals)
+        goto done;
+    code = PyCode_NewEmpty(filename, funcname, lineno);
+    if (!code)
+        goto done;
+    frame = PyFrame_New(PyThreadState_Get(), code, globals, NULL);
+    if (!frame)
+        goto done;
+    frame->f_lineno = lineno;
+
+    PyErr_Restore(exception, value, tb);
+    PyTraceBack_Here(frame);
+
+done:
+    Py_XDECREF(globals);
+    Py_XDECREF(code);
+    Py_XDECREF(frame);
+}
+
 static PyObject *
 _Py_FindSourceFile(PyObject *filename, char* namebuf, size_t namelen, PyObject *io)
 {
@@ -152,7 +190,6 @@ _Py_FindSourceFile(PyObject *filename, char* namebuf, size_t namelen, PyObject *
     const char* filepath;
     Py_ssize_t len;
     PyObject* result;
-    _Py_IDENTIFIER(open);
 
     filebytes = PyUnicode_EncodeFSDefault(filename);
     if (filebytes == NULL) {
@@ -169,7 +206,7 @@ _Py_FindSourceFile(PyObject *filename, char* namebuf, size_t namelen, PyObject *
         tail++;
     taillen = strlen(tail);
 
-    syspath = PySys_GetObject("path");
+    syspath = _PySys_GetObjectId(&PyId_path);
     if (syspath == NULL || !PyList_Check(syspath))
         goto error;
     npath = PyList_Size(syspath);
@@ -232,9 +269,6 @@ _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent)
     char buf[MAXPATHLEN+1];
     int kind;
     void *data;
-    _Py_IDENTIFIER(close);
-    _Py_IDENTIFIER(open);
-    _Py_IDENTIFIER(TextIOWrapper);
 
     /* open the file */
     if (filename == NULL)
@@ -246,10 +280,12 @@ _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent)
     binary = _PyObject_CallMethodId(io, &PyId_open, "Os", filename, "rb");
 
     if (binary == NULL) {
+        PyErr_Clear();
+
         binary = _Py_FindSourceFile(filename, buf, sizeof(buf), io);
         if (binary == NULL) {
             Py_DECREF(io);
-            return 0;
+            return -1;
         }
     }
 
@@ -261,6 +297,8 @@ _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent)
         return 0;
     }
     found_encoding = PyTokenizer_FindEncodingFilename(fd, filename);
+    if (found_encoding == NULL)
+        PyErr_Clear();
     encoding = (found_encoding != NULL) ? found_encoding : "utf-8";
     /* Reset position */
     if (lseek(fd, 0, SEEK_SET) == (off_t)-1) {
@@ -284,6 +322,7 @@ _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent)
         Py_XDECREF(lineobj);
         lineobj = PyFile_GetLine(fob, -1);
         if (!lineobj) {
+            PyErr_Clear();
             err = -1;
             break;
         }
@@ -469,13 +508,13 @@ dump_decimal(int fd, int value)
     write(fd, buffer, len);
 }
 
-/* Format an integer in range [0; 0xffffffff] to hexdecimal of 'width' digits,
+/* Format an integer in range [0; 0xffffffff] to hexadecimal of 'width' digits,
    and write it into the file fd.
 
    This function is signal safe. */
 
 static void
-dump_hexadecimal(int width, unsigned long value, int fd)
+dump_hexadecimal(int fd, unsigned long value, int width)
 {
     int len;
     char buffer[sizeof(unsigned long) * 2 + 1];
@@ -542,15 +581,15 @@ dump_ascii(int fd, PyObject *text)
         }
         else if (ch < 0xff) {
             PUTS(fd, "\\x");
-            dump_hexadecimal(2, ch, fd);
+            dump_hexadecimal(fd, ch, 2);
         }
         else if (ch < 0xffff) {
             PUTS(fd, "\\u");
-            dump_hexadecimal(4, ch, fd);
+            dump_hexadecimal(fd, ch, 4);
         }
         else {
             PUTS(fd, "\\U");
-            dump_hexadecimal(8, ch, fd);
+            dump_hexadecimal(fd, ch, 8);
         }
     }
     if (truncated)
@@ -601,7 +640,7 @@ dump_traceback(int fd, PyThreadState *tstate, int write_header)
     unsigned int depth;
 
     if (write_header)
-        PUTS(fd, "Traceback (most recent call first):\n");
+        PUTS(fd, "Stack (most recent call first):\n");
 
     frame = _PyThreadState_GetFrame(tstate);
     if (frame == NULL)
@@ -639,8 +678,8 @@ write_thread_id(int fd, PyThreadState *tstate, int is_current)
         PUTS(fd, "Current thread 0x");
     else
         PUTS(fd, "Thread 0x");
-    dump_hexadecimal(sizeof(long)*2, (unsigned long)tstate->thread_id, fd);
-    PUTS(fd, ":\n");
+    dump_hexadecimal(fd, (unsigned long)tstate->thread_id, sizeof(long)*2);
+    PUTS(fd, " (most recent call first):\n");
 }
 
 const char*
