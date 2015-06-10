@@ -7,6 +7,12 @@
 *.pyc
 *.app
 *.framework
+*.pdb
+*.lib
+*.dll
+*.exp
+*.pyd
+*.user
 Makefile
 Makefile.pre
 __*
@@ -27,6 +33,7 @@ Modules/Setup.local
 Modules/_testembed
 Modules/config.c
 Modules/ld_so_aix
+PC/pythonnt_rc.h
 PC/pythonnt_rc_d.h
 PCbuild/Win32-temp-Debug
 PCbuild/Win32-temp-Release
@@ -38,3 +45,6 @@ PCbuild/x64-pgo
 PCbuild/x64-temp-Debug
 PCbuild/x64-temp-Release
 PCbuild/x64-temp-pgi
+PCbuild/pcbuild.sdf
+PCbuild/pcbuild.suo
+PCbuild/python_d.bsc
