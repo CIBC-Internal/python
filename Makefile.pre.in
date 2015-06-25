@@ -1418,11 +1418,17 @@ frameworkinstallstructure:	$(LDLIBRARY)
 # This installs Mac/Lib into the framework
 # Install a number of symlinks to keep software that expects a normal unix
 # install (which includes python-config) happy.
-frameworkinstallmaclib:
-	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(LDVERSION).a"
-	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(LDVERSION).dylib"
-	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(VERSION).a"
-	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(VERSION).dylib"
+frameworkinstallmaclib:  $(PYTHONFRAMEWORK)
+	LIBDIR="$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)"
+	if test ! -d $(LIBDIR); then \
+		echo "Creating directory $(LIBDIR)"; \
+		$(INSTALL) -d -m $(DIRMODE) $(LIBDIR); \
+	else    true; \
+	fi; \
+	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(LIBDIR)/libpython$(LDVERSION).a"
+	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(LIBDIR)/libpython$(LDVERSION).dylib"
+	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(LIBDIR)/libpython$(VERSION).a"
+	$(LN) -fs "../../../$(PYTHONFRAMEWORK)" "$(LIBDIR)/libpython$(VERSION).dylib"
 	$(LN) -fs "../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/libpython$(LDVERSION).dylib"
 	$(LN) -fs "../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/libpython$(VERSION).dylib"
 
