@@ -52,8 +52,16 @@ whose size is determined when the object is allocated.
 */
 
 /* Py_DEBUG implies Py_TRACE_REFS. */
+#if !defined(_WIN32)
+
 #if defined(Py_DEBUG) && !defined(Py_TRACE_REFS)
 #define Py_TRACE_REFS
+#endif
+
+#else
+
+#undef Py_TRACE_REFS
+
 #endif
 
 /* Py_TRACE_REFS implies Py_REF_DEBUG. */
