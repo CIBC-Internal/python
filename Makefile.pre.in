@@ -1017,7 +1017,6 @@ DESTDIRS=	$(exec_prefix) $(LIBDIR) $(BINLIBDEST) $(DESTSHARED)
 oldsharedinstall: $(DESTSHARED) $(SHAREDMODS)
 		@for i in X $(SHAREDMODS); do \
 		  if test $$i != X; then \
-		    echo $(INSTALL_SHARED) $$i $(DESTSHARED)/`basename $$i`; \
 		    $(INSTALL_SHARED) $$i $(DESTDIR)$(DESTSHARED)/`basename $$i`; \
 		  fi; \
 		done
@@ -1026,7 +1025,6 @@ $(DESTSHARED):
 		@for i in $(DESTDIRS); \
 		do \
 			if test ! -d $(DESTDIR)$$i; then \
-				echo "Creating directory $$i"; \
 				$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 			else    true; \
 			fi; \
@@ -1038,7 +1036,6 @@ altbininstall: $(BUILDPYTHON) @FRAMEWORKPYTHONW@
 	@for i in $(BINDIR) $(LIBDIR); \
 	do \
 		if test ! -d $(DESTDIR)$$i; then \
-			echo "Creating directory $$i"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 		else	true; \
 		fi; \
@@ -1109,7 +1106,6 @@ altmaninstall:
 	@for i in $(MANDIR) $(MANDIR)/man1; \
 	do \
 		if test ! -d $(DESTDIR)$$i; then \
-			echo "Creating directory $$i"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 		else	true; \
 		fi; \
@@ -1181,7 +1177,6 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 	@for i in $(SCRIPTDIR) $(LIBDEST); \
 	do \
 		if test ! -d $(DESTDIR)$$i; then \
-			echo "Creating directory $$i"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 		else	true; \
 		fi; \
@@ -1192,7 +1187,6 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 		if test ! -d $$a; then continue; else true; fi; \
 		b=$(LIBDEST)/$$d; \
 		if test ! -d $(DESTDIR)$$b; then \
-			echo "Creating directory $$b"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$b; \
 		else	true; \
 		fi; \
@@ -1201,10 +1195,8 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 	do \
 		if test -x $$i; then \
 			$(INSTALL_SCRIPT) $$i $(DESTDIR)$(LIBDEST); \
-			echo $(INSTALL_SCRIPT) $$i $(LIBDEST); \
 		else \
 			$(INSTALL_DATA) $$i $(DESTDIR)$(LIBDEST); \
-			echo $(INSTALL_DATA) $$i $(LIBDEST); \
 		fi; \
 	done
 	@for d in $(LIBSUBDIRS); \
@@ -1223,10 +1215,8 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 			*) \
 				if test -d $$i; then continue; fi; \
 				if test -x $$i; then \
-				    echo $(INSTALL_SCRIPT) $$i $$b; \
 				    $(INSTALL_SCRIPT) $$i $(DESTDIR)$$b; \
 				else \
-				    echo $(INSTALL_DATA) $$i $$b; \
 				    $(INSTALL_DATA) $$i $(DESTDIR)$$b; \
 				fi;; \
 			esac; \
@@ -1297,14 +1287,12 @@ inclinstall:
 	@for i in $(INCLDIRSTOMAKE); \
 	do \
 		if test ! -d $(DESTDIR)$$i; then \
-			echo "Creating directory $$i"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 		else	true; \
 		fi; \
 	done
 	@for i in $(srcdir)/Include/*.h; \
 	do \
-		echo $(INSTALL_DATA) $$i $(INCLUDEPY); \
 		$(INSTALL_DATA) $$i $(DESTDIR)$(INCLUDEPY); \
 	done
 	$(INSTALL_DATA) pyconfig.h $(DESTDIR)$(CONFINCLUDEPY)/pyconfig.h
@@ -1320,7 +1308,6 @@ libainstall:	all python-config
 	@for i in $(LIBDIR) $(LIBPL) $(LIBPC); \
 	do \
 		if test ! -d $(DESTDIR)$$i; then \
-			echo "Creating directory $$i"; \
 			$(INSTALL) -d -m $(DIRMODE) $(DESTDIR)$$i; \
 		else	true; \
 		fi; \
@@ -1421,7 +1408,6 @@ frameworkinstallstructure:	$(LDLIBRARY)
 frameworkinstallmaclib:  $(PYTHONFRAMEWORK)
 	LIBDIR="$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)"
 	if test ! -d $(LIBDIR); then \
-		echo "Creating directory $(LIBDIR)"; \
 		$(INSTALL) -d -m $(DIRMODE) $(LIBDIR); \
 	else    true; \
 	fi; \
