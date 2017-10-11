@@ -14,16 +14,17 @@
    MCACHE_MAX_ATTR_SIZE, since it might be a problem if very large
    strings are used as attribute names. */
 #define MCACHE_MAX_ATTR_SIZE    100
-#define MCACHE_SIZE_EXP         9
+#define MCACHE_SIZE_EXP         12
 #define MCACHE_HASH(version, name_hash)                                 \
-        (((unsigned int)(version) * (unsigned int)(name_hash))          \
-         >> (8*sizeof(unsigned int) - MCACHE_SIZE_EXP))
+        (((unsigned int)(version) ^ (unsigned int)(name_hash))          \
+         & ((1 << MCACHE_SIZE_EXP) - 1))
+
 #define MCACHE_HASH_METHOD(type, name)                                  \
         MCACHE_HASH((type)->tp_version_tag,                     \
                     ((PyASCIIObject *)(name))->hash)
-#define MCACHE_CACHEABLE_NAME(name)                                     \
-        PyUnicode_CheckExact(name) &&                            \
-        PyUnicode_READY(name) != -1 &&                      \
+#define MCACHE_CACHEABLE_NAME(name)                             \
+        PyUnicode_CheckExact(name) &&                           \
+        PyUnicode_IS_READY(name) &&                             \
         PyUnicode_GET_LENGTH(name) <= MCACHE_MAX_ATTR_SIZE
 
 struct method_cache_entry {
@@ -35,6 +36,14 @@ struct method_cache_entry {
 static struct method_cache_entry method_cache[1 << MCACHE_SIZE_EXP];
 static unsigned int next_version_tag = 0;
 
+#define MCACHE_STATS 0
+
+#if MCACHE_STATS
+static size_t method_cache_hits = 0;
+static size_t method_cache_misses = 0;
+static size_t method_cache_collisions = 0;
+#endif
+
 /* alphabetical order */
 _Py_IDENTIFIER(__abstractmethods__);
 _Py_IDENTIFIER(__class__);
@@ -44,15 +53,20 @@ _Py_IDENTIFIER(__doc__);
 _Py_IDENTIFIER(__getattribute__);
 _Py_IDENTIFIER(__getitem__);
 _Py_IDENTIFIER(__hash__);
+_Py_IDENTIFIER(__init_subclass__);
 _Py_IDENTIFIER(__len__);
 _Py_IDENTIFIER(__module__);
 _Py_IDENTIFIER(__name__);
 _Py_IDENTIFIER(__new__);
+_Py_IDENTIFIER(__set_name__);
 _Py_IDENTIFIER(__setitem__);
 _Py_IDENTIFIER(builtins);
 
 static PyObject *
 slot_tp_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+
+static void
+clear_slotdefs(void);
 
 /*
  * finds the beginning of the docstring's introspection signature.
@@ -125,7 +139,7 @@ _PyType_GetDocFromInternalDoc(const char *name, const char *internal_doc)
 {
     const char *doc = _PyType_DocWithoutSignature(name, internal_doc);
 
-    if (!doc) {
+    if (!doc || *doc == '\0') {
         Py_INCREF(Py_None);
         return Py_None;
     }
@@ -162,6 +176,18 @@ PyType_ClearCache(void)
     Py_ssize_t i;
     unsigned int cur_version_tag = next_version_tag - 1;
 
+#if MCACHE_STATS
+    size_t total = method_cache_hits + method_cache_collisions + method_cache_misses;
+    fprintf(stderr, "-- Method cache hits        = %zd (%d%%)\n",
+            method_cache_hits, (int) (100.0 * method_cache_hits / total));
+    fprintf(stderr, "-- Method cache true misses = %zd (%d%%)\n",
+            method_cache_misses, (int) (100.0 * method_cache_misses / total));
+    fprintf(stderr, "-- Method cache collisions  = %zd (%d%%)\n",
+            method_cache_collisions, (int) (100.0 * method_cache_collisions / total));
+    fprintf(stderr, "-- Method cache size        = %zd KB\n",
+            sizeof(method_cache) / 1024);
+#endif
+
     for (i = 0; i < (1 << MCACHE_SIZE_EXP); i++) {
         method_cache[i].version = 0;
         Py_CLEAR(method_cache[i].name);
@@ -177,6 +203,7 @@ void
 _PyType_Fini(void)
 {
     PyType_ClearCache();
+    clear_slotdefs();
 }
 
 void
@@ -290,9 +317,8 @@ assign_version_tag(PyTypeObject *type)
            are borrowed reference */
         for (i = 0; i < (1 << MCACHE_SIZE_EXP); i++) {
             method_cache[i].value = NULL;
-            Py_XDECREF(method_cache[i].name);
-            method_cache[i].name = Py_None;
             Py_INCREF(Py_None);
+            Py_XSETREF(method_cache[i].name, Py_None);
         }
         /* mark all version tags as invalid */
         PyType_Modified(&PyBaseObject_Type);
@@ -377,9 +403,8 @@ type_qualname(PyTypeObject *type, void *context)
 static int
 type_set_name(PyTypeObject *type, PyObject *value, void *context)
 {
-    PyHeapTypeObject* et;
-    char *tp_name;
-    PyObject *tmp;
+    const char *tp_name;
+    Py_ssize_t name_size;
 
     if (!check_set_special_type_attr(type, value, "__name__"))
         return -1;
@@ -390,33 +415,18 @@ type_set_name(PyTypeObject *type, PyObject *value, void *context)
         return -1;
     }
 
-    /* Check absence of null characters */
-    tmp = PyUnicode_FromStringAndSize("\0", 1);
-    if (tmp == NULL)
-        return -1;
-    if (PyUnicode_Contains(value, tmp) != 0) {
-        Py_DECREF(tmp);
-        PyErr_Format(PyExc_ValueError,
-                     "__name__ must not contain null bytes");
-        return -1;
-    }
-    Py_DECREF(tmp);
-
-    tp_name = _PyUnicode_AsString(value);
+    tp_name = PyUnicode_AsUTF8AndSize(value, &name_size);
     if (tp_name == NULL)
         return -1;
-
-    et = (PyHeapTypeObject*)type;
-
-    Py_INCREF(value);
-
-    /* Wait until et is a sane state before Py_DECREF'ing the old et->ht_name
-       value.  (Bug #16447.)  */
-    tmp = et->ht_name;
-    et->ht_name = value;
+    if (strlen(tp_name) != (size_t)name_size) {
+        PyErr_SetString(PyExc_ValueError,
+                        "type name must not contain null characters");
+        return -1;
+    }
 
     type->tp_name = tp_name;
-    Py_DECREF(tmp);
+    Py_INCREF(value);
+    Py_SETREF(((PyHeapTypeObject*)type)->ht_name, value);
 
     return 0;
 }
@@ -437,35 +447,37 @@ type_set_qualname(PyTypeObject *type, PyObject *value, void *context)
 
     et = (PyHeapTypeObject*)type;
     Py_INCREF(value);
-    Py_DECREF(et->ht_qualname);
-    et->ht_qualname = value;
+    Py_SETREF(et->ht_qualname, value);
     return 0;
 }
 
 static PyObject *
 type_module(PyTypeObject *type, void *context)
 {
-    char *s;
+    PyObject *mod;
 
     if (type->tp_flags & Py_TPFLAGS_HEAPTYPE) {
-        PyObject *mod = _PyDict_GetItemId(type->tp_dict, &PyId___module__);
-        if (!mod) {
+        mod = _PyDict_GetItemId(type->tp_dict, &PyId___module__);
+        if (mod == NULL) {
             PyErr_Format(PyExc_AttributeError, "__module__");
-            return 0;
+            return NULL;
         }
-        Py_XINCREF(mod);
-        return mod;
+        Py_INCREF(mod);
     }
     else {
-        PyObject *name;
-        s = strrchr(type->tp_name, '.');
-        if (s != NULL)
-            return PyUnicode_FromStringAndSize(
+        const char *s = strrchr(type->tp_name, '.');
+        if (s != NULL) {
+            mod = PyUnicode_FromStringAndSize(
                 type->tp_name, (Py_ssize_t)(s - type->tp_name));
-        name = _PyUnicode_FromId(&PyId_builtins);
-        Py_XINCREF(name);
-        return name;
+            if (mod != NULL)
+                PyUnicode_InternInPlace(&mod);
+        }
+        else {
+            mod = _PyUnicode_FromId(&PyId_builtins);
+            Py_XINCREF(mod);
+        }
     }
+    return mod;
 }
 
 static int
@@ -493,7 +505,7 @@ type_abstractmethods(PyTypeObject *type, void *context)
             PyErr_SetObject(PyExc_AttributeError, message);
         return NULL;
     }
-    Py_XINCREF(mod);
+    Py_INCREF(mod);
     return mod;
 }
 
@@ -540,8 +552,8 @@ type_get_bases(PyTypeObject *type, void *context)
 
 static PyTypeObject *best_base(PyObject *);
 static int mro_internal(PyTypeObject *, PyObject **);
-Py_LOCAL_INLINE(int) type_is_subtype_base_chain(PyTypeObject *, PyTypeObject *);
-static int compatible_for_assignment(PyTypeObject *, PyTypeObject *, char *);
+static int type_is_subtype_base_chain(PyTypeObject *, PyTypeObject *);
+static int compatible_for_assignment(PyTypeObject *, PyTypeObject *, const char *);
 static int add_subclass(PyTypeObject*, PyTypeObject*);
 static int add_all_subclasses(PyTypeObject *type, PyObject *bases);
 static void remove_subclass(PyTypeObject *, PyTypeObject *);
@@ -851,7 +863,7 @@ type_repr(PyTypeObject *type)
         return NULL;
     }
 
-    if (mod != NULL && _PyUnicode_CompareWithId(mod, &PyId_builtins))
+    if (mod != NULL && !_PyUnicode_EqualToASCIIId(mod, &PyId_builtins))
         rtn = PyUnicode_FromFormat("<class '%U.%U'>", mod, name);
     else
         rtn = PyUnicode_FromFormat("<class '%s'>", type->tp_name);
@@ -876,30 +888,38 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
 #ifdef Py_DEBUG
     /* type_call() must not be called with an exception set,
        because it may clear it (directly or indirectly) and so the
-       caller looses its exception */
+       caller loses its exception */
     assert(!PyErr_Occurred());
 #endif
 
     obj = type->tp_new(type, args, kwds);
-    if (obj != NULL) {
-        /* Ugly exception: when the call was type(something),
-           don't call tp_init on the result. */
-        if (type == &PyType_Type &&
-            PyTuple_Check(args) && PyTuple_GET_SIZE(args) == 1 &&
-            (kwds == NULL ||
-             (PyDict_Check(kwds) && PyDict_Size(kwds) == 0)))
-            return obj;
-        /* If the returned object is not an instance of type,
-           it won't be initialized. */
-        if (!PyType_IsSubtype(Py_TYPE(obj), type))
-            return obj;
-        type = Py_TYPE(obj);
-        if (type->tp_init != NULL) {
-            int res = type->tp_init(obj, args, kwds);
-            if (res < 0) {
-                Py_DECREF(obj);
-                obj = NULL;
-            }
+    obj = _Py_CheckFunctionResult((PyObject*)type, obj, NULL);
+    if (obj == NULL)
+        return NULL;
+
+    /* Ugly exception: when the call was type(something),
+       don't call tp_init on the result. */
+    if (type == &PyType_Type &&
+        PyTuple_Check(args) && PyTuple_GET_SIZE(args) == 1 &&
+        (kwds == NULL ||
+         (PyDict_Check(kwds) && PyDict_Size(kwds) == 0)))
+        return obj;
+
+    /* If the returned object is not an instance of type,
+       it won't be initialized. */
+    if (!PyType_IsSubtype(Py_TYPE(obj), type))
+        return obj;
+
+    type = Py_TYPE(obj);
+    if (type->tp_init != NULL) {
+        int res = type->tp_init(obj, args, kwds);
+        if (res < 0) {
+            assert(PyErr_Occurred());
+            Py_DECREF(obj);
+            obj = NULL;
+        }
+        else {
+            assert(!PyErr_Occurred());
         }
     }
     return obj;
@@ -1116,11 +1136,6 @@ subtype_dealloc(PyObject *self)
     Py_TRASHCAN_SAFE_BEGIN(self);
     --_PyTrash_delete_nesting;
     -- tstate->trash_delete_nesting;
-    /* DO NOT restore GC tracking at this point.  weakref callbacks
-     * (if any, and whether directly here or indirectly in something we
-     * call) may trigger GC, and if self is tracked at that point, it
-     * will look like trash to GC and GC will try to delete self again.
-     */
 
     /* Find the nearest base with a different tp_dealloc */
     base = type;
@@ -1131,30 +1146,36 @@ subtype_dealloc(PyObject *self)
 
     has_finalizer = type->tp_finalize || type->tp_del;
 
-    /* Maybe call finalizer; exit early if resurrected */
-    if (has_finalizer)
-        _PyObject_GC_TRACK(self);
-
     if (type->tp_finalize) {
+        _PyObject_GC_TRACK(self);
         if (PyObject_CallFinalizerFromDealloc(self) < 0) {
             /* Resurrected */
             goto endlabel;
         }
+        _PyObject_GC_UNTRACK(self);
     }
-    /* If we added a weaklist, we clear it.      Do this *before* calling
-       tp_del, clearing slots, or clearing the instance dict. */
+    /*
+      If we added a weaklist, we clear it. Do this *before* calling tp_del,
+      clearing slots, or clearing the instance dict.
+
+      GC tracking must be off at this point. weakref callbacks (if any, and
+      whether directly here or indirectly in something we call) may trigger GC,
+      and if self is tracked at that point, it will look like trash to GC and GC
+      will try to delete self again.
+    */
     if (type->tp_weaklistoffset && !base->tp_weaklistoffset)
         PyObject_ClearWeakRefs(self);
 
     if (type->tp_del) {
+        _PyObject_GC_TRACK(self);
         type->tp_del(self);
         if (self->ob_refcnt > 0) {
             /* Resurrected */
             goto endlabel;
         }
+        _PyObject_GC_UNTRACK(self);
     }
     if (has_finalizer) {
-        _PyObject_GC_UNTRACK(self);
         /* New weakrefs could be created during the finalizer call.
            If this occurs, clear them out without calling their
            finalizers since they might rely on part of the object
@@ -1200,8 +1221,11 @@ subtype_dealloc(PyObject *self)
     assert(basedealloc);
     basedealloc(self);
 
-    /* Can't reference self beyond this point */
-    Py_DECREF(type);
+    /* Can't reference self beyond this point. It's possible tp_del switched
+       our type from a HEAPTYPE to a non-HEAPTYPE, so be careful about
+       reference counting. */
+    if (type->tp_flags & Py_TPFLAGS_HEAPTYPE)
+      Py_DECREF(type);
 
   endlabel:
     ++_PyTrash_delete_nesting;
@@ -1313,7 +1337,7 @@ static PyTypeObject *solid_base(PyTypeObject *type);
 
 /* type test with subclassing support */
 
-Py_LOCAL_INLINE(int)
+static int
 type_is_subtype_base_chain(PyTypeObject *a, PyTypeObject *b)
 {
     do {
@@ -1401,34 +1425,38 @@ _PyObject_LookupSpecial(PyObject *self, _Py_Identifier *attrid)
    as lookup_method to cache the interned name string object. */
 
 static PyObject *
-call_method(PyObject *o, _Py_Identifier *nameid, char *format, ...)
+call_method(PyObject *o, _Py_Identifier *nameid, const char *format, ...)
 {
     va_list va;
-    PyObject *args, *func = 0, *retval;
-    va_start(va, format);
+    PyObject *func = NULL, *retval;
 
     func = lookup_maybe(o, nameid);
     if (func == NULL) {
-        va_end(va);
         if (!PyErr_Occurred())
             PyErr_SetObject(PyExc_AttributeError, nameid->object);
         return NULL;
     }
 
-    if (format && *format)
+    if (format && *format) {
+        PyObject *args;
+
+        va_start(va, format);
         args = Py_VaBuildValue(format, va);
-    else
-        args = PyTuple_New(0);
+        va_end(va);
 
-    va_end(va);
+        if (args == NULL) {
+            Py_DECREF(func);
+            return NULL;
+        }
+        assert(PyTuple_Check(args));
 
-    if (args == NULL)
-        return NULL;
+        retval = PyObject_Call(func, args, NULL);
+        Py_DECREF(args);
+    }
+    else {
+        retval = _PyObject_CallNoArg(func);
+    }
 
-    assert(PyTuple_Check(args));
-    retval = PyObject_Call(func, args, NULL);
-
-    Py_DECREF(args);
     Py_DECREF(func);
 
     return retval;
@@ -1437,34 +1465,38 @@ call_method(PyObject *o, _Py_Identifier *nameid, char *format, ...)
 /* Clone of call_method() that returns NotImplemented when the lookup fails. */
 
 static PyObject *
-call_maybe(PyObject *o, _Py_Identifier *nameid, char *format, ...)
+call_maybe(PyObject *o, _Py_Identifier *nameid, const char *format, ...)
 {
     va_list va;
-    PyObject *args, *func = 0, *retval;
-    va_start(va, format);
+    PyObject *func = NULL, *retval;
 
     func = lookup_maybe(o, nameid);
     if (func == NULL) {
-        va_end(va);
         if (!PyErr_Occurred())
             Py_RETURN_NOTIMPLEMENTED;
         return NULL;
     }
 
-    if (format && *format)
+    if (format && *format) {
+        PyObject *args;
+
+        va_start(va, format);
         args = Py_VaBuildValue(format, va);
-    else
-        args = PyTuple_New(0);
+        va_end(va);
 
-    va_end(va);
+        if (args == NULL) {
+            Py_DECREF(func);
+            return NULL;
+        }
+        assert(PyTuple_Check(args));
 
-    if (args == NULL)
-        return NULL;
+        retval = PyObject_Call(func, args, NULL);
+        Py_DECREF(args);
+    }
+    else {
+        retval = _PyObject_CallNoArg(func);
+    }
 
-    assert(PyTuple_Check(args));
-    retval = PyObject_Call(func, args, NULL);
-
-    Py_DECREF(args);
     Py_DECREF(func);
 
     return retval;
@@ -1484,7 +1516,7 @@ call_maybe(PyObject *o, _Py_Identifier *nameid, char *format, ...)
 
     The next three properties are the 3 constraints in "C3".
 
-    Local precendece order.
+    Local precedence order.
     If A precedes B in C's MRO, then A will precede B in the MRO of all
     subclasses of C.
 
@@ -1516,7 +1548,6 @@ class_name(PyObject *cls)
     PyObject *name = _PyObject_GetAttrId(cls, &PyId___name__);
     if (name == NULL) {
         PyErr_Clear();
-        Py_XDECREF(name);
         name = PyObject_Repr(cls);
     }
     if (name == NULL)
@@ -1595,7 +1626,7 @@ consistent method resolution\norder (MRO) for bases");
         PyObject *name = class_name(k);
         char *name_str;
         if (name != NULL) {
-            name_str = _PyUnicode_AsString(name);
+            name_str = PyUnicode_AsUTF8(name);
             if (name_str == NULL)
                 name_str = "?";
         } else
@@ -1937,6 +1968,12 @@ best_base(PyObject *bases)
             if (PyType_Ready(base_i) < 0)
                 return NULL;
         }
+        if (!PyType_HasFeature(base_i, Py_TPFLAGS_BASETYPE)) {
+            PyErr_Format(PyExc_TypeError,
+                         "type '%.100s' is not an acceptable base type",
+                         base_i->tp_name);
+            return NULL;
+        }
         candidate = solid_base(base_i);
         if (winner == NULL) {
             winner = candidate;
@@ -2004,6 +2041,8 @@ static void object_dealloc(PyObject *);
 static int object_init(PyObject *, PyObject *, PyObject *);
 static int update_slot(PyTypeObject *, PyObject *);
 static void fixup_slot_dispatchers(PyTypeObject *);
+static int set_names(PyTypeObject *);
+static int init_subclass(PyTypeObject *, PyObject *);
 
 /*
  * Helpers for  __dict__ descriptor.  We don't want to expose the dicts
@@ -2068,7 +2107,7 @@ subtype_dict(PyObject *obj, void *context)
 static int
 subtype_setdict(PyObject *obj, PyObject *value, void *context)
 {
-    PyObject *dict, **dictptr;
+    PyObject **dictptr;
     PyTypeObject *base;
 
     base = get_builtin_base_with_dict(Py_TYPE(obj));
@@ -2099,10 +2138,8 @@ subtype_setdict(PyObject *obj, PyObject *value, void *context)
                      "not a '%.200s'", Py_TYPE(value)->tp_name);
         return -1;
     }
-    dict = *dictptr;
     Py_XINCREF(value);
-    *dictptr = value;
-    Py_XDECREF(dict);
+    Py_XSETREF(*dictptr, value);
     return 0;
 }
 
@@ -2181,7 +2218,8 @@ type_init(PyObject *cls, PyObject *args, PyObject *kwds)
     assert(args != NULL && PyTuple_Check(args));
     assert(kwds == NULL || PyDict_Check(kwds));
 
-    if (kwds != NULL && PyDict_Check(kwds) && PyDict_Size(kwds) != 0) {
+    if (kwds != NULL && PyTuple_Check(args) && PyTuple_GET_SIZE(args) == 1 &&
+        PyDict_Check(kwds) && PyDict_Size(kwds) != 0) {
         PyErr_SetString(PyExc_TypeError,
                         "type.__init__() takes no keyword arguments");
         return -1;
@@ -2248,25 +2286,27 @@ static PyObject *
 type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
 {
     PyObject *name, *bases = NULL, *orig_dict, *dict = NULL;
-    static char *kwlist[] = {"name", "bases", "dict", 0};
-    PyObject *qualname, *slots = NULL, *tmp, *newslots;
+    PyObject *qualname, *slots = NULL, *tmp, *newslots, *cell;
     PyTypeObject *type = NULL, *base, *tmptype, *winner;
     PyHeapTypeObject *et;
     PyMemberDef *mp;
-    Py_ssize_t i, nbases, nslots, slotoffset, add_dict, add_weak;
-    int j, may_add_dict, may_add_weak;
+    Py_ssize_t i, nbases, nslots, slotoffset, name_size;
+    int j, may_add_dict, may_add_weak, add_dict, add_weak;
     _Py_IDENTIFIER(__qualname__);
     _Py_IDENTIFIER(__slots__);
+    _Py_IDENTIFIER(__classcell__);
 
     assert(args != NULL && PyTuple_Check(args));
     assert(kwds == NULL || PyDict_Check(kwds));
 
     /* Special case: type(x) should return x->ob_type */
-    {
+    /* We only want type itself to accept the one-argument form (#27157)
+       Note: We don't call PyType_CheckExact as that also allows subclasses */
+    if (metatype == &PyType_Type) {
         const Py_ssize_t nargs = PyTuple_GET_SIZE(args);
         const Py_ssize_t nkwds = kwds == NULL ? 0 : PyDict_Size(kwds);
 
-        if (PyType_CheckExact(metatype) && nargs == 1 && nkwds == 0) {
+        if (nargs == 1 && nkwds == 0) {
             PyObject *x = PyTuple_GET_ITEM(args, 0);
             Py_INCREF(Py_TYPE(x));
             return (PyObject *) Py_TYPE(x);
@@ -2275,7 +2315,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         /* SF bug 475327 -- if that didn't trigger, we need 3
            arguments. but PyArg_ParseTupleAndKeywords below may give
            a msg saying type() needs exactly 3. */
-        if (nargs + nkwds != 3) {
+        if (nargs != 3) {
             PyErr_SetString(PyExc_TypeError,
                             "type() takes 1 or 3 arguments");
             return NULL;
@@ -2283,10 +2323,8 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     }
 
     /* Check arguments: (name, bases, dict) */
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "UO!O!:type", kwlist,
-                                     &name,
-                                     &PyTuple_Type, &bases,
-                                     &PyDict_Type, &orig_dict))
+    if (!PyArg_ParseTuple(args, "UO!O!:type.__new__", &name, &PyTuple_Type,
+                          &bases, &PyDict_Type, &orig_dict))
         return NULL;
 
     /* Determine the proper metatype to deal with this: */
@@ -2315,12 +2353,6 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     /* Calculate best base, and check that all bases are type objects */
     base = best_base(bases);
     if (base == NULL) {
-        goto error;
-    }
-    if (!PyType_HasFeature(base, Py_TPFLAGS_BASETYPE)) {
-        PyErr_Format(PyExc_TypeError,
-                     "type '%.100s' is not an acceptable base type",
-                     base->tp_name);
         goto error;
     }
 
@@ -2371,7 +2403,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
             if (!valid_identifier(tmp))
                 goto error;
             assert(PyUnicode_Check(tmp));
-            if (_PyUnicode_CompareWithId(tmp, &PyId___dict__) == 0) {
+            if (_PyUnicode_EqualToASCIIId(tmp, &PyId___dict__)) {
                 if (!may_add_dict || add_dict) {
                     PyErr_SetString(PyExc_TypeError,
                         "__dict__ slot disallowed: "
@@ -2380,7 +2412,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
                 }
                 add_dict++;
             }
-            if (PyUnicode_CompareWithASCIIString(tmp, "__weakref__") == 0) {
+            if (_PyUnicode_EqualToASCIIString(tmp, "__weakref__")) {
                 if (!may_add_weak || add_weak) {
                     PyErr_SetString(PyExc_TypeError,
                         "__weakref__ slot disallowed: "
@@ -2402,9 +2434,9 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         for (i = j = 0; i < nslots; i++) {
             tmp = PyTuple_GET_ITEM(slots, i);
             if ((add_dict &&
-                 _PyUnicode_CompareWithId(tmp, &PyId___dict__) == 0) ||
+                 _PyUnicode_EqualToASCIIId(tmp, &PyId___dict__)) ||
                 (add_weak &&
-                 PyUnicode_CompareWithASCIIString(tmp, "__weakref__") == 0))
+                 _PyUnicode_EqualToASCIIString(tmp, "__weakref__")))
                 continue;
             tmp =_Py_Mangle(name, tmp);
             if (!tmp) {
@@ -2478,13 +2510,19 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         type->tp_flags |= Py_TPFLAGS_HAVE_GC;
 
     /* Initialize essential fields */
+    type->tp_as_async = &et->as_async;
     type->tp_as_number = &et->as_number;
     type->tp_as_sequence = &et->as_sequence;
     type->tp_as_mapping = &et->as_mapping;
     type->tp_as_buffer = &et->as_buffer;
-    type->tp_name = _PyUnicode_AsString(name);
+    type->tp_name = PyUnicode_AsUTF8AndSize(name, &name_size);
     if (!type->tp_name)
         goto error;
+    if (strlen(type->tp_name) != (size_t)name_size) {
+        PyErr_SetString(PyExc_ValueError,
+                        "type name must not contain null characters");
+        goto error;
+    }
 
     /* Set tp_base and tp_bases */
     type->tp_bases = bases;
@@ -2523,7 +2561,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     }
     et->ht_qualname = qualname ? qualname : et->ht_name;
     Py_INCREF(et->ht_qualname);
-    if (qualname != NULL && PyDict_DelItem(dict, PyId___qualname__.object) < 0)
+    if (qualname != NULL && _PyDict_DelItemId(dict, &PyId___qualname__) < 0)
         goto error;
 
     /* Set tp_doc to a copy of dict['__doc__'], if the latter is there
@@ -2537,7 +2575,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
             char *doc_str;
             char *tp_doc;
 
-            doc_str = _PyUnicode_AsString(doc);
+            doc_str = PyUnicode_AsUTF8(doc);
             if (doc_str == NULL)
                 goto error;
             /* Silently truncate the docstring if it contains null bytes. */
@@ -2559,8 +2597,24 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         tmp = PyStaticMethod_New(tmp);
         if (tmp == NULL)
             goto error;
-        if (_PyDict_SetItemId(dict, &PyId___new__, tmp) < 0)
+        if (_PyDict_SetItemId(dict, &PyId___new__, tmp) < 0) {
+            Py_DECREF(tmp);
             goto error;
+        }
+        Py_DECREF(tmp);
+    }
+
+    /* Special-case __init_subclass__: if it's a plain function,
+       make it a classmethod */
+    tmp = _PyDict_GetItemId(dict, &PyId___init_subclass__);
+    if (tmp != NULL && PyFunction_Check(tmp)) {
+        tmp = PyClassMethod_New(tmp);
+        if (tmp == NULL)
+            goto error;
+        if (_PyDict_SetItemId(dict, &PyId___init_subclass__, tmp) < 0) {
+            Py_DECREF(tmp);
+            goto error;
+        }
         Py_DECREF(tmp);
     }
 
@@ -2569,7 +2623,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     slotoffset = base->tp_basicsize;
     if (et->ht_slots != NULL) {
         for (i = 0; i < nslots; i++, mp++) {
-            mp->name = _PyUnicode_AsString(
+            mp->name = PyUnicode_AsUTF8(
                 PyTuple_GET_ITEM(et->ht_slots, i));
             if (mp->name == NULL)
                 goto error;
@@ -2617,9 +2671,10 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     }
     type->tp_dealloc = subtype_dealloc;
 
-    /* Enable GC unless there are really no instance variables possible */
-    if (!(type->tp_basicsize == sizeof(PyObject) &&
-          type->tp_itemsize == 0))
+    /* Enable GC unless this class is not adding new instance variables and
+       the base class did not use GC. */
+    if ((base->tp_flags & Py_TPFLAGS_HAVE_GC) ||
+        type->tp_basicsize > base->tp_basicsize)
         type->tp_flags |= Py_TPFLAGS_HAVE_GC;
 
     /* Always override allocation strategy to use regular heap */
@@ -2632,6 +2687,21 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     else
         type->tp_free = PyObject_Del;
 
+    /* store type in class' cell if one is supplied */
+    cell = _PyDict_GetItemId(dict, &PyId___classcell__);
+    if (cell != NULL) {
+        /* At least one method requires a reference to its defining class */
+        if (!PyCell_Check(cell)) {
+            PyErr_Format(PyExc_TypeError,
+                         "__classcell__ must be a nonlocal cell, not %.200R",
+                         Py_TYPE(cell));
+            goto error;
+        }
+        PyCell_Set(cell, (PyObject *) type);
+        _PyDict_DelItemId(dict, &PyId___classcell__);
+        PyErr_Clear();
+    }
+
     /* Initialize the rest */
     if (PyType_Ready(type) < 0)
         goto error;
@@ -2642,6 +2712,12 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     if (type->tp_dictoffset) {
         et->ht_cached_keys = _PyDict_NewKeysForClass();
     }
+
+    if (set_names(type) < 0)
+        goto error;
+
+    if (init_subclass(type, kwds) < 0)
+        goto error;
 
     Py_DECREF(dict);
     return (PyObject *)type;
@@ -2654,7 +2730,7 @@ error:
     return NULL;
 }
 
-static short slotoffsets[] = {
+static const short slotoffsets[] = {
     -1, /* invalid slot */
 #include "typeslots.inc"
 };
@@ -2664,6 +2740,7 @@ PyType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)
 {
     PyHeapTypeObject *res = (PyHeapTypeObject*)PyType_GenericAlloc(&PyType_Type, 0);
     PyTypeObject *type, *base;
+    PyObject *modname;
     char *s;
     char *res_start = (char*)res;
     PyType_Slot *slot;
@@ -2722,6 +2799,7 @@ PyType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)
     }
 
     /* Initialize essential fields */
+    type->tp_as_async = &res->as_async;
     type->tp_as_number = &res->as_number;
     type->tp_as_sequence = &res->as_sequence;
     type->tp_as_mapping = &res->as_mapping;
@@ -2736,7 +2814,8 @@ PyType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)
     type->tp_itemsize = spec->itemsize;
 
     for (slot = spec->slots; slot->slot; slot++) {
-        if (slot->slot >= Py_ARRAY_LENGTH(slotoffsets)) {
+        if (slot->slot < 0
+            || (size_t)slot->slot >= Py_ARRAY_LENGTH(slotoffsets)) {
             PyErr_SetString(PyExc_RuntimeError, "invalid slot offset");
             goto fail;
         }
@@ -2775,10 +2854,23 @@ PyType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)
 
     /* Set type.__module__ */
     s = strrchr(spec->name, '.');
-    if (s != NULL)
-        _PyDict_SetItemId(type->tp_dict, &PyId___module__,
-            PyUnicode_FromStringAndSize(
-                spec->name, (Py_ssize_t)(s - spec->name)));
+    if (s != NULL) {
+        int err;
+        modname = PyUnicode_FromStringAndSize(
+                spec->name, (Py_ssize_t)(s - spec->name));
+        if (modname == NULL) {
+            goto fail;
+        }
+        err = _PyDict_SetItemId(type->tp_dict, &PyId___module__, modname);
+        Py_DECREF(modname);
+        if (err != 0)
+            goto fail;
+    } else {
+        if (PyErr_WarnFormat(PyExc_DeprecationWarning, 1,
+                "builtin type %.200s has no __module__ attribute",
+                spec->name))
+            goto fail;
+    }
 
     return (PyObject*)res;
 
@@ -2796,11 +2888,11 @@ PyType_FromSpec(PyType_Spec *spec)
 void *
 PyType_GetSlot(PyTypeObject *type, int slot)
 {
-    if (!PyType_HasFeature(type, Py_TPFLAGS_HEAPTYPE)) {
+    if (!PyType_HasFeature(type, Py_TPFLAGS_HEAPTYPE) || slot < 0) {
         PyErr_BadInternalCall();
         return NULL;
     }
-    if (slot >= Py_ARRAY_LENGTH(slotoffsets)) {
+    if ((size_t)slot >= Py_ARRAY_LENGTH(slotoffsets)) {
         /* Extension module requesting slot from a future version */
         return NULL;
     }
@@ -2821,18 +2913,36 @@ _PyType_Lookup(PyTypeObject *type, PyObject *name)
         /* fast path */
         h = MCACHE_HASH_METHOD(type, name);
         if (method_cache[h].version == type->tp_version_tag &&
-            method_cache[h].name == name)
+            method_cache[h].name == name) {
+#if MCACHE_STATS
+            method_cache_hits++;
+#endif
             return method_cache[h].value;
+        }
     }
 
     /* Look in tp_dict of types in MRO */
     mro = type->tp_mro;
 
-    /* If mro is NULL, the type is either not yet initialized
-       by PyType_Ready(), or already cleared by type_clear().
-       Either way the safest thing to do is to return NULL. */
-    if (mro == NULL)
-        return NULL;
+    if (mro == NULL) {
+        if ((type->tp_flags & Py_TPFLAGS_READYING) == 0 &&
+            PyType_Ready(type) < 0) {
+            /* It's not ideal to clear the error condition,
+               but this function is documented as not setting
+               an exception, and I don't want to change that.
+               When PyType_Ready() can't proceed, it won't
+               set the "ready" flag, so future attempts to ready
+               the same type will call it again -- hopefully
+               in a context that propagates the exception out.
+            */
+            PyErr_Clear();
+            return NULL;
+        }
+        mro = type->tp_mro;
+        if (mro == NULL) {
+            return NULL;
+        }
+    }
 
     res = NULL;
     /* keep a strong reference to mro because type->tp_mro can be replaced
@@ -2856,8 +2966,14 @@ _PyType_Lookup(PyTypeObject *type, PyObject *name)
         method_cache[h].version = type->tp_version_tag;
         method_cache[h].value = res;  /* borrowed */
         Py_INCREF(name);
-        Py_DECREF(method_cache[h].name);
-        method_cache[h].name = name;
+        assert(((PyASCIIObject *)(name))->hash != -1);
+#if MCACHE_STATS
+        if (method_cache[h].name != Py_None && method_cache[h].name != name)
+            method_cache_collisions++;
+        else
+            method_cache_misses++;
+#endif
+        Py_SETREF(method_cache[h].name, name);
     }
     return res;
 }
@@ -2959,6 +3075,7 @@ type_getattro(PyTypeObject *type, PyObject *name)
 static int
 type_setattro(PyTypeObject *type, PyObject *name, PyObject *value)
 {
+    int res;
     if (!(type->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
         PyErr_Format(
             PyExc_TypeError,
@@ -2966,9 +3083,35 @@ type_setattro(PyTypeObject *type, PyObject *name, PyObject *value)
             type->tp_name);
         return -1;
     }
-    if (PyObject_GenericSetAttr((PyObject *)type, name, value) < 0)
-        return -1;
-    return update_slot(type, name);
+    if (PyUnicode_Check(name)) {
+        if (PyUnicode_CheckExact(name)) {
+            if (PyUnicode_READY(name) == -1)
+                return -1;
+            Py_INCREF(name);
+        }
+        else {
+            name = _PyUnicode_Copy(name);
+            if (name == NULL)
+                return -1;
+        }
+        PyUnicode_InternInPlace(&name);
+        if (!PyUnicode_CHECK_INTERNED(name)) {
+            PyErr_SetString(PyExc_MemoryError,
+                            "Out of memory interning an attribute name");
+            Py_DECREF(name);
+            return -1;
+        }
+    }
+    else {
+        /* Will fail in _PyObject_GenericSetAttrWithDict. */
+        Py_INCREF(name);
+    }
+    res = PyObject_GenericSetAttr((PyObject *)type, name, value);
+    if (res == 0) {
+        res = update_slot(type, name);
+    }
+    Py_DECREF(name);
+    return res;
 }
 
 extern void
@@ -3429,7 +3572,7 @@ object_repr(PyObject *self)
         Py_XDECREF(mod);
         return NULL;
     }
-    if (mod != NULL && _PyUnicode_CompareWithId(mod, &PyId_builtins))
+    if (mod != NULL && !_PyUnicode_EqualToASCIIId(mod, &PyId_builtins))
         rtn = PyUnicode_FromFormat("<%U.%U object at %p>", mod, name, self);
     else
         rtn = PyUnicode_FromFormat("<%s object at %p>",
@@ -3506,17 +3649,18 @@ object_get_class(PyObject *self, void *closure)
 }
 
 static int
-equiv_structs(PyTypeObject *a, PyTypeObject *b)
+compatible_with_tp_base(PyTypeObject *child)
 {
-    return a == b ||
-           (a != NULL &&
-        b != NULL &&
-        a->tp_basicsize == b->tp_basicsize &&
-        a->tp_itemsize == b->tp_itemsize &&
-        a->tp_dictoffset == b->tp_dictoffset &&
-        a->tp_weaklistoffset == b->tp_weaklistoffset &&
-        ((a->tp_flags & Py_TPFLAGS_HAVE_GC) ==
-         (b->tp_flags & Py_TPFLAGS_HAVE_GC)));
+    PyTypeObject *parent = child->tp_base;
+    return (parent != NULL &&
+            child->tp_basicsize == parent->tp_basicsize &&
+            child->tp_itemsize == parent->tp_itemsize &&
+            child->tp_dictoffset == parent->tp_dictoffset &&
+            child->tp_weaklistoffset == parent->tp_weaklistoffset &&
+            ((child->tp_flags & Py_TPFLAGS_HAVE_GC) ==
+             (parent->tp_flags & Py_TPFLAGS_HAVE_GC)) &&
+            (child->tp_dealloc == subtype_dealloc ||
+             child->tp_dealloc == parent->tp_dealloc));
 }
 
 static int
@@ -3534,6 +3678,10 @@ same_slots_added(PyTypeObject *a, PyTypeObject *b)
         size += sizeof(PyObject *);
 
     /* Check slots compliance */
+    if (!(a->tp_flags & Py_TPFLAGS_HEAPTYPE) ||
+        !(b->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+        return 0;
+    }
     slots_a = ((PyHeapTypeObject *)a)->ht_slots;
     slots_b = ((PyHeapTypeObject *)b)->ht_slots;
     if (slots_a && slots_b) {
@@ -3545,13 +3693,11 @@ same_slots_added(PyTypeObject *a, PyTypeObject *b)
 }
 
 static int
-compatible_for_assignment(PyTypeObject* oldto, PyTypeObject* newto, char* attr)
+compatible_for_assignment(PyTypeObject* oldto, PyTypeObject* newto, const char* attr)
 {
     PyTypeObject *newbase, *oldbase;
 
-    if (newto->tp_dealloc != oldto->tp_dealloc ||
-        newto->tp_free != oldto->tp_free)
-    {
+    if (newto->tp_free != oldto->tp_free) {
         PyErr_Format(PyExc_TypeError,
                      "%s assignment: "
                      "'%s' deallocator differs from '%s'",
@@ -3560,11 +3706,21 @@ compatible_for_assignment(PyTypeObject* oldto, PyTypeObject* newto, char* attr)
                      oldto->tp_name);
         return 0;
     }
+    /*
+     It's tricky to tell if two arbitrary types are sufficiently compatible as
+     to be interchangeable; e.g., even if they have the same tp_basicsize, they
+     might have totally different struct fields. It's much easier to tell if a
+     type and its supertype are compatible; e.g., if they have the same
+     tp_basicsize, then that means they have identical fields. So to check
+     whether two arbitrary types are compatible, we first find the highest
+     supertype that each is compatible with, and then if those supertypes are
+     compatible then the original types must also be compatible.
+    */
     newbase = newto;
     oldbase = oldto;
-    while (equiv_structs(newbase, newbase->tp_base))
+    while (compatible_with_tp_base(newbase))
         newbase = newbase->tp_base;
-    while (equiv_structs(oldbase, oldbase->tp_base))
+    while (compatible_with_tp_base(oldbase))
         oldbase = oldbase->tp_base;
     if (newbase != oldbase &&
         (newbase->tp_base != oldbase->tp_base ||
@@ -3599,17 +3755,71 @@ object_set_class(PyObject *self, PyObject *value, void *closure)
         return -1;
     }
     newto = (PyTypeObject *)value;
-    if (!(newto->tp_flags & Py_TPFLAGS_HEAPTYPE) ||
-        !(oldto->tp_flags & Py_TPFLAGS_HEAPTYPE))
-    {
+    /* In versions of CPython prior to 3.5, the code in
+       compatible_for_assignment was not set up to correctly check for memory
+       layout / slot / etc. compatibility for non-HEAPTYPE classes, so we just
+       disallowed __class__ assignment in any case that wasn't HEAPTYPE ->
+       HEAPTYPE.
+
+       During the 3.5 development cycle, we fixed the code in
+       compatible_for_assignment to correctly check compatibility between
+       arbitrary types, and started allowing __class__ assignment in all cases
+       where the old and new types did in fact have compatible slots and
+       memory layout (regardless of whether they were implemented as HEAPTYPEs
+       or not).
+
+       Just before 3.5 was released, though, we discovered that this led to
+       problems with immutable types like int, where the interpreter assumes
+       they are immutable and interns some values. Formerly this wasn't a
+       problem, because they really were immutable -- in particular, all the
+       types where the interpreter applied this interning trick happened to
+       also be statically allocated, so the old HEAPTYPE rules were
+       "accidentally" stopping them from allowing __class__ assignment. But
+       with the changes to __class__ assignment, we started allowing code like
+
+         class MyInt(int):
+             ...
+         # Modifies the type of *all* instances of 1 in the whole program,
+         # including future instances (!), because the 1 object is interned.
+         (1).__class__ = MyInt
+
+       (see https://bugs.python.org/issue24912).
+
+       In theory the proper fix would be to identify which classes rely on
+       this invariant and somehow disallow __class__ assignment only for them,
+       perhaps via some mechanism like a new Py_TPFLAGS_IMMUTABLE flag (a
+       "blacklisting" approach). But in practice, since this problem wasn't
+       noticed late in the 3.5 RC cycle, we're taking the conservative
+       approach and reinstating the same HEAPTYPE->HEAPTYPE check that we used
+       to have, plus a "whitelist". For now, the whitelist consists only of
+       ModuleType subtypes, since those are the cases that motivated the patch
+       in the first place -- see https://bugs.python.org/issue22986 -- and
+       since module objects are mutable we can be sure that they are
+       definitely not being interned. So now we allow HEAPTYPE->HEAPTYPE *or*
+       ModuleType subtype -> ModuleType subtype.
+
+       So far as we know, all the code beyond the following 'if' statement
+       will correctly handle non-HEAPTYPE classes, and the HEAPTYPE check is
+       needed only to protect that subset of non-HEAPTYPE classes for which
+       the interpreter has baked in the assumption that all instances are
+       truly immutable.
+    */
+    if (!(PyType_IsSubtype(newto, &PyModule_Type) &&
+          PyType_IsSubtype(oldto, &PyModule_Type)) &&
+        (!(newto->tp_flags & Py_TPFLAGS_HEAPTYPE) ||
+         !(oldto->tp_flags & Py_TPFLAGS_HEAPTYPE))) {
         PyErr_Format(PyExc_TypeError,
-                     "__class__ assignment: only for heap types");
+                     "__class__ assignment only supported for heap types "
+                     "or ModuleType subclasses");
         return -1;
     }
+
     if (compatible_for_assignment(oldto, newto, "__class__")) {
-        Py_INCREF(newto);
+        if (newto->tp_flags & Py_TPFLAGS_HEAPTYPE)
+            Py_INCREF(newto);
         Py_TYPE(self) = newto;
-        Py_DECREF(oldto);
+        if (oldto->tp_flags & Py_TPFLAGS_HEAPTYPE)
+            Py_DECREF(oldto);
         return 0;
     }
     else {
@@ -3646,7 +3856,7 @@ import_copyreg(void)
     /* Try to fetch cached copy of copyreg from sys.modules first in an
        attempt to avoid the import overhead. Previously this was implemented
        by storing a reference to the cached module in a static variable, but
-       this broke when multiple embeded interpreters were in use (see issue
+       this broke when multiple embedded interpreters were in use (see issue
        #17408 and #19088). */
     copyreg_module = PyDict_GetItemWithError(interp->modules, copyreg_str);
     if (copyreg_module != NULL) {
@@ -3659,7 +3869,7 @@ import_copyreg(void)
     return PyImport_Import(copyreg_str);
 }
 
-Py_LOCAL(PyObject *)
+static PyObject *
 _PyType_GetSlotNames(PyTypeObject *cls)
 {
     PyObject *copyreg;
@@ -3712,8 +3922,8 @@ _PyType_GetSlotNames(PyTypeObject *cls)
     return slotnames;
 }
 
-Py_LOCAL(PyObject *)
-_PyObject_GetState(PyObject *obj)
+static PyObject *
+_PyObject_GetState(PyObject *obj, int required)
 {
     PyObject *state;
     PyObject *getstate;
@@ -3727,6 +3937,13 @@ _PyObject_GetState(PyObject *obj)
             return NULL;
         }
         PyErr_Clear();
+
+        if (required && obj->ob_type->tp_itemsize) {
+            PyErr_Format(PyExc_TypeError,
+                         "can't pickle %.200s objects",
+                         Py_TYPE(obj)->tp_name);
+            return NULL;
+        }
 
         {
             PyObject **dict;
@@ -3752,6 +3969,24 @@ _PyObject_GetState(PyObject *obj)
         }
 
         assert(slotnames == Py_None || PyList_Check(slotnames));
+        if (required) {
+            Py_ssize_t basicsize = PyBaseObject_Type.tp_basicsize;
+            if (obj->ob_type->tp_dictoffset)
+                basicsize += sizeof(PyObject *);
+            if (obj->ob_type->tp_weaklistoffset)
+                basicsize += sizeof(PyObject *);
+            if (slotnames != Py_None)
+                basicsize += sizeof(PyObject *) * Py_SIZE(slotnames);
+            if (obj->ob_type->tp_basicsize > basicsize) {
+                Py_DECREF(slotnames);
+                Py_DECREF(state);
+                PyErr_Format(PyExc_TypeError,
+                             "can't pickle %.200s objects",
+                             Py_TYPE(obj)->tp_name);
+                return NULL;
+            }
+        }
+
         if (slotnames != Py_None && Py_SIZE(slotnames) > 0) {
             PyObject *slots;
             Py_ssize_t slotnames_size, i;
@@ -3768,8 +4003,10 @@ _PyObject_GetState(PyObject *obj)
                 PyObject *name, *value;
 
                 name = PyList_GET_ITEM(slotnames, i);
+                Py_INCREF(name);
                 value = PyObject_GetAttr(obj, name);
                 if (value == NULL) {
+                    Py_DECREF(name);
                     if (!PyErr_ExceptionMatches(PyExc_AttributeError)) {
                         goto error;
                     }
@@ -3778,13 +4015,14 @@ _PyObject_GetState(PyObject *obj)
                 }
                 else {
                     int err = PyDict_SetItem(slots, name, value);
+                    Py_DECREF(name);
                     Py_DECREF(value);
                     if (err) {
                         goto error;
                     }
                 }
 
-                /* The list is stored on the class so it may mutates while we
+                /* The list is stored on the class so it may mutate while we
                    iterate over it */
                 if (slotnames_size != Py_SIZE(slotnames)) {
                     PyErr_Format(PyExc_RuntimeError,
@@ -3803,7 +4041,7 @@ _PyObject_GetState(PyObject *obj)
             }
 
             /* If we found some slot attributes, pack them in a tuple along
-               the orginal attribute dictionary. */
+               the original attribute dictionary. */
             if (PyDict_Size(slots) > 0) {
                 PyObject *state2;
 
@@ -3830,7 +4068,7 @@ _PyObject_GetState(PyObject *obj)
     return state;
 }
 
-Py_LOCAL(int)
+static int
 _PyObject_GetNewArguments(PyObject *obj, PyObject **args, PyObject **kwargs)
 {
     PyObject *getnewargs, *getnewargs_ex;
@@ -3918,7 +4156,7 @@ _PyObject_GetNewArguments(PyObject *obj, PyObject **args, PyObject **kwargs)
     }
 
     /* The object does not have __getnewargs_ex__ and __getnewargs__. This may
-       means __new__ does not takes any arguments on this object, or that the
+       mean __new__ does not takes any arguments on this object, or that the
        object does not implement the reduce protocol for pickling or
        copying. */
     *args = NULL;
@@ -3926,7 +4164,7 @@ _PyObject_GetNewArguments(PyObject *obj, PyObject **args, PyObject **kwargs)
     return 0;
 }
 
-Py_LOCAL(int)
+static int
 _PyObject_GetItemsIter(PyObject *obj, PyObject **listitems,
                        PyObject **dictitems)
 {
@@ -3972,49 +4210,86 @@ _PyObject_GetItemsIter(PyObject *obj, PyObject **listitems,
 }
 
 static PyObject *
-reduce_4(PyObject *obj)
+reduce_newobj(PyObject *obj)
 {
     PyObject *args = NULL, *kwargs = NULL;
     PyObject *copyreg;
     PyObject *newobj, *newargs, *state, *listitems, *dictitems;
     PyObject *result;
-    _Py_IDENTIFIER(__newobj_ex__);
+    int hasargs;
 
-    if (_PyObject_GetNewArguments(obj, &args, &kwargs) < 0) {
+    if (Py_TYPE(obj)->tp_new == NULL) {
+        PyErr_Format(PyExc_TypeError,
+                     "can't pickle %.200s objects",
+                     Py_TYPE(obj)->tp_name);
         return NULL;
     }
-    if (args == NULL) {
-        args = PyTuple_New(0);
-        if (args == NULL)
-            return NULL;
-    }
-    if (kwargs == NULL) {
-        kwargs = PyDict_New();
-        if (kwargs == NULL)
-            return NULL;
-    }
+    if (_PyObject_GetNewArguments(obj, &args, &kwargs) < 0)
+        return NULL;
 
     copyreg = import_copyreg();
     if (copyreg == NULL) {
+        Py_XDECREF(args);
+        Py_XDECREF(kwargs);
+        return NULL;
+    }
+    hasargs = (args != NULL);
+    if (kwargs == NULL || PyDict_Size(kwargs) == 0) {
+        _Py_IDENTIFIER(__newobj__);
+        PyObject *cls;
+        Py_ssize_t i, n;
+
+        Py_XDECREF(kwargs);
+        newobj = _PyObject_GetAttrId(copyreg, &PyId___newobj__);
+        Py_DECREF(copyreg);
+        if (newobj == NULL) {
+            Py_XDECREF(args);
+            return NULL;
+        }
+        n = args ? PyTuple_GET_SIZE(args) : 0;
+        newargs = PyTuple_New(n+1);
+        if (newargs == NULL) {
+            Py_XDECREF(args);
+            Py_DECREF(newobj);
+            return NULL;
+        }
+        cls = (PyObject *) Py_TYPE(obj);
+        Py_INCREF(cls);
+        PyTuple_SET_ITEM(newargs, 0, cls);
+        for (i = 0; i < n; i++) {
+            PyObject *v = PyTuple_GET_ITEM(args, i);
+            Py_INCREF(v);
+            PyTuple_SET_ITEM(newargs, i+1, v);
+        }
+        Py_XDECREF(args);
+    }
+    else if (args != NULL) {
+        _Py_IDENTIFIER(__newobj_ex__);
+
+        newobj = _PyObject_GetAttrId(copyreg, &PyId___newobj_ex__);
+        Py_DECREF(copyreg);
+        if (newobj == NULL) {
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+            return NULL;
+        }
+        newargs = PyTuple_Pack(3, Py_TYPE(obj), args, kwargs);
         Py_DECREF(args);
         Py_DECREF(kwargs);
-        return NULL;
+        if (newargs == NULL) {
+            Py_DECREF(newobj);
+            return NULL;
+        }
     }
-    newobj = _PyObject_GetAttrId(copyreg, &PyId___newobj_ex__);
-    Py_DECREF(copyreg);
-    if (newobj == NULL) {
-        Py_DECREF(args);
+    else {
+        /* args == NULL */
         Py_DECREF(kwargs);
+        PyErr_BadInternalCall();
         return NULL;
     }
-    newargs = PyTuple_Pack(3, Py_TYPE(obj), args, kwargs);
-    Py_DECREF(args);
-    Py_DECREF(kwargs);
-    if (newargs == NULL) {
-        Py_DECREF(newobj);
-        return NULL;
-    }
-    state = _PyObject_GetState(obj);
+
+    state = _PyObject_GetState(obj,
+                !hasargs && !PyList_Check(obj) && !PyDict_Check(obj));
     if (state == NULL) {
         Py_DECREF(newobj);
         Py_DECREF(newargs);
@@ -4036,85 +4311,12 @@ reduce_4(PyObject *obj)
     return result;
 }
 
-static PyObject *
-reduce_2(PyObject *obj)
-{
-    PyObject *cls;
-    PyObject *args = NULL, *args2 = NULL, *kwargs = NULL;
-    PyObject *state = NULL, *listitems = NULL, *dictitems = NULL;
-    PyObject *copyreg = NULL, *newobj = NULL, *res = NULL;
-    Py_ssize_t i, n;
-    _Py_IDENTIFIER(__newobj__);
-
-    if (_PyObject_GetNewArguments(obj, &args, &kwargs) < 0) {
-        return NULL;
-    }
-    if (args == NULL) {
-        assert(kwargs == NULL);
-        args = PyTuple_New(0);
-        if (args == NULL) {
-            return NULL;
-        }
-    }
-    else if (kwargs != NULL) {
-        if (PyDict_Size(kwargs) > 0) {
-            PyErr_SetString(PyExc_ValueError,
-                            "must use protocol 4 or greater to copy this "
-                            "object; since __getnewargs_ex__ returned "
-                            "keyword arguments.");
-            Py_DECREF(args);
-            Py_DECREF(kwargs);
-            return NULL;
-        }
-        Py_CLEAR(kwargs);
-    }
-
-    state = _PyObject_GetState(obj);
-    if (state == NULL)
-        goto end;
-
-    if (_PyObject_GetItemsIter(obj, &listitems, &dictitems) < 0)
-        goto end;
-
-    copyreg = import_copyreg();
-    if (copyreg == NULL)
-        goto end;
-    newobj = _PyObject_GetAttrId(copyreg, &PyId___newobj__);
-    if (newobj == NULL)
-        goto end;
-
-    n = PyTuple_GET_SIZE(args);
-    args2 = PyTuple_New(n+1);
-    if (args2 == NULL)
-        goto end;
-    cls = (PyObject *) Py_TYPE(obj);
-    Py_INCREF(cls);
-    PyTuple_SET_ITEM(args2, 0, cls);
-    for (i = 0; i < n; i++) {
-        PyObject *v = PyTuple_GET_ITEM(args, i);
-        Py_INCREF(v);
-        PyTuple_SET_ITEM(args2, i+1, v);
-    }
-
-    res = PyTuple_Pack(5, newobj, args2, state, listitems, dictitems);
-
-  end:
-    Py_XDECREF(args);
-    Py_XDECREF(args2);
-    Py_XDECREF(state);
-    Py_XDECREF(listitems);
-    Py_XDECREF(dictitems);
-    Py_XDECREF(copyreg);
-    Py_XDECREF(newobj);
-    return res;
-}
-
 /*
  * There were two problems when object.__reduce__ and object.__reduce_ex__
  * were implemented in the same function:
  *  - trying to pickle an object with a custom __reduce__ method that
  *    fell back to object.__reduce__ in certain circumstances led to
- *    infinite recursion at Python level and eventual RuntimeError.
+ *    infinite recursion at Python level and eventual RecursionError.
  *  - Pickling objects that lied about their type by overwriting the
  *    __class__ descriptor could lead to infinite recursion at C level
  *    and eventual segfault.
@@ -4129,10 +4331,8 @@ _common_reduce(PyObject *self, int proto)
 {
     PyObject *copyreg, *res;
 
-    if (proto >= 4)
-        return reduce_4(self);
-    else if (proto >= 2)
-        return reduce_2(self);
+    if (proto >= 2)
+        return reduce_newobj(self);
 
     copyreg = import_copyreg();
     if (!copyreg)
@@ -4214,13 +4414,18 @@ PyDoc_STRVAR(object_subclasshook_doc,
 "NotImplemented, the normal algorithm is used.  Otherwise, it\n"
 "overrides the normal algorithm (and the outcome is cached).\n");
 
-/*
-   from PEP 3101, this code implements:
+static PyObject *
+object_init_subclass(PyObject *cls, PyObject *arg)
+{
+    Py_RETURN_NONE;
+}
 
-   class object:
-       def __format__(self, format_spec):
-       return format(str(self), format_spec)
-*/
+PyDoc_STRVAR(object_init_subclass_doc,
+"This method is called when a class is subclassed.\n"
+"\n"
+"The default implementation does nothing. It may be\n"
+"overridden to extend subclasses.\n");
+
 static PyObject *
 object_format(PyObject *self, PyObject *args)
 {
@@ -4231,22 +4436,19 @@ object_format(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "U:__format__", &format_spec))
         return NULL;
 
+    /* Issue 7994: If we're converting to a string, we
+       should reject format specifications */
+    if (PyUnicode_GET_LENGTH(format_spec) > 0) {
+        PyErr_Format(PyExc_TypeError,
+                     "unsupported format string passed to %.200s.__format__",
+                     self->ob_type->tp_name);
+        return NULL;
+    }
     self_as_str = PyObject_Str(self);
     if (self_as_str != NULL) {
-        /* Issue 7994: If we're converting to a string, we
-           should reject format specifications */
-        if (PyUnicode_GET_LENGTH(format_spec) > 0) {
-            PyErr_SetString(PyExc_TypeError,
-               "non-empty format string passed to object.__format__");
-            goto done;
-        }
-
         result = PyObject_Format(self_as_str, format_spec);
+        Py_DECREF(self_as_str);
     }
-
-done:
-    Py_XDECREF(self_as_str);
-
     return result;
 }
 
@@ -4258,7 +4460,7 @@ object_sizeof(PyObject *self, PyObject *args)
     res = 0;
     isize = self->ob_type->tp_itemsize;
     if (isize > 0)
-        res = Py_SIZE(self->ob_type) * isize;
+        res = Py_SIZE(self) * isize;
     res += self->ob_type->tp_basicsize;
 
     return PyLong_FromSsize_t(res);
@@ -4318,6 +4520,8 @@ static PyMethodDef object_methods[] = {
      PyDoc_STR("helper for pickle")},
     {"__subclasshook__", object_subclasshook, METH_CLASS | METH_VARARGS,
      object_subclasshook_doc},
+    {"__init_subclass__", object_init_subclass, METH_CLASS | METH_NOARGS,
+     object_init_subclass_doc},
     {"__format__", object_format, METH_VARARGS,
      PyDoc_STR("default object formatter")},
     {"__sizeof__", object_sizeof, METH_NOARGS,
@@ -4424,8 +4628,10 @@ add_members(PyTypeObject *type, PyMemberDef *memb)
         descr = PyDescr_NewMember(type, memb);
         if (descr == NULL)
             return -1;
-        if (PyDict_SetItemString(dict, memb->name, descr) < 0)
+        if (PyDict_SetItemString(dict, memb->name, descr) < 0) {
+            Py_DECREF(descr);
             return -1;
+        }
         Py_DECREF(descr);
     }
     return 0;
@@ -4444,8 +4650,10 @@ add_getset(PyTypeObject *type, PyGetSetDef *gsp)
 
         if (descr == NULL)
             return -1;
-        if (PyDict_SetItemString(dict, gsp->name, descr) < 0)
+        if (PyDict_SetItemString(dict, gsp->name, descr) < 0) {
+            Py_DECREF(descr);
             return -1;
+        }
         Py_DECREF(descr);
     }
     return 0;
@@ -4547,6 +4755,7 @@ inherit_slots(PyTypeObject *type, PyTypeObject *base)
 #define COPYSLOT(SLOT) \
     if (!type->SLOT && SLOTDEFINED(SLOT)) type->SLOT = base->SLOT
 
+#define COPYASYNC(SLOT) COPYSLOT(tp_as_async->SLOT)
 #define COPYNUM(SLOT) COPYSLOT(tp_as_number->SLOT)
 #define COPYSEQ(SLOT) COPYSLOT(tp_as_sequence->SLOT)
 #define COPYMAP(SLOT) COPYSLOT(tp_as_mapping->SLOT)
@@ -4592,6 +4801,17 @@ inherit_slots(PyTypeObject *type, PyTypeObject *base)
         COPYNUM(nb_inplace_true_divide);
         COPYNUM(nb_inplace_floor_divide);
         COPYNUM(nb_index);
+        COPYNUM(nb_matrix_multiply);
+        COPYNUM(nb_inplace_matrix_multiply);
+    }
+
+    if (type->tp_as_async != NULL && base->tp_as_async != NULL) {
+        basebase = base->tp_base;
+        if (basebase->tp_as_async == NULL)
+            basebase = NULL;
+        COPYASYNC(am_await);
+        COPYASYNC(am_aiter);
+        COPYASYNC(am_anext);
     }
 
     if (type->tp_as_sequence != NULL && base->tp_as_sequence != NULL) {
@@ -4713,6 +4933,12 @@ PyType_Ready(PyTypeObject *type)
      */
     _Py_AddToAllObjects((PyObject *)type, 0);
 #endif
+
+    if (type->tp_name == NULL) {
+        PyErr_Format(PyExc_SystemError,
+                     "Type does not define the tp_name field.");
+        goto error;
+    }
 
     /* Initialize tp_base (defaults to BaseObject unless that's us) */
     base = type->tp_base;
@@ -4863,6 +5089,8 @@ PyType_Ready(PyTypeObject *type)
     /* Some more special stuff */
     base = type->tp_base;
     if (base != NULL) {
+        if (type->tp_as_async == NULL)
+            type->tp_as_async = base->tp_as_async;
         if (type->tp_as_number == NULL)
             type->tp_as_number = base->tp_as_number;
         if (type->tp_as_sequence == NULL)
@@ -4881,16 +5109,6 @@ PyType_Ready(PyTypeObject *type)
         if (PyType_Check(b) &&
             add_subclass((PyTypeObject *)b, type) < 0)
             goto error;
-    }
-
-    /* Warn for a type that implements tp_compare (now known as
-       tp_reserved) but not tp_richcompare. */
-    if (type->tp_reserved && !type->tp_richcompare) {
-        PyErr_Format(PyExc_TypeError,
-            "Type %.100s defines tp_reserved (formerly tp_compare) "
-            "but not tp_richcompare. Comparisons may not behave as intended.",
-            type->tp_name);
-        goto error;
     }
 
     /* All done -- set the ready flag */
@@ -5255,7 +5473,7 @@ wrap_delitem(PyObject *self, PyObject *args, void *wrapped)
 /* Helper to check for object.__setattr__ or __delattr__ applied to a type.
    This is called the Carlo Verre hack after its discoverer. */
 static int
-hackcheck(PyObject *self, setattrofunc func, char *what)
+hackcheck(PyObject *self, setattrofunc func, const char *what)
 {
     PyTypeObject *type = Py_TYPE(self);
     while (type && type->tp_flags & Py_TPFLAGS_HEAPTYPE)
@@ -5542,7 +5760,7 @@ static PyObject * \
 FUNCNAME(PyObject *self) \
 { \
     _Py_static_string(id, OPSTR); \
-    return call_method(self, &id, "()"); \
+    return call_method(self, &id, NULL); \
 }
 
 #define SLOT1(FUNCNAME, OPSTR, ARG1TYPE, ARGCODES) \
@@ -5635,7 +5853,7 @@ FUNCNAME(PyObject *self, ARG1TYPE arg1, ARG2TYPE arg2) \
 static Py_ssize_t
 slot_sq_length(PyObject *self)
 {
-    PyObject *res = call_method(self, &PyId___len__, "()");
+    PyObject *res = call_method(self, &PyId___len__, NULL);
     Py_ssize_t len;
 
     if (res == NULL)
@@ -5656,38 +5874,39 @@ slot_sq_length(PyObject *self)
 static PyObject *
 slot_sq_item(PyObject *self, Py_ssize_t i)
 {
-    PyObject *func, *args = NULL, *ival = NULL, *retval = NULL;
+    PyObject *func, *ival = NULL, *retval = NULL;
     descrgetfunc f;
 
     func = _PyType_LookupId(Py_TYPE(self), &PyId___getitem__);
-    if (func != NULL) {
-        if ((f = Py_TYPE(func)->tp_descr_get) == NULL)
-            Py_INCREF(func);
-        else {
-            func = f(func, self, (PyObject *)(Py_TYPE(self)));
-            if (func == NULL) {
-                return NULL;
-            }
-        }
-        ival = PyLong_FromSsize_t(i);
-        if (ival != NULL) {
-            args = PyTuple_New(1);
-            if (args != NULL) {
-                PyTuple_SET_ITEM(args, 0, ival);
-                retval = PyObject_Call(func, args, NULL);
-                Py_XDECREF(args);
-                Py_XDECREF(func);
-                return retval;
-            }
-        }
-    }
-    else {
+    if (func == NULL) {
         PyObject *getitem_str = _PyUnicode_FromId(&PyId___getitem__);
         PyErr_SetObject(PyExc_AttributeError, getitem_str);
+        return NULL;
     }
-    Py_XDECREF(args);
-    Py_XDECREF(ival);
-    Py_XDECREF(func);
+
+    f = Py_TYPE(func)->tp_descr_get;
+    if (f == NULL) {
+        Py_INCREF(func);
+    }
+    else {
+        func = f(func, self, (PyObject *)(Py_TYPE(self)));
+        if (func == NULL) {
+            return NULL;
+        }
+    }
+
+    ival = PyLong_FromSsize_t(i);
+    if (ival == NULL) {
+        goto error;
+    }
+
+    retval = _PyObject_CallArg1(func, ival);
+    Py_DECREF(func);
+    Py_DECREF(ival);
+    return retval;
+
+error:
+    Py_DECREF(func);
     return NULL;
 }
 
@@ -5709,19 +5928,20 @@ slot_sq_ass_item(PyObject *self, Py_ssize_t index, PyObject *value)
 static int
 slot_sq_contains(PyObject *self, PyObject *value)
 {
-    PyObject *func, *res, *args;
+    PyObject *func, *res;
     int result = -1;
     _Py_IDENTIFIER(__contains__);
 
     func = lookup_maybe(self, &PyId___contains__);
+    if (func == Py_None) {
+        Py_DECREF(func);
+        PyErr_Format(PyExc_TypeError,
+                     "'%.200s' object is not a container",
+                     Py_TYPE(self)->tp_name);
+        return -1;
+    }
     if (func != NULL) {
-        args = PyTuple_Pack(1, value);
-        if (args == NULL)
-            res = NULL;
-        else {
-            res = PyObject_Call(func, args, NULL);
-            Py_DECREF(args);
-        }
+        res = _PyObject_CallArg1(func, value);
         Py_DECREF(func);
         if (res != NULL) {
             result = PyObject_IsTrue(res);
@@ -5759,6 +5979,7 @@ slot_mp_ass_subscript(PyObject *self, PyObject *key, PyObject *value)
 SLOT1BIN(slot_nb_add, nb_add, "__add__", "__radd__")
 SLOT1BIN(slot_nb_subtract, nb_subtract, "__sub__", "__rsub__")
 SLOT1BIN(slot_nb_multiply, nb_multiply, "__mul__", "__rmul__")
+SLOT1BIN(slot_nb_matrix_multiply, nb_matrix_multiply, "__matmul__", "__rmatmul__")
 SLOT1BIN(slot_nb_remainder, nb_remainder, "__mod__", "__rmod__")
 SLOT1BIN(slot_nb_divmod, nb_divmod, "__divmod__", "__rdivmod__")
 
@@ -5791,44 +6012,54 @@ SLOT0(slot_nb_absolute, "__abs__")
 static int
 slot_nb_bool(PyObject *self)
 {
-    PyObject *func, *args;
-    int result = -1;
+    PyObject *func, *value;
+    int result;
     int using_len = 0;
     _Py_IDENTIFIER(__bool__);
 
     func = lookup_maybe(self, &PyId___bool__);
     if (func == NULL) {
-        if (PyErr_Occurred())
+        if (PyErr_Occurred()) {
             return -1;
+        }
+
         func = lookup_maybe(self, &PyId___len__);
-        if (func == NULL)
-            return PyErr_Occurred() ? -1 : 1;
+        if (func == NULL) {
+            if (PyErr_Occurred()) {
+                return -1;
+            }
+            return 1;
+        }
         using_len = 1;
     }
-    args = PyTuple_New(0);
-    if (args != NULL) {
-        PyObject *temp = PyObject_Call(func, args, NULL);
-        Py_DECREF(args);
-        if (temp != NULL) {
-            if (using_len) {
-                /* enforced by slot_nb_len */
-                result = PyObject_IsTrue(temp);
-            }
-            else if (PyBool_Check(temp)) {
-                result = PyObject_IsTrue(temp);
-            }
-            else {
-                PyErr_Format(PyExc_TypeError,
-                             "__bool__ should return "
-                             "bool, returned %s",
-                             Py_TYPE(temp)->tp_name);
-                result = -1;
-            }
-            Py_DECREF(temp);
-        }
+
+    value = _PyObject_CallNoArg(func);
+    if (value == NULL) {
+        goto error;
     }
+
+    if (using_len) {
+        /* bool type enforced by slot_nb_len */
+        result = PyObject_IsTrue(value);
+    }
+    else if (PyBool_Check(value)) {
+        result = PyObject_IsTrue(value);
+    }
+    else {
+        PyErr_Format(PyExc_TypeError,
+                     "__bool__ should return "
+                     "bool, returned %s",
+                     Py_TYPE(value)->tp_name);
+        result = -1;
+    }
+
+    Py_DECREF(value);
     Py_DECREF(func);
     return result;
+
+error:
+    Py_DECREF(func);
+    return -1;
 }
 
 
@@ -5836,7 +6067,7 @@ static PyObject *
 slot_nb_index(PyObject *self)
 {
     _Py_IDENTIFIER(__index__);
-    return call_method(self, &PyId___index__, "()");
+    return call_method(self, &PyId___index__, NULL);
 }
 
 
@@ -5852,6 +6083,7 @@ SLOT0(slot_nb_float, "__float__")
 SLOT1(slot_nb_inplace_add, "__iadd__", PyObject *, "O")
 SLOT1(slot_nb_inplace_subtract, "__isub__", PyObject *, "O")
 SLOT1(slot_nb_inplace_multiply, "__imul__", PyObject *, "O")
+SLOT1(slot_nb_inplace_matrix_multiply, "__imatmul__", PyObject *, "O")
 SLOT1(slot_nb_inplace_remainder, "__imod__", PyObject *, "O")
 /* Can't use SLOT1 here, because nb_inplace_power is ternary */
 static PyObject *
@@ -6072,20 +6304,14 @@ static _Py_Identifier name_op[] = {
 static PyObject *
 slot_tp_richcompare(PyObject *self, PyObject *other, int op)
 {
-    PyObject *func, *args, *res;
+    PyObject *func, *res;
 
     func = lookup_method(self, &name_op[op]);
     if (func == NULL) {
         PyErr_Clear();
         Py_RETURN_NOTIMPLEMENTED;
     }
-    args = PyTuple_Pack(1, other);
-    if (args == NULL)
-        res = NULL;
-    else {
-        res = PyObject_Call(func, args, NULL);
-        Py_DECREF(args);
-    }
+    res = _PyObject_CallArg1(func, other);
     Py_DECREF(func);
     return res;
 }
@@ -6097,16 +6323,20 @@ slot_tp_iter(PyObject *self)
     _Py_IDENTIFIER(__iter__);
 
     func = lookup_method(self, &PyId___iter__);
+    if (func == Py_None) {
+        Py_DECREF(func);
+        PyErr_Format(PyExc_TypeError,
+                     "'%.200s' object is not iterable",
+                     Py_TYPE(self)->tp_name);
+        return NULL;
+    }
+
     if (func != NULL) {
-        PyObject *args;
-        args = res = PyTuple_New(0);
-        if (args != NULL) {
-            res = PyObject_Call(func, args, NULL);
-            Py_DECREF(args);
-        }
+        res = _PyObject_CallNoArg(func);
         Py_DECREF(func);
         return res;
     }
+
     PyErr_Clear();
     func = lookup_method(self, &PyId___getitem__);
     if (func == NULL) {
@@ -6123,7 +6353,7 @@ static PyObject *
 slot_tp_iternext(PyObject *self)
 {
     _Py_IDENTIFIER(__next__);
-    return call_method(self, &PyId___next__, "()");
+    return call_method(self, &PyId___next__, NULL);
 }
 
 static PyObject *
@@ -6192,29 +6422,16 @@ slot_tp_init(PyObject *self, PyObject *args, PyObject *kwds)
 static PyObject *
 slot_tp_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-    PyObject *func;
-    PyObject *newargs, *x;
-    Py_ssize_t i, n;
+    PyObject *func, *result;
 
     func = _PyObject_GetAttrId((PyObject *)type, &PyId___new__);
-    if (func == NULL)
+    if (func == NULL) {
         return NULL;
-    assert(PyTuple_Check(args));
-    n = PyTuple_GET_SIZE(args);
-    newargs = PyTuple_New(n+1);
-    if (newargs == NULL)
-        return NULL;
-    Py_INCREF(type);
-    PyTuple_SET_ITEM(newargs, 0, (PyObject *)type);
-    for (i = 0; i < n; i++) {
-        x = PyTuple_GET_ITEM(args, i);
-        Py_INCREF(x);
-        PyTuple_SET_ITEM(newargs, i+1, x);
     }
-    x = PyObject_Call(func, newargs, kwds);
-    Py_DECREF(newargs);
+
+    result = _PyObject_Call_Prepend(func, (PyObject *)type, args, kwds);
     Py_DECREF(func);
-    return x;
+    return result;
 }
 
 static void
@@ -6242,6 +6459,59 @@ slot_tp_finalize(PyObject *self)
     PyErr_Restore(error_type, error_value, error_traceback);
 }
 
+static PyObject *
+slot_am_await(PyObject *self)
+{
+    PyObject *func, *res;
+    _Py_IDENTIFIER(__await__);
+
+    func = lookup_method(self, &PyId___await__);
+    if (func != NULL) {
+        res = PyEval_CallObject(func, NULL);
+        Py_DECREF(func);
+        return res;
+    }
+    PyErr_Format(PyExc_AttributeError,
+                 "object %.50s does not have __await__ method",
+                 Py_TYPE(self)->tp_name);
+    return NULL;
+}
+
+static PyObject *
+slot_am_aiter(PyObject *self)
+{
+    PyObject *func, *res;
+    _Py_IDENTIFIER(__aiter__);
+
+    func = lookup_method(self, &PyId___aiter__);
+    if (func != NULL) {
+        res = PyEval_CallObject(func, NULL);
+        Py_DECREF(func);
+        return res;
+    }
+    PyErr_Format(PyExc_AttributeError,
+                 "object %.50s does not have __aiter__ method",
+                 Py_TYPE(self)->tp_name);
+    return NULL;
+}
+
+static PyObject *
+slot_am_anext(PyObject *self)
+{
+    PyObject *func, *res;
+    _Py_IDENTIFIER(__anext__);
+
+    func = lookup_method(self, &PyId___anext__);
+    if (func != NULL) {
+        res = PyEval_CallObject(func, NULL);
+        Py_DECREF(func);
+        return res;
+    }
+    PyErr_Format(PyExc_AttributeError,
+                 "object %.50s does not have __anext__ method",
+                 Py_TYPE(self)->tp_name);
+    return NULL;
+}
 
 /*
 Table mapping __foo__ names to tp_foo offsets and slot_tp_foo wrapper functions.
@@ -6258,6 +6528,7 @@ typedef struct wrapperbase slotdef;
 
 #undef TPSLOT
 #undef FLSLOT
+#undef AMSLOT
 #undef ETSLOT
 #undef SQSLOT
 #undef MPSLOT
@@ -6276,6 +6547,8 @@ typedef struct wrapperbase slotdef;
 #define ETSLOT(NAME, SLOT, FUNCTION, WRAPPER, DOC) \
     {NAME, offsetof(PyHeapTypeObject, SLOT), (void *)(FUNCTION), WRAPPER, \
      PyDoc_STR(DOC)}
+#define AMSLOT(NAME, SLOT, FUNCTION, WRAPPER, DOC) \
+    ETSLOT(NAME, as_async.SLOT, FUNCTION, WRAPPER, DOC)
 #define SQSLOT(NAME, SLOT, FUNCTION, WRAPPER, DOC) \
     ETSLOT(NAME, as_sequence.SLOT, FUNCTION, WRAPPER, DOC)
 #define MPSLOT(NAME, SLOT, FUNCTION, WRAPPER, DOC) \
@@ -6355,6 +6628,13 @@ static slotdef slotdefs[] = {
            "Create and return new object.  See help(type) for accurate signature."),
     TPSLOT("__del__", tp_finalize, slot_tp_finalize, (wrapperfunc)wrap_del, ""),
 
+    AMSLOT("__await__", am_await, slot_am_await, wrap_unaryfunc,
+           "__await__($self, /)\n--\n\nReturn an iterator to be used in await expression."),
+    AMSLOT("__aiter__", am_aiter, slot_am_aiter, wrap_unaryfunc,
+           "__aiter__($self, /)\n--\n\nReturn an awaitable, that resolves in asynchronous iterator."),
+    AMSLOT("__anext__", am_anext, slot_am_anext, wrap_unaryfunc,
+           "__anext__($self, /)\n--\n\nReturn a value or raise StopAsyncIteration."),
+
     BINSLOT("__add__", nb_add, slot_nb_add,
            "+"),
     RBINSLOT("__radd__", nb_add, slot_nb_add,
@@ -6432,6 +6712,12 @@ static slotdef slotdefs[] = {
            "__index__($self, /)\n--\n\n"
            "Return self converted to an integer, if self is suitable "
            "for use as an index into a list."),
+    BINSLOT("__matmul__", nb_matrix_multiply, slot_nb_matrix_multiply,
+            "@"),
+    RBINSLOT("__rmatmul__", nb_matrix_multiply, slot_nb_matrix_multiply,
+             "@"),
+    IBSLOT("__imatmul__", nb_inplace_matrix_multiply, slot_nb_inplace_matrix_multiply,
+           wrap_binaryfunc, "@="),
     MPSLOT("__len__", mp_length, slot_mp_length, wrap_lenfunc,
            "__len__($self, /)\n--\n\nReturn len(self)."),
     MPSLOT("__getitem__", mp_subscript, slot_mp_subscript,
@@ -6500,6 +6786,10 @@ slotptr(PyTypeObject *type, int ioffset)
     else if ((size_t)offset >= offsetof(PyHeapTypeObject, as_number)) {
         ptr = (char *)type->tp_as_number;
         offset -= offsetof(PyHeapTypeObject, as_number);
+    }
+    else if ((size_t)offset >= offsetof(PyHeapTypeObject, as_async)) {
+        ptr = (char *)type->tp_as_async;
+        offset -= offsetof(PyHeapTypeObject, as_async);
     }
     else {
         ptr = (char *)type;
@@ -6652,24 +6942,34 @@ update_slots_callback(PyTypeObject *type, void *data)
     return 0;
 }
 
+static int slotdefs_initialized = 0;
 /* Initialize the slotdefs table by adding interned string objects for the
-   names and sorting the entries. */
+   names. */
 static void
 init_slotdefs(void)
 {
     slotdef *p;
-    static int initialized = 0;
 
-    if (initialized)
+    if (slotdefs_initialized)
         return;
     for (p = slotdefs; p->name; p++) {
         /* Slots must be ordered by their offset in the PyHeapTypeObject. */
         assert(!p[1].name || p->offset <= p[1].offset);
         p->name_strobj = PyUnicode_InternFromString(p->name);
-        if (!p->name_strobj)
+        if (!p->name_strobj || !PyUnicode_CHECK_INTERNED(p->name_strobj))
             Py_FatalError("Out of memory interning slotdef names");
     }
-    initialized = 1;
+    slotdefs_initialized = 1;
+}
+
+/* Undo init_slotdefs, releasing the interned strings. */
+static void clear_slotdefs(void)
+{
+    slotdef *p;
+    for (p = slotdefs; p->name; p++) {
+        Py_CLEAR(p->name_strobj);
+    }
+    slotdefs_initialized = 0;
 }
 
 /* Update the slots after assignment to a class (type) attribute. */
@@ -6681,6 +6981,9 @@ update_slot(PyTypeObject *type, PyObject *name)
     slotdef **pp;
     int offset;
 
+    assert(PyUnicode_CheckExact(name));
+    assert(PyUnicode_CHECK_INTERNED(name));
+
     /* Clear the VALID_VERSION flag of 'type' and all its
        subclasses.  This could possibly be unified with the
        update_subclasses() recursion below, but carefully:
@@ -6691,7 +6994,6 @@ update_slot(PyTypeObject *type, PyObject *name)
     init_slotdefs();
     pp = ptrs;
     for (p = slotdefs; p->name; p++) {
-        /* XXX assume name is interned! */
         if (p->name_strobj == name)
             *pp++ = p;
     }
@@ -6732,6 +7034,72 @@ update_all_slots(PyTypeObject* type)
         /* update_slot returns int but can't actually fail */
         update_slot(type, p->name_strobj);
     }
+}
+
+/* Call __set_name__ on all descriptors in a newly generated type */
+static int
+set_names(PyTypeObject *type)
+{
+    PyObject *names_to_set, *key, *value, *set_name, *tmp;
+    Py_ssize_t i = 0;
+
+    names_to_set = PyDict_Copy(type->tp_dict);
+    if (names_to_set == NULL)
+        return -1;
+
+    while (PyDict_Next(names_to_set, &i, &key, &value)) {
+        set_name = lookup_maybe(value, &PyId___set_name__);
+        if (set_name != NULL) {
+            tmp = PyObject_CallFunctionObjArgs(set_name, type, key, NULL);
+            Py_DECREF(set_name);
+            if (tmp == NULL) {
+                _PyErr_FormatFromCause(PyExc_RuntimeError,
+                    "Error calling __set_name__ on '%.100s' instance %R "
+                    "in '%.100s'",
+                    value->ob_type->tp_name, key, type->tp_name);
+                Py_DECREF(names_to_set);
+                return -1;
+            }
+            else
+                Py_DECREF(tmp);
+        }
+        else if (PyErr_Occurred()) {
+            Py_DECREF(names_to_set);
+            return -1;
+        }
+    }
+
+    Py_DECREF(names_to_set);
+    return 0;
+}
+
+/* Call __init_subclass__ on the parent of a newly generated type */
+static int
+init_subclass(PyTypeObject *type, PyObject *kwds)
+{
+    PyObject *super, *func, *result;
+    PyObject *args[2] = {(PyObject *)type, (PyObject *)type};
+
+    super = _PyObject_FastCall((PyObject *)&PySuper_Type, args, 2);
+    if (super == NULL) {
+        return -1;
+    }
+
+    func = _PyObject_GetAttrId(super, &PyId___init_subclass__);
+    Py_DECREF(super);
+    if (func == NULL) {
+        return -1;
+    }
+
+
+    result = _PyObject_FastCallDict(func, NULL, 0, kwds);
+    Py_DECREF(func);
+    if (result == NULL) {
+        return -1;
+    }
+
+    Py_DECREF(result);
+    return 0;
 }
 
 /* recurse_down_subclasses() and update_subclasses() are mutually
@@ -6836,8 +7204,10 @@ add_operators(PyTypeObject *type)
             descr = PyDescr_NewWrapper(type, p, *ptr);
             if (descr == NULL)
                 return -1;
-            if (PyDict_SetItem(dict, p->name_strobj, descr) < 0)
+            if (PyDict_SetItem(dict, p->name_strobj, descr) < 0) {
+                Py_DECREF(descr);
                 return -1;
+            }
             Py_DECREF(descr);
         }
     }
@@ -6912,7 +7282,7 @@ super_getattro(PyObject *self, PyObject *name)
        (i.e. super, or a subclass), not the class of su->obj. */
     if (PyUnicode_Check(name) &&
         PyUnicode_GET_LENGTH(name) == 9 &&
-        _PyUnicode_CompareWithId(name, &PyId___class__) == 0)
+        _PyUnicode_EqualToASCIIId(name, &PyId___class__))
         goto skip;
 
     mro = starttype->tp_mro;
@@ -7124,7 +7494,7 @@ super_init(PyObject *self, PyObject *args, PyObject *kwds)
         for (i = 0; i < n; i++) {
             PyObject *name = PyTuple_GET_ITEM(co->co_freevars, i);
             assert(PyUnicode_Check(name));
-            if (!_PyUnicode_CompareWithId(name, &PyId___class__)) {
+            if (_PyUnicode_EqualToASCIIId(name, &PyId___class__)) {
                 Py_ssize_t index = co->co_nlocals +
                     PyTuple_GET_SIZE(co->co_cellvars) + i;
                 PyObject *cell = f->f_localsplus[index];
@@ -7164,9 +7534,9 @@ super_init(PyObject *self, PyObject *args, PyObject *kwds)
         Py_INCREF(obj);
     }
     Py_INCREF(type);
-    su->type = type;
-    su->obj = obj;
-    su->obj_type = obj_type;
+    Py_XSETREF(su->type, type);
+    Py_XSETREF(su->obj, obj);
+    Py_XSETREF(su->obj_type, obj_type);
     return 0;
 }
 

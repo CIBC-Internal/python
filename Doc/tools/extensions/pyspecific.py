@@ -15,14 +15,15 @@ from os import path
 from time import asctime
 from pprint import pformat
 from docutils.io import StringOutput
+from docutils.parsers.rst import Directive
 from docutils.utils import new_document
 
 from docutils import nodes, utils
 
 from sphinx import addnodes
 from sphinx.builders import Builder
+from sphinx.locale import translators
 from sphinx.util.nodes import split_explicit_title
-from sphinx.util.compat import Directive
 from sphinx.writers.html import HTMLTranslator
 from sphinx.writers.text import TextWriter
 from sphinx.writers.latex import LaTeXTranslator
@@ -34,7 +35,7 @@ import suspicious
 
 
 ISSUE_URI = 'https://bugs.python.org/issue%s'
-SOURCE_URI = 'https://hg.python.org/cpython/file/3.4/%s'
+SOURCE_URI = 'https://github.com/python/cpython/tree/3.6/%s'
 
 # monkey-patch reST parser to disable alphabetic and roman enumerated lists
 from docutils.parsers.rst.states import Body
@@ -79,7 +80,7 @@ LaTeXTranslator.depart_literal_block = new_depart_literal_block
 
 def issue_role(typ, rawtext, text, lineno, inliner, options={}, content=[]):
     issue = utils.unescape(text)
-    text = 'issue ' + issue
+    text = 'bpo-' + issue
     refnode = nodes.reference(text, text, refuri=ISSUE_URI % issue)
     return [refnode], []
 
@@ -103,16 +104,25 @@ class ImplementationDetail(Directive):
     optional_arguments = 1
     final_argument_whitespace = True
 
+    # This text is copied to templates/dummy.html
+    label_text = 'CPython implementation detail:'
+
     def run(self):
         pnode = nodes.compound(classes=['impl-detail'])
+        label = translators['sphinx'].gettext(self.label_text)
         content = self.content
-        add_text = nodes.strong('CPython implementation detail:',
-                                'CPython implementation detail:')
+        add_text = nodes.strong(label, label)
         if self.arguments:
             n, m = self.state.inline_text(self.arguments[0], self.lineno)
             pnode.append(nodes.paragraph('', '', *(n + m)))
         self.state.nested_parse(content, self.content_offset, pnode)
         if pnode.children and isinstance(pnode[0], nodes.paragraph):
+            content = nodes.inline(pnode[0].rawsource, translatable=True)
+            content.source = pnode[0].source
+            content.line = pnode[0].line
+            content += pnode[0].children
+            pnode[0].replace_self(nodes.paragraph('', '', content,
+                                                  translatable=False))
             pnode[0].insert(0, add_text)
             pnode[0].insert(1, nodes.Text(' '))
         else:
@@ -140,6 +150,38 @@ class PyDecoratorFunction(PyDecoratorMixin, PyModulelevel):
 
 
 class PyDecoratorMethod(PyDecoratorMixin, PyClassmember):
+    def run(self):
+        self.name = 'py:method'
+        return PyClassmember.run(self)
+
+
+class PyCoroutineMixin(object):
+    def handle_signature(self, sig, signode):
+        ret = super(PyCoroutineMixin, self).handle_signature(sig, signode)
+        signode.insert(0, addnodes.desc_annotation('coroutine ', 'coroutine '))
+        return ret
+
+
+class PyCoroutineFunction(PyCoroutineMixin, PyModulelevel):
+    def run(self):
+        self.name = 'py:function'
+        return PyModulelevel.run(self)
+
+
+class PyCoroutineMethod(PyCoroutineMixin, PyClassmember):
+    def run(self):
+        self.name = 'py:method'
+        return PyClassmember.run(self)
+
+
+class PyAbstractMethod(PyClassmember):
+
+    def handle_signature(self, sig, signode):
+        ret = super(PyAbstractMethod, self).handle_signature(sig, signode)
+        signode.insert(0, addnodes.desc_annotation('abstractmethod ',
+                                                   'abstractmethod '))
+        return ret
+
     def run(self):
         self.name = 'py:method'
         return PyClassmember.run(self)
@@ -193,7 +235,7 @@ class DeprecatedRemoved(Directive):
 
 # Support for including Misc/NEWS
 
-issue_re = re.compile('([Ii])ssue #([0-9]+)')
+issue_re = re.compile('(?:[Ii]ssue #|bpo-)([0-9]+)')
 whatsnew_re = re.compile(r"(?im)^what's new in (.*?)\??$")
 
 
@@ -221,7 +263,7 @@ class MiscNews(Directive):
             text = 'The NEWS file is not available.'
             node = nodes.strong(text, text)
             return [node]
-        content = issue_re.sub(r'`\1ssue #\2 <https://bugs.python.org/\2>`__',
+        content = issue_re.sub(r'`bpo-\1 <https://bugs.python.org/issue\1>`__',
                                content)
         content = whatsnew_re.sub(r'\1', content)
         # remove first 3 lines as they are the main heading
@@ -347,5 +389,8 @@ def setup(app):
     app.add_description_unit('2to3fixer', '2to3fixer', '%s (2to3 fixer)')
     app.add_directive_to_domain('py', 'decorator', PyDecoratorFunction)
     app.add_directive_to_domain('py', 'decoratormethod', PyDecoratorMethod)
+    app.add_directive_to_domain('py', 'coroutinefunction', PyCoroutineFunction)
+    app.add_directive_to_domain('py', 'coroutinemethod', PyCoroutineMethod)
+    app.add_directive_to_domain('py', 'abstractmethod', PyAbstractMethod)
     app.add_directive('miscnews', MiscNews)
     return {'version': '1.0', 'parallel_read_safe': True}

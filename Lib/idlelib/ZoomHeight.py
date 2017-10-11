@@ -1,17 +1,12 @@
-# Sample extension: zoom a window to maximum height
+"Zoom a window to maximum height."
 
 import re
 import sys
 
-from idlelib import macosxSupport
+from idlelib import macosx
+
 
 class ZoomHeight:
-
-    menudefs = [
-        ('windows', [
-            ('_Zoom Height', '<<zoom-height>>'),
-         ])
-    ]
 
     def __init__(self, editwin):
         self.editwin = editwin
@@ -19,6 +14,8 @@ class ZoomHeight:
     def zoom_height_event(self, event):
         top = self.editwin.top
         zoom_height(top)
+        return "break"
+
 
 def zoom_height(top):
     geom = top.wm_geometry()
@@ -32,7 +29,7 @@ def zoom_height(top):
         newy = 0
         newheight = newheight - 72
 
-    elif macosxSupport.isAquaTk():
+    elif macosx.isAquaTk():
         # The '88' below is a magic number that avoids placing the bottom
         # of the window below the panel on my machine. I don't know how
         # to calculate the correct value for this with tkinter.

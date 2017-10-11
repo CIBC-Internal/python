@@ -65,37 +65,56 @@ void ffi_prep_args(char *stack, extended_cif *ecif)
 	argp = (char *) ALIGN(argp, sizeof(void *));
 
       z = (*p_arg)->size;
-      if (z < sizeof(int))
+      if (z < sizeof(intptr_t))
 	{
-	  z = sizeof(int);
+	  z = sizeof(intptr_t);
 	  switch ((*p_arg)->type)
 	    {
 	    case FFI_TYPE_SINT8:
-	      *(signed int *) argp = (signed int)*(SINT8 *)(* p_argv);
+	      *(intptr_t *) argp = (intptr_t)*(SINT8 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_UINT8:
-	      *(unsigned int *) argp = (unsigned int)*(UINT8 *)(* p_argv);
+	      *(uintptr_t *) argp = (uintptr_t)*(UINT8 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_SINT16:
-	      *(signed int *) argp = (signed int)*(SINT16 *)(* p_argv);
+	      *(intptr_t *) argp = (intptr_t)*(SINT16 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_UINT16:
-	      *(unsigned int *) argp = (unsigned int)*(UINT16 *)(* p_argv);
+	      *(uintptr_t *) argp = (uintptr_t)*(UINT16 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_SINT32:
-	      *(signed int *) argp = (signed int)*(SINT32 *)(* p_argv);
+	      *(intptr_t *) argp = (intptr_t)*(SINT32 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_UINT32:
-	      *(unsigned int *) argp = (unsigned int)*(UINT32 *)(* p_argv);
+	      *(uintptr_t *) argp = (uintptr_t)*(UINT32 *)(* p_argv);
+	      break;
+
+	    case FFI_TYPE_FLOAT:
+	      *(uintptr_t *) argp = 0;
+	      *(float *) argp = *(float *)(* p_argv);
+	      break;
+
+	    // 64-bit value cases should never be used for x86 and AMD64 builds
+	    case FFI_TYPE_SINT64:
+	      *(intptr_t *) argp = (intptr_t)*(SINT64 *)(* p_argv);
+	      break;
+
+	    case FFI_TYPE_UINT64:
+	      *(uintptr_t *) argp = (uintptr_t)*(UINT64 *)(* p_argv);
 	      break;
 
 	    case FFI_TYPE_STRUCT:
-	      *(unsigned int *) argp = (unsigned int)*(UINT32 *)(* p_argv);
+	      *(uintptr_t *) argp = (uintptr_t)*(UINT32 *)(* p_argv);
+	      break;
+
+	    case FFI_TYPE_DOUBLE:
+	      *(uintptr_t *) argp = 0;
+	      *(double *) argp = *(double *)(* p_argv);
 	      break;
 
 	    default:
@@ -220,6 +239,16 @@ ffi_call(/*@dependent@*/ ffi_cif *cif,
       break;
 #else
     case FFI_SYSV:
+      /* If a single argument takes more than 8 bytes,
+         then a copy is passed by reference. */
+      for (unsigned i = 0; i < cif->nargs; i++) {
+          size_t z = cif->arg_types[i]->size;
+          if (z > 8) {
+              void *temp = alloca(z);
+              memcpy(temp, avalue[i], z);
+              avalue[i] = temp;
+          }
+      }
       /*@-usedef@*/
       return ffi_call_AMD64(ffi_prep_args, &ecif, cif->bytes,
 			   cif->flags, ecif.rvalue, fn);
@@ -359,7 +388,7 @@ ffi_prep_incoming_args_SYSV(char *stack, void **rvalue,
 
   if ( cif->rtype->type == FFI_TYPE_STRUCT ) {
     *rvalue = *(void **) argp;
-    argp += 4;
+    argp += sizeof(void *);
   }
 
   p_argv = avalue;
@@ -370,13 +399,23 @@ ffi_prep_incoming_args_SYSV(char *stack, void **rvalue,
 
       /* Align if necessary */
       if ((sizeof(char *) - 1) & (size_t) argp) {
-	argp = (char *) ALIGN(argp, sizeof(char*));
+        argp = (char *) ALIGN(argp, sizeof(char*));
       }
 
       z = (*p_arg)->size;
 
       /* because we're little endian, this is what it turns into.   */
 
+#ifdef _WIN64
+      if (z > 8) {
+        /* On Win64, if a single argument takes more than 8 bytes,
+         * then it is always passed by reference.
+         */
+        *p_argv = *((void**) argp);
+        z = 8;
+      }
+      else
+#endif
       *p_argv = (void*) argp;
 
       p_argv++;

@@ -7,10 +7,10 @@ proactor is only implemented on Windows with IOCP.
 __all__ = ['BaseProactorEventLoop']
 
 import socket
-import sys
 import warnings
 
 from . import base_events
+from . import compat
 from . import constants
 from . import futures
 from . import sslproto
@@ -41,7 +41,8 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
         self._loop.call_soon(self._protocol.connection_made, self)
         if waiter is not None:
             # only wake up the waiter when connection_made() has been called
-            self._loop.call_soon(waiter._set_result_unless_cancelled, None)
+            self._loop.call_soon(futures._set_result_unless_cancelled,
+                                 waiter, None)
 
     def __repr__(self):
         info = [self.__class__.__name__]
@@ -65,6 +66,15 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
     def _set_extra(self, sock):
         self._extra['pipe'] = sock
 
+    def set_protocol(self, protocol):
+        self._protocol = protocol
+
+    def get_protocol(self):
+        return self._protocol
+
+    def is_closing(self):
+        return self._closing
+
     def close(self):
         if self._closing:
             return
@@ -79,14 +89,15 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
     # On Python 3.3 and older, objects with a destructor part of a reference
     # cycle are never destroyed. It's not more the case on Python 3.4 thanks
     # to the PEP 442.
-    if sys.version_info >= (3, 4):
+    if compat.PY34:
         def __del__(self):
             if self._sock is not None:
-                warnings.warn("unclosed transport %r" % self, ResourceWarning)
+                warnings.warn("unclosed transport %r" % self, ResourceWarning,
+                              source=self)
                 self.close()
 
     def _fatal_error(self, exc, message='Fatal error on pipe transport'):
-        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+        if isinstance(exc, base_events._FATAL_ERROR_IGNORE):
             if self._loop.get_debug():
                 logger.debug("%r: %s", self, message, exc_info=True)
         else:
@@ -221,8 +232,9 @@ class _ProactorBaseWritePipeTransport(_ProactorBasePipeTransport,
 
     def write(self, data):
         if not isinstance(data, (bytes, bytearray, memoryview)):
-            raise TypeError('data argument must be byte-ish (%r)',
-                            type(data))
+            msg = ("data argument must be a bytes-like object, not '%s'" %
+                   type(data).__name__)
+            raise TypeError(msg)
         if self._eof_written:
             raise RuntimeError('write_eof() already called')
 
@@ -436,15 +448,7 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
         return self._proactor.send(sock, data)
 
     def sock_connect(self, sock, address):
-        try:
-            if self._debug:
-                base_events._check_resolved_address(sock, address)
-        except ValueError as err:
-            fut = futures.Future(loop=self)
-            fut.set_exception(err)
-            return fut
-        else:
-            return self._proactor.connect(sock, address)
+        return self._proactor.connect(sock, address)
 
     def sock_accept(self, sock):
         return self._proactor.accept(sock)
@@ -492,7 +496,7 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
         self._csock.send(b'\0')
 
     def _start_serving(self, protocol_factory, sock,
-                       sslcontext=None, server=None):
+                       sslcontext=None, server=None, backlog=100):
 
         def loop(f=None):
             try:

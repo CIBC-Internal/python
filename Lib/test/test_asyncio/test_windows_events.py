@@ -31,13 +31,14 @@ class UpperProto(asyncio.Protocol):
 class ProactorTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = asyncio.ProactorEventLoop()
         self.set_event_loop(self.loop)
 
     def test_close(self):
         a, b = self.loop._socketpair()
         trans = self.loop._make_socket_transport(a, asyncio.Protocol())
-        f = asyncio.async(self.loop.sock_recv(b, 100))
+        f = asyncio.ensure_future(self.loop.sock_recv(b, 100))
         trans.close()
         self.loop.run_until_complete(f)
         self.assertEqual(f.result(), b'')
@@ -117,7 +118,9 @@ class ProactorTests(test_utils.TestCase):
 
         self.assertEqual(done, False)
         self.assertFalse(fut.result())
-        self.assertTrue(0.48 < elapsed < 0.9, elapsed)
+        # bpo-31008: Tolerate only 450 ms (at least 500 ms expected),
+        # because of bad clock resolution on Windows
+        self.assertTrue(0.45 <= elapsed <= 0.9, elapsed)
 
         _overlapped.SetEvent(event)
 
@@ -132,7 +135,8 @@ class ProactorTests(test_utils.TestCase):
         self.assertTrue(fut.result())
         self.assertTrue(0 <= elapsed < 0.3, elapsed)
 
-        # Tulip issue #195: cancelling a done _WaitHandleFuture must not crash
+        # asyncio issue #195: cancelling a done _WaitHandleFuture
+        # must not crash
         fut.cancel()
 
     def test_wait_for_handle_cancel(self):
@@ -149,7 +153,8 @@ class ProactorTests(test_utils.TestCase):
         elapsed = self.loop.time() - start
         self.assertTrue(0 <= elapsed < 0.1, elapsed)
 
-        # Tulip issue #195: cancelling a _WaitHandleFuture twice must not crash
+        # asyncio issue #195: cancelling a _WaitHandleFuture twice
+        # must not crash
         fut = self.loop._proactor.wait_for_handle(event)
         fut.cancel()
         fut.cancel()

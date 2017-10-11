@@ -1,10 +1,10 @@
+import importlib.machinery
 import os
 import sys
-import importlib.machinery
 
-from idlelib.TreeWidget import TreeItem
-from idlelib.ClassBrowser import ClassBrowser, ModuleBrowserTreeItem
-from idlelib.PyShell import PyShellFileList
+from idlelib.browser import ClassBrowser, ModuleBrowserTreeItem
+from idlelib.pyshell import PyShellFileList
+from idlelib.tree import TreeItem
 
 
 class PathBrowser(ClassBrowser):
@@ -17,11 +17,13 @@ class PathBrowser(ClassBrowser):
         self.init(flist)
 
     def settitle(self):
+        "Set window titles."
         self.top.wm_title("Path Browser")
         self.top.wm_iconname("Path Browser")
 
     def rootnode(self):
         return PathBrowserTreeItem()
+
 
 class PathBrowserTreeItem(TreeItem):
 
@@ -34,6 +36,7 @@ class PathBrowserTreeItem(TreeItem):
             item = DirBrowserTreeItem(dir)
             sublist.append(item)
         return sublist
+
 
 class DirBrowserTreeItem(TreeItem):
 
@@ -69,16 +72,17 @@ class DirBrowserTreeItem(TreeItem):
         return sublist
 
     def ispackagedir(self, file):
+        " Return true for directories that are packages."
         if not os.path.isdir(file):
-            return 0
+            return False
         init = os.path.join(file, "__init__.py")
         return os.path.exists(init)
 
     def listmodules(self, allnames):
         modules = {}
         suffixes = importlib.machinery.EXTENSION_SUFFIXES[:]
-        suffixes += importlib.machinery.SOURCE_SUFFIXES[:]
-        suffixes += importlib.machinery.BYTECODE_SUFFIXES[:]
+        suffixes += importlib.machinery.SOURCE_SUFFIXES
+        suffixes += importlib.machinery.BYTECODE_SUFFIXES
         sorted = []
         for suff in suffixes:
             i = -len(suff)
@@ -93,7 +97,8 @@ class DirBrowserTreeItem(TreeItem):
         sorted.sort()
         return sorted
 
-def _path_browser(parent):
+
+def _path_browser(parent):  # htest #
     flist = PyShellFileList(parent)
     PathBrowser(flist, _htest=True)
     parent.mainloop()
