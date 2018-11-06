@@ -95,9 +95,9 @@ implementation as the built-in :meth:`~str.format` method.
       an arbitrary set of positional and keyword arguments.
       It is just a wrapper that calls :meth:`vformat`.
 
-      .. deprecated:: 3.5
-         Passing a format string as keyword argument *format_string* has been
-         deprecated.
+      .. versionchanged:: 3.7
+         A format string argument is now :ref:`positional-only
+         <positional-only_parameter>`.
 
    .. method:: vformat(format_string, args, kwargs)
 
@@ -202,9 +202,9 @@ The grammar for a replacement field is as follows:
    .. productionlist:: sf
       replacement_field: "{" [`field_name`] ["!" `conversion`] [":" `format_spec`] "}"
       field_name: arg_name ("." `attribute_name` | "[" `element_index` "]")*
-      arg_name: [`identifier` | `integer`]
+      arg_name: [`identifier` | `digit`+]
       attribute_name: `identifier`
-      element_index: `integer` | `index_string`
+      element_index: `digit`+ | `index_string`
       index_string: <any source character except "]"> +
       conversion: "r" | "s" | "a"
       format_spec: <described in the next section>
@@ -231,8 +231,11 @@ attribute using :func:`getattr`, while an expression of the form ``'[index]'``
 does an index lookup using :func:`__getitem__`.
 
 .. versionchanged:: 3.1
-   The positional argument specifiers can be omitted, so ``'{} {}'`` is
-   equivalent to ``'{0} {1}'``.
+   The positional argument specifiers can be omitted for :meth:`str.format`,
+   so ``'{} {}'.format(a, b)`` is equivalent to ``'{0} {1}'.format(a, b)``.
+
+.. versionchanged:: 3.4
+   The positional argument specifiers can be omitted for :class:`Formatter`.
 
 Some simple format string examples::
 
@@ -304,9 +307,9 @@ The general form of a *standard format specifier* is:
    fill: <any character>
    align: "<" | ">" | "=" | "^"
    sign: "+" | "-" | " "
-   width: `integer`
+   width: `digit`+
    grouping_option: "_" | ","
-   precision: `integer`
+   precision: `digit`+
    type: "b" | "c" | "d" | "e" | "E" | "f" | "F" | "g" | "G" | "n" | "o" | "s" | "x" | "X" | "%"
 
 If a valid *align* value is specified, it can be preceded by a *fill*
@@ -461,11 +464,11 @@ The available presentation types for floating point and decimal values are:
    | ``'E'`` | Exponent notation. Same as ``'e'`` except it uses an     |
    |         | upper case 'E' as the separator character.               |
    +---------+----------------------------------------------------------+
-   | ``'f'`` | Fixed point. Displays the number as a fixed-point        |
-   |         | number.  The default precision is ``6``.                 |
+   | ``'f'`` | Fixed-point notation. Displays the number as a           |
+   |         | fixed-point number.  The default precision is ``6``.     |
    +---------+----------------------------------------------------------+
-   | ``'F'`` | Fixed point. Same as ``'f'``, but converts ``nan`` to    |
-   |         | ``NAN`` and ``inf`` to ``INF``.                          |
+   | ``'F'`` | Fixed-point notation. Same as ``'f'``, but converts      |
+   |         | ``nan`` to  ``NAN`` and ``inf`` to ``INF``.              |
    +---------+----------------------------------------------------------+
    | ``'g'`` | General format.  For a given precision ``p >= 1``,       |
    |         | this rounds the number to ``p`` significant digits and   |
@@ -657,9 +660,15 @@ Nesting arguments and more complex examples::
 Template strings
 ----------------
 
-Templates provide simpler string substitutions as described in :pep:`292`.
-Instead of the normal ``%``\ -based substitutions, Templates support ``$``\
--based substitutions, using the following rules:
+Template strings provide simpler string substitutions as described in
+:pep:`292`.  A primary use case for template strings is for
+internationalization (i18n) since in that context, the simpler syntax and
+functionality makes it easier to translate than other built-in string
+formatting facilities in Python.  As an example of a library built on template
+strings for i18n, see the
+`flufl.i18n <http://flufli18n.readthedocs.io/en/latest/>`_ package.
+
+Template strings support ``$``-based substitutions, using the following rules:
 
 * ``$$`` is an escape; it is replaced with a single ``$``.
 
@@ -735,19 +744,40 @@ Here is an example of how to use a Template::
    >>> Template('$who likes $what').safe_substitute(d)
    'tim likes $what'
 
-Advanced usage: you can derive subclasses of :class:`Template` to customize the
-placeholder syntax, delimiter character, or the entire regular expression used
-to parse template strings.  To do this, you can override these class attributes:
+Advanced usage: you can derive subclasses of :class:`Template` to customize
+the placeholder syntax, delimiter character, or the entire regular expression
+used to parse template strings.  To do this, you can override these class
+attributes:
 
-* *delimiter* -- This is the literal string describing a placeholder introducing
-  delimiter.  The default value is ``$``.  Note that this should *not* be a
-  regular expression, as the implementation will call :meth:`re.escape` on this
-  string as needed.
+* *delimiter* -- This is the literal string describing a placeholder
+  introducing delimiter.  The default value is ``$``.  Note that this should
+  *not* be a regular expression, as the implementation will call
+  :meth:`re.escape` on this string as needed.  Note further that you cannot
+  change the delimiter after class creation (i.e. a different delimiter must
+  be set in the subclass's class namespace).
 
 * *idpattern* -- This is the regular expression describing the pattern for
-  non-braced placeholders (the braces will be added automatically as
-  appropriate).  The default value is the regular expression
-  ``[_a-z][_a-z0-9]*``.
+  non-braced placeholders.  The default value is the regular expression
+  ``(?a:[_a-z][_a-z0-9]*)``.  If this is given and *braceidpattern* is
+  ``None`` this pattern will also apply to braced placeholders.
+
+  .. note::
+
+     Since default *flags* is ``re.IGNORECASE``, pattern ``[a-z]`` can match
+     with some non-ASCII characters. That's why we use the local ``a`` flag
+     here.
+
+  .. versionchanged:: 3.7
+     *braceidpattern* can be used to define separate patterns used inside and
+     outside the braces.
+
+* *braceidpattern* -- This is like *idpattern* but describes the pattern for
+  braced placeholders.  Defaults to ``None`` which means to fall back to
+  *idpattern* (i.e. the same pattern is used both inside and outside braces).
+  If given, this allows you to define different patterns for braced and
+  unbraced placeholders.
+
+  .. versionadded:: 3.7
 
 * *flags* -- The regular expression flags that will be applied when compiling
   the regular expression used for recognizing substitutions.  The default value
@@ -787,4 +817,3 @@ Helper functions
    or ``None``, runs of whitespace characters are replaced by a single space
    and leading and trailing whitespace are removed, otherwise *sep* is used to
    split and join the words.
-

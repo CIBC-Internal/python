@@ -483,8 +483,7 @@ SHA256Type_update(SHAobject *self, PyObject *obj)
     sha_update(self, buf.buf, buf.len);
 
     PyBuffer_Release(&buf);
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyMethodDef SHA_methods[] = {
@@ -530,7 +529,7 @@ static PyMemberDef SHA_members[] = {
 static PyTypeObject SHA224type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "_sha256.sha224",   /*tp_name*/
-    sizeof(SHAobject),  /*tp_size*/
+    sizeof(SHAobject),  /*tp_basicsize*/
     0,                  /*tp_itemsize*/
     /* methods */
     SHA_dealloc,        /*tp_dealloc*/
@@ -564,7 +563,7 @@ static PyTypeObject SHA224type = {
 static PyTypeObject SHA256type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "_sha256.sha256",   /*tp_name*/
-    sizeof(SHAobject),  /*tp_size*/
+    sizeof(SHAobject),  /*tp_basicsize*/
     0,                  /*tp_itemsize*/
     /* methods */
     SHA_dealloc,        /*tp_dealloc*/

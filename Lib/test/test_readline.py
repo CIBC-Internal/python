@@ -3,19 +3,36 @@ Very minimal unittests for parts of the readline module.
 """
 from contextlib import ExitStack
 from errno import EIO
+import locale
 import os
 import selectors
 import subprocess
 import sys
 import tempfile
 import unittest
-from test.support import import_module, unlink, temp_dir, TESTFN
+from test.support import import_module, unlink, temp_dir, TESTFN, verbose
 from test.support.script_helper import assert_python_ok
 
 # Skip tests if there is no readline module
 readline = import_module('readline')
 
-is_editline = readline.__doc__ and "libedit" in readline.__doc__
+if hasattr(readline, "_READLINE_LIBRARY_VERSION"):
+    is_editline = ("EditLine wrapper" in readline._READLINE_LIBRARY_VERSION)
+else:
+    is_editline = (readline.__doc__ and "libedit" in readline.__doc__)
+
+
+def setUpModule():
+    if verbose:
+        # Python implementations other than CPython may not have
+        # these private attributes
+        if hasattr(readline, "_READLINE_VERSION"):
+            print(f"readline version: {readline._READLINE_VERSION:#x}")
+            print(f"readline runtime version: {readline._READLINE_RUNTIME_VERSION:#x}")
+        if hasattr(readline, "_READLINE_LIBRARY_VERSION"):
+            print(f"readline library version: {readline._READLINE_LIBRARY_VERSION!r}")
+        print(f"use libedit emulation? {is_editline}")
+
 
 @unittest.skipUnless(hasattr(readline, "clear_history"),
                      "The history update test cannot be run because the "
@@ -137,6 +154,13 @@ print("History length:", readline.get_current_history_length())
         self.assertIn(b"History length: 0\r\n", output)
 
     def test_nonascii(self):
+        loc = locale.setlocale(locale.LC_CTYPE, None)
+        if loc in ('C', 'POSIX'):
+            # bpo-29240: On FreeBSD, if the LC_CTYPE locale is C or POSIX,
+            # writing and reading non-ASCII bytes into/from a TTY works, but
+            # readline or ncurses ignores non-ASCII bytes on read.
+            self.skipTest(f"the LC_CTYPE locale is {loc!r}")
+
         try:
             readline.add_history("\xEB\xEF")
         except UnicodeEncodeError as err:

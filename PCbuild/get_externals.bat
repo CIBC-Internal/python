@@ -7,15 +7,24 @@ if "%EXTERNALS_DIR%"=="" (set EXTERNALS_DIR=%PCBUILD%\..\externals)
 
 set DO_FETCH=true
 set DO_CLEAN=false
+set IncludeTkinterSrc=false
+set IncludeSSLSrc=false
 
 :CheckOpts
 if "%~1"=="--no-tkinter" (set IncludeTkinter=false) & shift & goto CheckOpts
 if "%~1"=="--no-openssl" (set IncludeSSL=false) & shift & goto CheckOpts
+if "%~1"=="--tkinter-src" (set IncludeTkinterSrc=true) & shift & goto CheckOpts
+if "%~1"=="--openssl-src" (set IncludeSSLSrc=true) & shift & goto CheckOpts
 if "%~1"=="--python" (set PYTHON=%2) & shift & shift & goto CheckOpts
 if "%~1"=="--organization" (set ORG=%2) & shift & shift & goto CheckOpts
 if "%~1"=="-c" (set DO_CLEAN=true) & shift & goto CheckOpts
 if "%~1"=="--clean" (set DO_CLEAN=true) & shift & goto CheckOpts
 if "%~1"=="--clean-only" (set DO_FETCH=false) & goto clean
+
+rem Include old options for compatibility
+if "%~1"=="--no-tkinter" shift & goto CheckOpts
+if "%~1"=="--no-openssl" shift & goto CheckOpts
+
 if "x%~1" NEQ "x" goto usage
 
 if "%DO_CLEAN%"=="false" goto fetch
@@ -30,8 +39,7 @@ if "%DO_FETCH%"=="false" goto end
 :fetch
 
 if "%ORG%"=="" (set ORG=python)
-
-call "%PCBUILD%find_python.bat" "%PYTHON%"
+call "%PCBUILD%\find_python.bat" "%PYTHON%"
 
 if "%PYTHON%"=="" (
     where /Q git || echo Python 3.6 could not be found or installed, and git.exe is not on your PATH && exit /B 1
@@ -40,13 +48,14 @@ if "%PYTHON%"=="" (
 echo.Fetching external libraries...
 
 set libraries=
-set libraries=%libraries%                                    bzip2-1.0.6
-if NOT "%IncludeSSL%"=="false" set libraries=%libraries%     openssl-1.0.2k
-set libraries=%libraries%                                    sqlite-3.14.2.0
-if NOT "%IncludeTkinter%"=="false" set libraries=%libraries% tcl-core-8.6.6.0
-if NOT "%IncludeTkinter%"=="false" set libraries=%libraries% tk-8.6.6.0
-if NOT "%IncludeTkinter%"=="false" set libraries=%libraries% tix-8.4.3.6
-set libraries=%libraries%                                    xz-5.2.2
+set libraries=%libraries%                                       bzip2-1.0.6
+if NOT "%IncludeSSLSrc%"=="false" set libraries=%libraries%     openssl-1.1.0i
+set libraries=%libraries%                                       sqlite-3.21.0.0
+if NOT "%IncludeTkinterSrc%"=="false" set libraries=%libraries% tcl-core-8.6.8.0
+if NOT "%IncludeTkinterSrc%"=="false" set libraries=%libraries% tk-8.6.8.0
+if NOT "%IncludeTkinterSrc%"=="false" set libraries=%libraries% tix-8.4.3.6
+set libraries=%libraries%                                       xz-5.2.2
+set libraries=%libraries%                                       zlib-1.2.11
 
 for %%e in (%libraries%) do (
     if exist "%EXTERNALS_DIR%\%%e" (
@@ -56,15 +65,16 @@ for %%e in (%libraries%) do (
         git clone --depth 1 https://github.com/%ORG%/cpython-source-deps --branch %%e "%EXTERNALS_DIR%\%%e"
     ) else (
         echo.Fetching %%e...
-        %PYTHON% "%PCBUILD%get_external.py" -O %ORG% %%e
+        %PYTHON% -E "%PCBUILD%\get_external.py" -O %ORG% -e "%EXTERNALS_DIR%" %%e
     )
 )
 
 echo.Fetching external binaries...
 
 set binaries=
-set binaries=%binaries%
-if NOT "%IncludeSSL%"=="false" set binaries=%binaries%     nasm-2.11.06
+if NOT "%IncludeSSL%"=="false"     set binaries=%binaries% openssl-bin-1.1.0i
+if NOT "%IncludeTkinter%"=="false" set binaries=%binaries% tcltk-8.6.8.0
+if NOT "%IncludeSSLSrc%"=="false"  set binaries=%binaries% nasm-2.11.06
 
 for %%b in (%binaries%) do (
     if exist "%EXTERNALS_DIR%\%%b" (
@@ -74,7 +84,7 @@ for %%b in (%binaries%) do (
         git clone --depth 1 https://github.com/%ORG%/cpython-bin-deps --branch %%b "%EXTERNALS_DIR%\%%b"
     ) else (
         echo.Fetching %%b...
-        %PYTHON% "%PCBUILD%get_external.py" -b -O %ORG% %%b
+        %PYTHON% -E "%PCBUILD%\get_external.py" -b -O %ORG% -e "%EXTERNALS_DIR%" %%b
     )
 )
 
