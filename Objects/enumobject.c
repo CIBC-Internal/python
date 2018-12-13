@@ -87,19 +87,25 @@ enum_next_long(enumobject *en, PyObject* next_item)
 
     if (en->en_longindex == NULL) {
         en->en_longindex = PyLong_FromSsize_t(PY_SSIZE_T_MAX);
-        if (en->en_longindex == NULL)
+        if (en->en_longindex == NULL) {
+            Py_DECREF(next_item);
             return NULL;
+        }
     }
     if (one == NULL) {
         one = PyLong_FromLong(1);
-        if (one == NULL)
+        if (one == NULL) {
+            Py_DECREF(next_item);
             return NULL;
+        }
     }
     next_index = en->en_longindex;
     assert(next_index != NULL);
     stepped_up = PyNumber_Add(next_index, one);
-    if (stepped_up == NULL)
+    if (stepped_up == NULL) {
+        Py_DECREF(next_item);
         return NULL;
+    }
     en->en_longindex = stepped_up;
 
     if (result->ob_refcnt == 1) {
@@ -250,6 +256,13 @@ reversed_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
 
     reversed_meth = _PyObject_LookupSpecial(seq, &PyId___reversed__);
+    if (reversed_meth == Py_None) {
+        Py_DECREF(reversed_meth);
+        PyErr_Format(PyExc_TypeError,
+                     "'%.200s' object is not reversible",
+                     Py_TYPE(seq)->tp_name);
+        return NULL;
+    }
     if (reversed_meth != NULL) {
         PyObject *res = PyObject_CallFunctionObjArgs(reversed_meth, NULL);
         Py_DECREF(reversed_meth);
@@ -259,8 +272,9 @@ reversed_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
 
     if (!PySequence_Check(seq)) {
-        PyErr_SetString(PyExc_TypeError,
-                        "argument to reversed() must be a sequence");
+        PyErr_Format(PyExc_TypeError,
+                     "'%.200s' object is not reversible",
+                     Py_TYPE(seq)->tp_name);
         return NULL;
     }
 

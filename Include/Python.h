@@ -35,6 +35,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef HAVE_CRYPT_H
+#include <crypt.h>
+#endif
 
 /* For size_t? */
 #ifdef HAVE_STDDEF_H
@@ -85,6 +88,7 @@
 #include "tupleobject.h"
 #include "listobject.h"
 #include "dictobject.h"
+#include "odictobject.h"
 #include "enumobject.h"
 #include "setobject.h"
 #include "methodobject.h"
@@ -112,8 +116,10 @@
 #include "pyarena.h"
 #include "modsupport.h"
 #include "pythonrun.h"
+#include "pylifecycle.h"
 #include "ceval.h"
 #include "sysmodule.h"
+#include "osmodule.h"
 #include "intrcheck.h"
 #include "import.h"
 

@@ -18,28 +18,46 @@ Utilities
 
 Functions and classes provided:
 
+.. class:: AbstractContextManager
+
+   An :term:`abstract base class` for classes that implement
+   :meth:`object.__enter__` and :meth:`object.__exit__`. A default
+   implementation for :meth:`object.__enter__` is provided which returns
+   ``self`` while :meth:`object.__exit__` is an abstract method which by default
+   returns ``None``. See also the definition of :ref:`typecontextmanager`.
+
+   .. versionadded:: 3.6
+
+
+
 .. decorator:: contextmanager
 
    This function is a :term:`decorator` that can be used to define a factory
    function for :keyword:`with` statement context managers, without needing to
    create a class or separate :meth:`__enter__` and :meth:`__exit__` methods.
 
-   A simple example (this is not recommended as a real way of generating HTML!)::
+   While many objects natively support use in with statements, sometimes a
+   resource needs to be managed that isn't a context manager in its own right,
+   and doesn't implement a ``close()`` method for use with ``contextlib.closing``
+
+   An abstract example would be the following to ensure correct resource
+   management::
 
       from contextlib import contextmanager
 
       @contextmanager
-      def tag(name):
-          print("<%s>" % name)
-          yield
-          print("</%s>" % name)
+      def managed_resource(*args, **kwds):
+          # Code to acquire resource, e.g.:
+          resource = acquire_resource(*args, **kwds)
+          try:
+              yield resource
+          finally:
+              # Code to release resource, e.g.:
+              release_resource(resource)
 
-      >>> with tag("h1"):
-      ...    print("foo")
-      ...
-      <h1>
-      foo
-      </h1>
+      >>> with managed_resource(timeout=3600) as resource:
+      ...     # Resource is released at the end of this block,
+      ...     # even if code in the block raises an exception
 
    The function being decorated must return a :term:`generator`-iterator when
    called. This iterator must yield exactly one value, which will be bound to
@@ -142,7 +160,7 @@ Functions and classes provided:
    is hardwired to stdout.
 
    For example, the output of :func:`help` normally is sent to *sys.stdout*.
-   You can capture that output in a string by redirecting the output to a
+   You can capture that output in a string by redirecting the output to an
    :class:`io.StringIO` object::
 
         f = io.StringIO()
@@ -170,6 +188,16 @@ Functions and classes provided:
    This context manager is :ref:`reentrant <reentrant-cms>`.
 
    .. versionadded:: 3.4
+
+
+.. function:: redirect_stderr(new_target)
+
+   Similar to :func:`~contextlib.redirect_stdout` but redirecting
+   :data:`sys.stderr` to another file or file-like object.
+
+   This context manager is :ref:`reentrant <reentrant-cms>`.
+
+   .. versionadded:: 3.5
 
 
 .. class:: ContextDecorator()
@@ -437,9 +465,9 @@ Here's an example of doing this for a context manager that accepts resource
 acquisition and release functions, along with an optional validation function,
 and maps them to the context management protocol::
 
-   from contextlib import contextmanager, ExitStack
+   from contextlib import contextmanager, AbstractContextManager, ExitStack
 
-   class ResourceManager:
+   class ResourceManager(AbstractContextManager):
 
        def __init__(self, acquire_resource, release_resource, check_resource_ok=None):
            self.acquire_resource = acquire_resource
@@ -543,7 +571,7 @@ advance::
 
 Due to the way the decorator protocol works, a callback function
 declared this way cannot take any parameters. Instead, any resources to
-be released must be accessed as closure variables
+be released must be accessed as closure variables.
 
 
 Using a context manager as a function decorator
@@ -568,10 +596,10 @@ single definition::
             self.name = name
 
         def __enter__(self):
-            logging.info('Entering: {}'.format(self.name))
+            logging.info('Entering: %s', self.name)
 
         def __exit__(self, exc_type, exc, exc_tb):
-            logging.info('Exiting: {}'.format(self.name))
+            logging.info('Exiting: %s', self.name)
 
 Instances of this class can be used as both a context manager::
 
@@ -593,7 +621,7 @@ an explicit ``with`` statement.
 
 .. seealso::
 
-   :pep:`0343` - The "with" statement
+   :pep:`343` - The "with" statement
       The specification, background, and examples for the Python :keyword:`with`
       statement.
 
@@ -634,7 +662,7 @@ to yield if an attempt is made to use them a second time::
     Before
     After
     >>> with cm:
-    ...    pass
+    ...     pass
     ...
     Traceback (most recent call last):
         ...

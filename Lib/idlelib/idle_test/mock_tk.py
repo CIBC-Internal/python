@@ -1,6 +1,6 @@
 """Classes that replace tkinter gui objects used by an object being tested.
 
-A gui object is anything with a master or parent paramenter, which is
+A gui object is anything with a master or parent parameter, which is
 typically required in spite of what the doc strings say.
 """
 
@@ -295,4 +295,9 @@ class Text:
 
     def bind(sequence=None, func=None, add=None):
         "Bind to this widget at event sequence a call to function func."
+        pass
+
+class Entry:
+    "Mock for tkinter.Entry."
+    def focus_set(self):
         pass

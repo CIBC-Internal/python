@@ -24,6 +24,7 @@ def close_transport(transport):
 class ProactorSocketTransportTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = self.new_test_loop()
         self.addCleanup(self.loop.close)
         self.proactor = mock.Mock()
@@ -204,7 +205,7 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         tr.close()
         test_utils.run_briefly(self.loop)
         self.protocol.connection_lost.assert_called_with(None)
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.assertEqual(tr._conn_lost, 1)
 
         self.protocol.connection_lost.reset_mock()
@@ -298,7 +299,7 @@ class ProactorSocketTransportTests(test_utils.TestCase):
             self.loop, self.sock, self.protocol)
         self.assertTrue(tr.can_write_eof())
         tr.write_eof()
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.loop._run_once()
         self.assertTrue(self.sock.close.called)
         tr.close()
@@ -309,7 +310,7 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         tr._loop._proactor.send.return_value = f
         tr.write(b'data')
         tr.write_eof()
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.assertFalse(self.sock.shutdown.called)
         tr._loop._proactor.send.assert_called_with(self.sock, b'data')
         f.set_result(4)
@@ -329,10 +330,11 @@ class ProactorSocketTransportTests(test_utils.TestCase):
     def test_pause_resume_reading(self):
         tr = self.socket_transport()
         futures = []
-        for msg in [b'data1', b'data2', b'data3', b'data4', b'']:
+        for msg in [b'data1', b'data2', b'data3', b'data4', b'data5', b'']:
             f = asyncio.Future(loop=self.loop)
             f.set_result(msg)
             futures.append(f)
+
         self.loop._proactor.recv.side_effect = futures
         self.loop._run_once()
         self.assertFalse(tr._paused)
@@ -340,17 +342,28 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         self.protocol.data_received.assert_called_with(b'data1')
         self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data2')
+
+        tr.pause_reading()
         tr.pause_reading()
         self.assertTrue(tr._paused)
         for i in range(10):
             self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data2')
+
+        tr.resume_reading()
         tr.resume_reading()
         self.assertFalse(tr._paused)
         self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data3')
         self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data4')
+
+        tr.pause_reading()
+        tr.resume_reading()
+        self.loop.call_exception_handler = mock.Mock()
+        self.loop._run_once()
+        self.loop.call_exception_handler.assert_not_called()
+        self.protocol.data_received.assert_called_with(b'data5')
         tr.close()
 
 
@@ -436,7 +449,9 @@ class ProactorSocketTransportTests(test_utils.TestCase):
 class BaseProactorEventLoopTests(test_utils.TestCase):
 
     def setUp(self):
-        self.sock = mock.Mock(socket.socket)
+        super().setUp()
+
+        self.sock = test_utils.mock_nonblocking_socket()
         self.proactor = mock.Mock()
 
         self.ssock, self.csock = mock.Mock(), mock.Mock()
@@ -491,8 +506,8 @@ class BaseProactorEventLoopTests(test_utils.TestCase):
         self.proactor.send.assert_called_with(self.sock, b'data')
 
     def test_sock_connect(self):
-        self.loop.sock_connect(self.sock, 123)
-        self.proactor.connect.assert_called_with(self.sock, 123)
+        self.loop.sock_connect(self.sock, ('1.2.3.4', 123))
+        self.proactor.connect.assert_called_with(self.sock, ('1.2.3.4', 123))
 
     def test_sock_accept(self):
         self.loop.sock_accept(self.sock)
@@ -526,7 +541,6 @@ class BaseProactorEventLoopTests(test_utils.TestCase):
             self.loop._loop_self_reading)
 
     def test_loop_self_reading_exception(self):
-        self.loop.close = mock.Mock()
         self.loop.call_exception_handler = mock.Mock()
         self.proactor.recv.side_effect = OSError()
         self.loop._loop_self_reading()

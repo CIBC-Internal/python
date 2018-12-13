@@ -3,9 +3,13 @@
 
 .. module:: locale
    :synopsis: Internationalization services.
+
 .. moduleauthor:: Martin von Löwis <martin@v.loewis.de>
 .. sectionauthor:: Martin von Löwis <martin@v.loewis.de>
 
+**Source code:** :source:`Lib/locale.py`
+
+--------------
 
 The :mod:`locale` module opens access to the POSIX locale database and
 functionality. The POSIX locale mechanism allows programmers to deal with
@@ -143,6 +147,16 @@ The :mod:`locale` module defines the following exception and functions:
    | ``CHAR_MAX`` | Nothing is specified in this locale.    |
    +--------------+-----------------------------------------+
 
+   The function sets temporarily the ``LC_CTYPE`` locale to the ``LC_NUMERIC``
+   locale to decode ``decimal_point`` and ``thousands_sep`` byte strings if
+   they are non-ASCII or longer than 1 byte, and the ``LC_NUMERIC`` locale is
+   different than the ``LC_CTYPE`` locale. This temporary change affects other
+   threads.
+
+   .. versionchanged:: 3.6.5
+      The function now sets temporarily the ``LC_CTYPE`` locale to the
+      ``LC_NUMERIC`` locale in some cases.
+
 
 .. function:: nl_langinfo(option)
 
@@ -204,7 +218,7 @@ The :mod:`locale` module defines the following exception and functions:
 
    .. data:: RADIXCHAR
 
-      Get the radix character (decimal dot, decimal comma, etc.)
+      Get the radix character (decimal dot, decimal comma, etc.).
 
    .. data:: THOUSEP
 
@@ -387,6 +401,14 @@ The :mod:`locale` module defines the following exception and functions:
    ``str(float)``, but takes the decimal point into account.
 
 
+.. function:: delocalize(string)
+
+    Converts a string into a normalized number string, following the
+    :const:`LC_NUMERIC` settings.
+
+    .. versionadded:: 3.5
+
+
 .. function:: atof(string)
 
    Converts a string to a floating point number, following the :const:`LC_NUMERIC`
@@ -459,13 +481,13 @@ The :mod:`locale` module defines the following exception and functions:
 Example::
 
    >>> import locale
-   >>> loc = locale.getlocale() # get current locale
+   >>> loc = locale.getlocale()  # get current locale
    # use German locale; name might vary with platform
    >>> locale.setlocale(locale.LC_ALL, 'de_DE')
-   >>> locale.strcoll('f\xe4n', 'foo') # compare a string containing an umlaut
-   >>> locale.setlocale(locale.LC_ALL, '') # use user's preferred locale
-   >>> locale.setlocale(locale.LC_ALL, 'C') # use default (C) locale
-   >>> locale.setlocale(locale.LC_ALL, loc) # restore saved locale
+   >>> locale.strcoll('f\xe4n', 'foo')  # compare a string containing an umlaut
+   >>> locale.setlocale(locale.LC_ALL, '')   # use user's preferred locale
+   >>> locale.setlocale(locale.LC_ALL, 'C')  # use default (C) locale
+   >>> locale.setlocale(locale.LC_ALL, loc)  # restore saved locale
 
 
 Background, details, hints, tips and caveats
@@ -530,17 +552,23 @@ library.
 Access to message catalogs
 --------------------------
 
+.. function:: gettext(msg)
+.. function:: dgettext(domain, msg)
+.. function:: dcgettext(domain, msg, category)
+.. function:: textdomain(domain)
+.. function:: bindtextdomain(domain, dir)
+
 The locale module exposes the C library's gettext interface on systems that
-provide this interface.  It consists of the functions :func:`gettext`,
-:func:`dgettext`, :func:`dcgettext`, :func:`textdomain`, :func:`bindtextdomain`,
-and :func:`bind_textdomain_codeset`.  These are similar to the same functions in
+provide this interface.  It consists of the functions :func:`!gettext`,
+:func:`!dgettext`, :func:`!dcgettext`, :func:`!textdomain`, :func:`!bindtextdomain`,
+and :func:`!bind_textdomain_codeset`.  These are similar to the same functions in
 the :mod:`gettext` module, but use the C library's binary format for message
 catalogs, and the C library's search algorithms for locating message catalogs.
 
 Python applications should normally find no need to invoke these functions, and
 should use :mod:`gettext` instead.  A known exception to this rule are
 applications that link with additional C libraries which internally invoke
-:c:func:`gettext` or :func:`dcgettext`.  For these applications, it may be
+:c:func:`gettext` or :c:func:`dcgettext`.  For these applications, it may be
 necessary to bind the text domain, so that the libraries can properly locate
 their message catalogs.
 

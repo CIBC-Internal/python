@@ -156,7 +156,9 @@ The :command:`register` and :command:`upload` commands both check for the
 existence of a :file:`.pypirc` file at the location :file:`$HOME/.pypirc`.
 If this file exists, the command uses the username, password, and repository
 URL configured in the file.  The format of a :file:`.pypirc` file is as
-follows::
+follows:
+
+.. code-block:: ini
 
     [distutils]
     index-servers =
@@ -167,19 +169,21 @@ follows::
     username: <username>
     password: <password>
 
-The *distutils* section defines a *index-servers* variable that lists the
+The *distutils* section defines an *index-servers* variable that lists the
 name of all sections describing a repository.
 
 Each section describing a repository defines three variables:
 
 - *repository*, that defines the url of the PyPI server. Defaults to
-    ``https://www.python.org/pypi``.
+    ``https://upload.pypi.org/legacy/``.
 - *username*, which is the registered username on the PyPI server.
 - *password*, that will be used to authenticate. If omitted the user
     will be prompt to type it when needed.
 
 If you want to define another server a new section can be created and
-listed in the *index-servers* variable::
+listed in the *index-servers* variable:
+
+.. code-block:: ini
 
     [distutils]
     index-servers =
@@ -233,7 +237,9 @@ in the root of the package besides :file:`setup.py`.
 
 To prevent registering broken reStructuredText content, you can use the
 :program:`rst2html` program that is provided by the :mod:`docutils` package and
-check the ``long_description`` from the command line::
+check the ``long_description`` from the command line:
+
+.. code-block:: shell-session
 
     $ python setup.py --long-description | rst2html.py > output.html
 
@@ -244,4 +250,4 @@ without warnings does not guarantee that PyPI will convert the content
 successfully.
 
 
-.. _Python Package Index (PyPI): https://pypi.python.org/pypi
+.. _Python Package Index (PyPI): https://pypi.org

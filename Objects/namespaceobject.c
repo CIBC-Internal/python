@@ -1,4 +1,4 @@
-/* namespace object implementation */
+// namespace object implementation
 
 #include "Python.h"
 #include "structmember.h"
@@ -16,7 +16,7 @@ static PyMemberDef namespace_members[] = {
 };
 
 
-/* Methods */
+// Methods
 
 static PyObject *
 namespace_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
@@ -40,7 +40,7 @@ namespace_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 namespace_init(_PyNamespaceObject *ns, PyObject *args, PyObject *kwds)
 {
-    /* ignore args if it's NULL or empty */
+    // ignore args if it's NULL or empty
     if (args != NULL) {
         Py_ssize_t argcount = PyObject_Size(args);
         if (argcount < 0)
@@ -50,8 +50,12 @@ namespace_init(_PyNamespaceObject *ns, PyObject *args, PyObject *kwds)
             return -1;
         }
     }
-    if (kwds == NULL)
+    if (kwds == NULL) {
         return 0;
+    }
+    if (!PyArg_ValidateKeywordArguments(kwds)) {
+        return -1;
+    }
     return PyDict_Update(ns->ns_dict, kwds);
 }
 
@@ -164,12 +168,11 @@ namespace_clear(_PyNamespaceObject *ns)
 static PyObject *
 namespace_richcompare(PyObject *self, PyObject *other, int op)
 {
-    if (PyObject_IsInstance(self, (PyObject *)&_PyNamespace_Type) &&
-            PyObject_IsInstance(other, (PyObject *)&_PyNamespace_Type))
+    if (PyObject_TypeCheck(self, &_PyNamespace_Type) &&
+        PyObject_TypeCheck(other, &_PyNamespace_Type))
         return PyObject_RichCompare(((_PyNamespaceObject *)self)->ns_dict,
                                    ((_PyNamespaceObject *)other)->ns_dict, op);
-    Py_INCREF(Py_NotImplemented);
-    return Py_NotImplemented;
+    Py_RETURN_NOTIMPLEMENTED;
 }
 
 
@@ -192,7 +195,7 @@ namespace_reduce(_PyNamespaceObject *ns)
 static PyMethodDef namespace_methods[] = {
     {"__reduce__", (PyCFunction)namespace_reduce, METH_NOARGS,
      namespace_reduce__doc__},
-    {NULL,         NULL}  /* sentinel */
+    {NULL,         NULL}  // sentinel
 };
 
 
@@ -204,7 +207,7 @@ SimpleNamespace(**kwargs)");
 PyTypeObject _PyNamespace_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "types.SimpleNamespace",                    /* tp_name */
-    sizeof(_PyNamespaceObject),                 /* tp_size */
+    sizeof(_PyNamespaceObject),                 /* tp_basicsize */
     0,                                          /* tp_itemsize */
     (destructor)namespace_dealloc,              /* tp_dealloc */
     0,                                          /* tp_print */

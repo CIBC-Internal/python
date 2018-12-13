@@ -39,8 +39,8 @@ PyObject* pysqlite_Error, *pysqlite_Warning, *pysqlite_InterfaceError, *pysqlite
     *pysqlite_InternalError, *pysqlite_OperationalError, *pysqlite_ProgrammingError,
     *pysqlite_IntegrityError, *pysqlite_DataError, *pysqlite_NotSupportedError;
 
-PyObject* converters;
-int _enable_callback_tracebacks;
+PyObject* _pysqlite_converters;
+int _pysqlite_enable_callback_tracebacks;
 int pysqlite_BaseTypeAdapted;
 
 static PyObject* module_connect(PyObject* self, PyObject* args, PyObject*
@@ -139,8 +139,7 @@ static PyObject* module_enable_shared_cache(PyObject* self, PyObject* args, PyOb
         PyErr_SetString(pysqlite_OperationalError, "Changing the shared_cache flag failed");
         return NULL;
     } else {
-        Py_INCREF(Py_None);
-        return Py_None;
+        Py_RETURN_NONE;
     }
 }
 
@@ -172,8 +171,7 @@ static PyObject* module_register_adapter(PyObject* self, PyObject* args)
     if (rc == -1)
         return NULL;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(module_register_adapter_doc,
@@ -194,12 +192,12 @@ static PyObject* module_register_converter(PyObject* self, PyObject* args)
     }
 
     /* convert the name to upper case */
-    name = _PyObject_CallMethodId(orig_name, &PyId_upper, "");
+    name = _PyObject_CallMethodId(orig_name, &PyId_upper, NULL);
     if (!name) {
         goto error;
     }
 
-    if (PyDict_SetItem(converters, name, callable) != 0) {
+    if (PyDict_SetItem(_pysqlite_converters, name, callable) != 0) {
         goto error;
     }
 
@@ -217,12 +215,11 @@ Registers a converter with pysqlite. Non-standard.");
 
 static PyObject* enable_callback_tracebacks(PyObject* self, PyObject* args)
 {
-    if (!PyArg_ParseTuple(args, "i", &_enable_callback_tracebacks)) {
+    if (!PyArg_ParseTuple(args, "i", &_pysqlite_enable_callback_tracebacks)) {
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(enable_callback_tracebacks_doc,
@@ -232,12 +229,12 @@ Enable or disable callback functions throwing errors to stderr.");
 
 static void converters_init(PyObject* dict)
 {
-    converters = PyDict_New();
-    if (!converters) {
+    _pysqlite_converters = PyDict_New();
+    if (!_pysqlite_converters) {
         return;
     }
 
-    PyDict_SetItemString(dict, "converters", converters);
+    PyDict_SetItemString(dict, "converters", _pysqlite_converters);
 }
 
 static PyMethodDef module_methods[] = {
@@ -261,13 +258,13 @@ static PyMethodDef module_methods[] = {
 };
 
 struct _IntConstantPair {
-    char* constant_name;
+    const char *constant_name;
     int constant_value;
 };
 
 typedef struct _IntConstantPair IntConstantPair;
 
-static IntConstantPair _int_constants[] = {
+static const IntConstantPair _int_constants[] = {
     {"PARSE_DECLTYPES", PARSE_DECLTYPES},
     {"PARSE_COLNAMES", PARSE_COLNAMES},
 
@@ -451,7 +448,7 @@ PyMODINIT_FUNC PyInit__sqlite3(void)
     /* initialize the default converters */
     converters_init(dict);
 
-    _enable_callback_tracebacks = 0;
+    _pysqlite_enable_callback_tracebacks = 0;
 
     pysqlite_BaseTypeAdapted = 0;
 

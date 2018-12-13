@@ -76,14 +76,18 @@ PyCStgDict_clone(StgDictObject *dst, StgDictObject *src)
 
     if (src->format) {
         dst->format = PyMem_Malloc(strlen(src->format) + 1);
-        if (dst->format == NULL)
+        if (dst->format == NULL) {
+            PyErr_NoMemory();
             return -1;
+        }
         strcpy(dst->format, src->format);
     }
     if (src->shape) {
         dst->shape = PyMem_Malloc(sizeof(Py_ssize_t) * src->ndim);
-        if (dst->shape == NULL)
+        if (dst->shape == NULL) {
+            PyErr_NoMemory();
             return -1;
+        }
         memcpy(dst->shape, src->shape,
                sizeof(Py_ssize_t) * src->ndim);
     }
@@ -278,7 +282,15 @@ MakeAnonFields(PyObject *type)
             Py_DECREF(anon_names);
             return -1;
         }
-        assert(Py_TYPE(descr) == &PyCField_Type);
+        if (Py_TYPE(descr) != &PyCField_Type) {
+            PyErr_Format(PyExc_AttributeError,
+                         "'%U' is specified in _anonymous_ but not in "
+                         "_fields_",
+                         fname);
+            Py_DECREF(anon_names);
+            Py_DECREF(descr);
+            return -1;
+        }
         descr->anonymous = 1;
 
         /* descr is in the field descriptor. */
@@ -380,16 +392,18 @@ PyCStructUnionType_update_stgdict(PyObject *type, PyObject *fields, int isStruct
         union_size = 0;
         total_align = align ? align : 1;
         stgdict->ffi_type_pointer.type = FFI_TYPE_STRUCT;
-        stgdict->ffi_type_pointer.elements = PyMem_Malloc(sizeof(ffi_type *) * (basedict->length + len + 1));
+        stgdict->ffi_type_pointer.elements = PyMem_New(ffi_type *, basedict->length + len + 1);
         if (stgdict->ffi_type_pointer.elements == NULL) {
             PyErr_NoMemory();
             return -1;
         }
         memset(stgdict->ffi_type_pointer.elements, 0,
                sizeof(ffi_type *) * (basedict->length + len + 1));
-        memcpy(stgdict->ffi_type_pointer.elements,
-               basedict->ffi_type_pointer.elements,
-               sizeof(ffi_type *) * (basedict->length));
+        if (basedict->length > 0) {
+            memcpy(stgdict->ffi_type_pointer.elements,
+                   basedict->ffi_type_pointer.elements,
+                   sizeof(ffi_type *) * (basedict->length));
+        }
         ffi_ofs = basedict->length;
     } else {
         offset = 0;
@@ -398,7 +412,7 @@ PyCStructUnionType_update_stgdict(PyObject *type, PyObject *fields, int isStruct
         union_size = 0;
         total_align = 1;
         stgdict->ffi_type_pointer.type = FFI_TYPE_STRUCT;
-        stgdict->ffi_type_pointer.elements = PyMem_Malloc(sizeof(ffi_type *) * (len + 1));
+        stgdict->ffi_type_pointer.elements = PyMem_New(ffi_type *, len + 1);
         if (stgdict->ffi_type_pointer.elements == NULL) {
             PyErr_NoMemory();
             return -1;
@@ -483,7 +497,7 @@ PyCStructUnionType_update_stgdict(PyObject *type, PyObject *fields, int isStruct
 
         if (isStruct && !isPacked) {
             char *fieldfmt = dict->format ? dict->format : "B";
-            char *fieldname = _PyUnicode_AsString(name);
+            char *fieldname = PyUnicode_AsUTF8(name);
             char *ptr;
             Py_ssize_t len;
             char *buf;

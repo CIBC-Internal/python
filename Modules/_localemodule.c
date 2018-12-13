@@ -49,14 +49,15 @@ PyDoc_STRVAR(setlocale__doc__,
 
 /* the grouping is terminated by either 0 or CHAR_MAX */
 static PyObject*
-copy_grouping(char* s)
+copy_grouping(const char* s)
 {
     int i;
     PyObject *result, *val = NULL;
 
-    if (s[0] == '\0')
+    if (s[0] == '\0') {
         /* empty string: no grouping at all */
         return PyList_New(0);
+    }
 
     for (i = 0; s[i] != '\0' && s[i] != CHAR_MAX; i++)
         ; /* nothing */
@@ -170,12 +171,6 @@ PyLocale_localeconv(PyObject* self)
         RESULT(#i, x); \
     } while (0)
 
-    /* Numeric information */
-    RESULT_STRING(decimal_point);
-    RESULT_STRING(thousands_sep);
-    x = copy_grouping(l->grouping);
-    RESULT("grouping", x);
-
     /* Monetary information */
     RESULT_STRING(int_curr_symbol);
     RESULT_STRING(currency_symbol);
@@ -194,6 +189,32 @@ PyLocale_localeconv(PyObject* self)
     RESULT_INT(n_sep_by_space);
     RESULT_INT(p_sign_posn);
     RESULT_INT(n_sign_posn);
+
+    /* Numeric information */
+    PyObject *decimal_point, *thousands_sep;
+    const char *grouping;
+    if (_Py_GetLocaleconvNumeric(&decimal_point,
+                                 &thousands_sep,
+                                 &grouping) < 0) {
+        goto failed;
+    }
+
+    if (PyDict_SetItemString(result, "decimal_point", decimal_point) < 0) {
+        Py_DECREF(decimal_point);
+        Py_DECREF(thousands_sep);
+        goto failed;
+    }
+    Py_DECREF(decimal_point);
+
+    if (PyDict_SetItemString(result, "thousands_sep", thousands_sep) < 0) {
+        Py_DECREF(thousands_sep);
+        goto failed;
+    }
+    Py_DECREF(thousands_sep);
+
+    x = copy_grouping(grouping);
+    RESULT("grouping", x);
+
     return result;
 
   failed:
@@ -214,10 +235,10 @@ PyLocale_strcoll(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "UU:strcoll", &os1, &os2))
         return NULL;
     /* Convert the unicode strings to wchar[]. */
-    ws1 = PyUnicode_AsWideCharString(os1, NULL);
+    ws1 = _PyUnicode_AsWideCharString(os1);
     if (ws1 == NULL)
         goto done;
-    ws2 = PyUnicode_AsWideCharString(os2, NULL);
+    ws2 = _PyUnicode_AsWideCharString(os2);
     if (ws2 == NULL)
         goto done;
     /* Collate the strings. */
@@ -251,10 +272,15 @@ PyLocale_strxfrm(PyObject* self, PyObject* args)
     s = PyUnicode_AsWideCharString(str, &n1);
     if (s == NULL)
         goto exit;
+    if (wcslen(s) != (size_t)n1) {
+        PyErr_SetString(PyExc_ValueError,
+                        "embedded null character");
+        goto exit;
+    }
 
     /* assume no change in size, first */
     n1 = n1 + 1;
-    buf = PyMem_Malloc(n1 * sizeof(wchar_t));
+    buf = PyMem_New(wchar_t, n1);
     if (!buf) {
         PyErr_NoMemory();
         goto exit;
@@ -621,53 +647,34 @@ static struct PyModuleDef _localemodule = {
 PyMODINIT_FUNC
 PyInit__locale(void)
 {
-    PyObject *m, *d, *x;
+    PyObject *m;
 #ifdef HAVE_LANGINFO_H
     int i;
 #endif
 
     m = PyModule_Create(&_localemodule);
     if (m == NULL)
-    return NULL;
+        return NULL;
 
-    d = PyModule_GetDict(m);
-
-    x = PyLong_FromLong(LC_CTYPE);
-    PyDict_SetItemString(d, "LC_CTYPE", x);
-    Py_XDECREF(x);
-
-    x = PyLong_FromLong(LC_TIME);
-    PyDict_SetItemString(d, "LC_TIME", x);
-    Py_XDECREF(x);
-
-    x = PyLong_FromLong(LC_COLLATE);
-    PyDict_SetItemString(d, "LC_COLLATE", x);
-    Py_XDECREF(x);
-
-    x = PyLong_FromLong(LC_MONETARY);
-    PyDict_SetItemString(d, "LC_MONETARY", x);
-    Py_XDECREF(x);
+    PyModule_AddIntMacro(m, LC_CTYPE);
+    PyModule_AddIntMacro(m, LC_TIME);
+    PyModule_AddIntMacro(m, LC_COLLATE);
+    PyModule_AddIntMacro(m, LC_MONETARY);
 
 #ifdef LC_MESSAGES
-    x = PyLong_FromLong(LC_MESSAGES);
-    PyDict_SetItemString(d, "LC_MESSAGES", x);
-    Py_XDECREF(x);
+    PyModule_AddIntMacro(m, LC_MESSAGES);
 #endif /* LC_MESSAGES */
 
-    x = PyLong_FromLong(LC_NUMERIC);
-    PyDict_SetItemString(d, "LC_NUMERIC", x);
-    Py_XDECREF(x);
-
-    x = PyLong_FromLong(LC_ALL);
-    PyDict_SetItemString(d, "LC_ALL", x);
-    Py_XDECREF(x);
-
-    x = PyLong_FromLong(CHAR_MAX);
-    PyDict_SetItemString(d, "CHAR_MAX", x);
-    Py_XDECREF(x);
+    PyModule_AddIntMacro(m, LC_NUMERIC);
+    PyModule_AddIntMacro(m, LC_ALL);
+    PyModule_AddIntMacro(m, CHAR_MAX);
 
     Error = PyErr_NewException("locale.Error", NULL, NULL);
-    PyDict_SetItemString(d, "Error", Error);
+    if (Error == NULL) {
+        Py_DECREF(m);
+        return NULL;
+    }
+    PyModule_AddObject(m, "Error", Error);
 
 #ifdef HAVE_LANGINFO_H
     for (i = 0; langinfo_constants[i].name; i++) {
@@ -675,6 +682,11 @@ PyInit__locale(void)
                                 langinfo_constants[i].value);
     }
 #endif
+
+    if (PyErr_Occurred()) {
+        Py_DECREF(m);
+        return NULL;
+    }
     return m;
 }
 

@@ -17,6 +17,7 @@ from asyncio.selector_events import _SelectorTransport
 from asyncio.selector_events import _SelectorSslTransport
 from asyncio.selector_events import _SelectorSocketTransport
 from asyncio.selector_events import _SelectorDatagramTransport
+from asyncio.selector_events import _set_nodelay
 
 
 MOCK_ANY = mock.ANY
@@ -24,15 +25,13 @@ MOCK_ANY = mock.ANY
 
 class TestBaseSelectorEventLoop(BaseSelectorEventLoop):
 
-    def close(self):
-        # Don't call the close() method of the parent class, because the
-        # selector is mocked
-        self._closed = True
-
     def _make_self_pipe(self):
         self._ssock = mock.Mock()
         self._csock = mock.Mock()
         self._internal_fds += 1
+
+    def _close_self_pipe(self):
+        pass
 
 
 def list_to_buffer(l=()):
@@ -51,6 +50,7 @@ def close_transport(transport):
 class BaseSelectorEventLoopTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.selector = mock.Mock()
         self.selector.select.return_value = []
         self.loop = TestBaseSelectorEventLoop(self.selector)
@@ -62,20 +62,26 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         self.loop.add_reader._is_coroutine = False
         transport = self.loop._make_socket_transport(m, asyncio.Protocol())
         self.assertIsInstance(transport, _SelectorSocketTransport)
+
+        # Calling repr() must not fail when the event loop is closed
+        self.loop.close()
+        repr(transport)
+
         close_transport(transport)
 
     @unittest.skipIf(ssl is None, 'No ssl module')
     def test_make_ssl_transport(self):
         m = mock.Mock()
-        self.loop.add_reader = mock.Mock()
-        self.loop.add_reader._is_coroutine = False
-        self.loop.add_writer = mock.Mock()
-        self.loop.remove_reader = mock.Mock()
-        self.loop.remove_writer = mock.Mock()
+        self.loop._add_reader = mock.Mock()
+        self.loop._add_reader._is_coroutine = False
+        self.loop._add_writer = mock.Mock()
+        self.loop._remove_reader = mock.Mock()
+        self.loop._remove_writer = mock.Mock()
         waiter = asyncio.Future(loop=self.loop)
         with test_utils.disable_logger():
             transport = self.loop._make_ssl_transport(
                 m, asyncio.Protocol(), m, waiter)
+
             # execute the handshake while the logger is disabled
             # to ignore SSL handshake failure
             test_utils.run_briefly(self.loop)
@@ -114,7 +120,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         ssock.fileno.return_value = 7
         csock = self.loop._csock
         csock.fileno.return_value = 1
-        remove_reader = self.loop.remove_reader = mock.Mock()
+        remove_reader = self.loop._remove_reader = mock.Mock()
 
         self.loop._selector.close()
         self.loop._selector = selector = mock.Mock()
@@ -178,7 +184,28 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
 
         f = self.loop.sock_recv(sock, 1024)
         self.assertIsInstance(f, asyncio.Future)
-        self.loop._sock_recv.assert_called_with(f, False, sock, 1024)
+        self.loop._sock_recv.assert_called_with(f, None, sock, 1024)
+
+    def test_sock_recv_reconnection(self):
+        sock = mock.Mock()
+        sock.fileno.return_value = 10
+        sock.recv.side_effect = BlockingIOError
+        sock.gettimeout.return_value = 0.0
+
+        self.loop.add_reader = mock.Mock()
+        self.loop.remove_reader = mock.Mock()
+        fut = self.loop.sock_recv(sock, 1024)
+        callback = self.loop.add_reader.call_args[0][1]
+        params = self.loop.add_reader.call_args[0][2:]
+
+        # emulate the old socket has closed, but the new one has
+        # the same fileno, so callback is called with old (closed) socket
+        sock.fileno.return_value = -1
+        sock.recv.side_effect = OSError(9)
+        callback(*params)
+
+        self.assertIsInstance(fut.exception(), OSError)
+        self.assertEqual((10,), self.loop.remove_reader.call_args[0])
 
     def test__sock_recv_canceled_fut(self):
         sock = mock.Mock()
@@ -186,7 +213,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         f = asyncio.Future(loop=self.loop)
         f.cancel()
 
-        self.loop._sock_recv(f, False, sock, 1024)
+        self.loop._sock_recv(f, None, sock, 1024)
         self.assertFalse(sock.recv.called)
 
     def test__sock_recv_unregister(self):
@@ -197,7 +224,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         f.cancel()
 
         self.loop.remove_reader = mock.Mock()
-        self.loop._sock_recv(f, True, sock, 1024)
+        self.loop._sock_recv(f, 10, sock, 1024)
         self.assertEqual((10,), self.loop.remove_reader.call_args[0])
 
     def test__sock_recv_tryagain(self):
@@ -207,8 +234,8 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.recv.side_effect = BlockingIOError
 
         self.loop.add_reader = mock.Mock()
-        self.loop._sock_recv(f, False, sock, 1024)
-        self.assertEqual((10, self.loop._sock_recv, f, True, sock, 1024),
+        self.loop._sock_recv(f, None, sock, 1024)
+        self.assertEqual((10, self.loop._sock_recv, f, 10, sock, 1024),
                          self.loop.add_reader.call_args[0])
 
     def test__sock_recv_exception(self):
@@ -217,7 +244,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.fileno.return_value = 10
         err = sock.recv.side_effect = OSError()
 
-        self.loop._sock_recv(f, False, sock, 1024)
+        self.loop._sock_recv(f, None, sock, 1024)
         self.assertIs(err, f.exception())
 
     def test_sock_sendall(self):
@@ -227,7 +254,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         f = self.loop.sock_sendall(sock, b'data')
         self.assertIsInstance(f, asyncio.Future)
         self.assertEqual(
-            (f, False, sock, b'data'),
+            (f, None, sock, b'data'),
             self.loop._sock_sendall.call_args[0])
 
     def test_sock_sendall_nodata(self):
@@ -240,13 +267,34 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         self.assertIsNone(f.result())
         self.assertFalse(self.loop._sock_sendall.called)
 
+    def test_sock_sendall_reconnection(self):
+        sock = mock.Mock()
+        sock.fileno.return_value = 10
+        sock.send.side_effect = BlockingIOError
+        sock.gettimeout.return_value = 0.0
+
+        self.loop.add_writer = mock.Mock()
+        self.loop.remove_writer = mock.Mock()
+        fut = self.loop.sock_sendall(sock, b'data')
+        callback = self.loop.add_writer.call_args[0][1]
+        params = self.loop.add_writer.call_args[0][2:]
+
+        # emulate the old socket has closed, but the new one has
+        # the same fileno, so callback is called with old (closed) socket
+        sock.fileno.return_value = -1
+        sock.send.side_effect = OSError(9)
+        callback(*params)
+
+        self.assertIsInstance(fut.exception(), OSError)
+        self.assertEqual((10,), self.loop.remove_writer.call_args[0])
+
     def test__sock_sendall_canceled_fut(self):
         sock = mock.Mock()
 
         f = asyncio.Future(loop=self.loop)
         f.cancel()
 
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertFalse(sock.send.called)
 
     def test__sock_sendall_unregister(self):
@@ -257,7 +305,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         f.cancel()
 
         self.loop.remove_writer = mock.Mock()
-        self.loop._sock_sendall(f, True, sock, b'data')
+        self.loop._sock_sendall(f, 10, sock, b'data')
         self.assertEqual((10,), self.loop.remove_writer.call_args[0])
 
     def test__sock_sendall_tryagain(self):
@@ -267,9 +315,9 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.send.side_effect = BlockingIOError
 
         self.loop.add_writer = mock.Mock()
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertEqual(
-            (10, self.loop._sock_sendall, f, True, sock, b'data'),
+            (10, self.loop._sock_sendall, f, 10, sock, b'data'),
             self.loop.add_writer.call_args[0])
 
     def test__sock_sendall_interrupted(self):
@@ -279,9 +327,9 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.send.side_effect = InterruptedError
 
         self.loop.add_writer = mock.Mock()
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertEqual(
-            (10, self.loop._sock_sendall, f, True, sock, b'data'),
+            (10, self.loop._sock_sendall, f, 10, sock, b'data'),
             self.loop.add_writer.call_args[0])
 
     def test__sock_sendall_exception(self):
@@ -290,7 +338,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.fileno.return_value = 10
         err = sock.send.side_effect = OSError()
 
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertIs(f.exception(), err)
 
     def test__sock_sendall(self):
@@ -300,7 +348,7 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.fileno.return_value = 10
         sock.send.return_value = 4
 
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertTrue(f.done())
         self.assertIsNone(f.result())
 
@@ -312,10 +360,10 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.send.return_value = 2
 
         self.loop.add_writer = mock.Mock()
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertFalse(f.done())
         self.assertEqual(
-            (10, self.loop._sock_sendall, f, True, sock, b'ta'),
+            (10, self.loop._sock_sendall, f, 10, sock, b'ta'),
             self.loop.add_writer.call_args[0])
 
     def test__sock_sendall_none(self):
@@ -326,24 +374,14 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.send.return_value = 0
 
         self.loop.add_writer = mock.Mock()
-        self.loop._sock_sendall(f, False, sock, b'data')
+        self.loop._sock_sendall(f, None, sock, b'data')
         self.assertFalse(f.done())
         self.assertEqual(
-            (10, self.loop._sock_sendall, f, True, sock, b'data'),
+            (10, self.loop._sock_sendall, f, 10, sock, b'data'),
             self.loop.add_writer.call_args[0])
 
-    def test_sock_connect(self):
-        sock = test_utils.mock_nonblocking_socket()
-        self.loop._sock_connect = mock.Mock()
-
-        f = self.loop.sock_connect(sock, ('127.0.0.1', 8080))
-        self.assertIsInstance(f, asyncio.Future)
-        self.assertEqual(
-            (f, sock, ('127.0.0.1', 8080)),
-            self.loop._sock_connect.call_args[0])
-
     def test_sock_connect_timeout(self):
-        # Tulip issue #205: sock_connect() must unregister the socket on
+        # asyncio issue #205: sock_connect() must unregister the socket on
         # timeout error
 
         # prepare mocks
@@ -353,17 +391,34 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.connect.side_effect = BlockingIOError
 
         # first call to sock_connect() registers the socket
-        fut = self.loop.sock_connect(sock, ('127.0.0.1', 80))
+        fut = self.loop.create_task(
+            self.loop.sock_connect(sock, ('127.0.0.1', 80)))
+        self.loop._run_once()
         self.assertTrue(sock.connect.called)
         self.assertTrue(self.loop.add_writer.called)
-        self.assertEqual(len(fut._callbacks), 1)
 
         # on timeout, the socket must be unregistered
         sock.connect.reset_mock()
-        fut.set_exception(asyncio.TimeoutError)
-        with self.assertRaises(asyncio.TimeoutError):
+        fut.cancel()
+        with self.assertRaises(asyncio.CancelledError):
             self.loop.run_until_complete(fut)
         self.assertTrue(self.loop.remove_writer.called)
+
+    @mock.patch('socket.getaddrinfo')
+    def test_sock_connect_resolve_using_socket_params(self, m_gai):
+        addr = ('need-resolution.com', 8080)
+        sock = test_utils.mock_nonblocking_socket()
+        m_gai.side_effect = (None, None, None, None, ('127.0.0.1', 0))
+        m_gai._is_coroutine = False
+        con = self.loop.create_task(self.loop.sock_connect(sock, addr))
+        while not m_gai.called:
+            self.loop._run_once()
+        m_gai.assert_called_with(
+            addr[0], addr[1], sock.family, sock.type, sock.proto, 0)
+
+        con.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            self.loop.run_until_complete(con)
 
     def test__sock_connect(self):
         f = asyncio.Future(loop=self.loop)
@@ -371,7 +426,10 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock = mock.Mock()
         sock.fileno.return_value = 10
 
-        self.loop._sock_connect(f, sock, ('127.0.0.1', 8080))
+        resolved = self.loop.create_future()
+        resolved.set_result([(socket.AF_INET, socket.SOCK_STREAM,
+                              socket.IPPROTO_TCP, '', ('127.0.0.1', 8080))])
+        self.loop._sock_connect(f, sock, resolved)
         self.assertTrue(f.done())
         self.assertIsNone(f.result())
         self.assertTrue(sock.connect.called)
@@ -397,9 +455,13 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         sock.connect.side_effect = BlockingIOError
         sock.getsockopt.return_value = 0
         address = ('127.0.0.1', 8080)
+        resolved = self.loop.create_future()
+        resolved.set_result([(socket.AF_INET, socket.SOCK_STREAM,
+                              socket.IPPROTO_TCP, '', address)])
 
         f = asyncio.Future(loop=self.loop)
-        self.loop._sock_connect(f, sock, address)
+        self.loop._sock_connect(f, sock, resolved)
+        self.loop._run_once()
         self.assertTrue(self.loop.add_writer.called)
         self.assertEqual(10, self.loop.add_writer.call_args[0][0])
 
@@ -632,12 +694,12 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         reader = mock.Mock()
         reader.cancelled = True
 
-        self.loop.remove_reader = mock.Mock()
+        self.loop._remove_reader = mock.Mock()
         self.loop._process_events(
             [(selectors.SelectorKey(
                 1, 1, selectors.EVENT_READ, (reader, None)),
              selectors.EVENT_READ)])
-        self.loop.remove_reader.assert_called_with(1)
+        self.loop._remove_reader.assert_called_with(1)
 
     def test_process_events_write(self):
         writer = mock.Mock()
@@ -653,18 +715,33 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
     def test_process_events_write_cancelled(self):
         writer = mock.Mock()
         writer.cancelled = True
-        self.loop.remove_writer = mock.Mock()
+        self.loop._remove_writer = mock.Mock()
 
         self.loop._process_events(
             [(selectors.SelectorKey(1, 1, selectors.EVENT_WRITE,
                                     (None, writer)),
               selectors.EVENT_WRITE)])
-        self.loop.remove_writer.assert_called_with(1)
+        self.loop._remove_writer.assert_called_with(1)
+
+    def test_accept_connection_multiple(self):
+        sock = mock.Mock()
+        sock.accept.return_value = (mock.Mock(), mock.Mock())
+        backlog = 100
+        # Mock the coroutine generation for a connection to prevent
+        # warnings related to un-awaited coroutines.
+        mock_obj = mock.patch.object
+        with mock_obj(self.loop, '_accept_connection2') as accept2_mock:
+            accept2_mock.return_value = None
+            with mock_obj(self.loop, 'create_task') as task_mock:
+                task_mock.return_value = None
+                self.loop._accept_connection(mock.Mock(), sock, backlog=backlog)
+        self.assertEqual(sock.accept.call_count, backlog)
 
 
 class SelectorTransportTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = self.new_test_loop()
         self.protocol = test_utils.make_test_protocol(asyncio.Protocol)
         self.sock = mock.Mock(socket.socket)
@@ -693,7 +770,7 @@ class SelectorTransportTests(test_utils.TestCase):
         tr = self.create_transport()
         tr.close()
 
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.assertEqual(1, self.loop.remove_reader_count[7])
         self.protocol.connection_lost(None)
         self.assertEqual(tr._conn_lost, 1)
@@ -714,11 +791,11 @@ class SelectorTransportTests(test_utils.TestCase):
     def test_force_close(self):
         tr = self.create_transport()
         tr._buffer.extend(b'1')
-        self.loop.add_reader(7, mock.sentinel)
-        self.loop.add_writer(7, mock.sentinel)
+        self.loop._add_reader(7, mock.sentinel)
+        self.loop._add_writer(7, mock.sentinel)
         tr._force_close(None)
 
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.assertEqual(tr._buffer, list_to_buffer())
         self.assertFalse(self.loop.readers)
         self.assertFalse(self.loop.writers)
@@ -756,10 +833,26 @@ class SelectorTransportTests(test_utils.TestCase):
         self.assertIsNone(tr._protocol)
         self.assertIsNone(tr._loop)
 
+    def test__add_reader(self):
+        tr = self.create_transport()
+        tr._buffer.extend(b'1')
+        tr._add_reader(7, mock.sentinel)
+        self.assertTrue(self.loop.readers)
+
+        tr._force_close(None)
+
+        self.assertTrue(tr.is_closing())
+        self.assertFalse(self.loop.readers)
+
+        # can not add readers after closing
+        tr._add_reader(7, mock.sentinel)
+        self.assertFalse(self.loop.readers)
+
 
 class SelectorSocketTransportTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = self.new_test_loop()
         self.protocol = test_utils.make_test_protocol(asyncio.Protocol)
         self.sock = mock.Mock(socket.socket)
@@ -792,14 +885,19 @@ class SelectorSocketTransportTests(test_utils.TestCase):
         test_utils.run_briefly(self.loop)
         self.assertFalse(tr._paused)
         self.loop.assert_reader(7, tr._read_ready)
+
+        tr.pause_reading()
         tr.pause_reading()
         self.assertTrue(tr._paused)
-        self.assertFalse(7 in self.loop.readers)
+        self.loop.assert_no_reader(7)
+
+        tr.resume_reading()
         tr.resume_reading()
         self.assertFalse(tr._paused)
         self.loop.assert_reader(7, tr._read_ready)
-        with self.assertRaises(RuntimeError):
-            tr.resume_reading()
+
+        tr.close()
+        self.loop.assert_no_reader(7)
 
     def test_read_ready(self):
         transport = self.socket_transport()
@@ -1004,7 +1102,7 @@ class SelectorSocketTransportTests(test_utils.TestCase):
 
         transport = self.socket_transport()
         transport._buffer.extend(data)
-        self.loop.add_writer(7, transport._write_ready)
+        self.loop._add_writer(7, transport._write_ready)
         transport._write_ready()
         self.assertTrue(self.sock.send.called)
         self.assertFalse(self.loop.writers)
@@ -1016,7 +1114,7 @@ class SelectorSocketTransportTests(test_utils.TestCase):
         transport = self.socket_transport()
         transport._closing = True
         transport._buffer.extend(data)
-        self.loop.add_writer(7, transport._write_ready)
+        self.loop._add_writer(7, transport._write_ready)
         transport._write_ready()
         self.assertTrue(self.sock.send.called)
         self.assertFalse(self.loop.writers)
@@ -1034,7 +1132,7 @@ class SelectorSocketTransportTests(test_utils.TestCase):
 
         transport = self.socket_transport()
         transport._buffer.extend(data)
-        self.loop.add_writer(7, transport._write_ready)
+        self.loop._add_writer(7, transport._write_ready)
         transport._write_ready()
         self.loop.assert_writer(7, transport._write_ready)
         self.assertEqual(list_to_buffer([b'ta']), transport._buffer)
@@ -1045,7 +1143,7 @@ class SelectorSocketTransportTests(test_utils.TestCase):
 
         transport = self.socket_transport()
         transport._buffer.extend(data)
-        self.loop.add_writer(7, transport._write_ready)
+        self.loop._add_writer(7, transport._write_ready)
         transport._write_ready()
         self.loop.assert_writer(7, transport._write_ready)
         self.assertEqual(list_to_buffer([b'data']), transport._buffer)
@@ -1055,7 +1153,7 @@ class SelectorSocketTransportTests(test_utils.TestCase):
 
         transport = self.socket_transport()
         transport._buffer = list_to_buffer([b'data1', b'data2'])
-        self.loop.add_writer(7, transport._write_ready)
+        self.loop._add_writer(7, transport._write_ready)
         transport._write_ready()
 
         self.loop.assert_writer(7, transport._write_ready)
@@ -1071,17 +1169,6 @@ class SelectorSocketTransportTests(test_utils.TestCase):
         transport._fatal_error.assert_called_with(
                                    err,
                                    'Fatal write error on socket transport')
-
-    @mock.patch('asyncio.base_events.logger')
-    def test_write_ready_exception_and_close(self, m_log):
-        self.sock.send.side_effect = OSError()
-        remove_writer = self.loop.remove_writer = mock.Mock()
-
-        transport = self.socket_transport()
-        transport.close()
-        transport._buffer.extend(b'data')
-        transport._write_ready()
-        remove_writer.assert_called_with(self.sock_fd)
 
     def test_write_eof(self):
         tr = self.socket_transport()
@@ -1106,11 +1193,26 @@ class SelectorSocketTransportTests(test_utils.TestCase):
         self.sock.shutdown.assert_called_with(socket.SHUT_WR)
         tr.close()
 
+    def test_write_eof_after_close(self):
+        tr = self.socket_transport()
+        tr.close()
+        self.loop.run_until_complete(asyncio.sleep(0))
+        tr.write_eof()
+
+    @mock.patch('asyncio.base_events.logger')
+    def test_transport_close_remove_writer(self, m_log):
+        remove_writer = self.loop._remove_writer = mock.Mock()
+
+        transport = self.socket_transport()
+        transport.close()
+        remove_writer.assert_called_with(self.sock_fd)
+
 
 @unittest.skipIf(ssl is None, 'No ssl module')
 class SelectorSslTransportTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = self.new_test_loop()
         self.protocol = test_utils.make_test_protocol(asyncio.Protocol)
         self.sock = mock.Mock(socket.socket)
@@ -1160,7 +1262,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
         self.sslsock.do_handshake.side_effect = exc
         with test_utils.disable_logger():
             waiter = asyncio.Future(loop=self.loop)
-            transport = self.ssl_transport(waiter=waiter)
+            self.ssl_transport(waiter=waiter)
         self.assertTrue(waiter.done())
         self.assertIs(exc, waiter.exception())
         self.assertTrue(self.sslsock.close.called)
@@ -1177,7 +1279,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
         self.assertIs(exc, waiter.exception())
 
     def test_cancel_handshake(self):
-        # Python issue #23197: cancelling an handshake must not raise an
+        # Python issue #23197: cancelling a handshake must not raise an
         # exception or log an error, even if the handshake failed
         waiter = asyncio.Future(loop=self.loop)
         transport = self.ssl_transport(waiter=waiter)
@@ -1258,7 +1360,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
         self.assertEqual((b'data',), self.protocol.data_received.call_args[0])
 
     def test_read_ready_write_wants_read(self):
-        self.loop.add_writer = mock.Mock()
+        self.loop._add_writer = mock.Mock()
         self.sslsock.recv.side_effect = BlockingIOError
         transport = self._make_one()
         transport._write_wants_read = True
@@ -1268,7 +1370,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
 
         self.assertFalse(transport._write_wants_read)
         transport._write_ready.assert_called_with()
-        self.loop.add_writer.assert_called_with(
+        self.loop._add_writer.assert_called_with(
             transport._sock_fd, transport._write_ready)
 
     def test_read_ready_recv_eof(self):
@@ -1303,16 +1405,16 @@ class SelectorSslTransportTests(test_utils.TestCase):
         self.assertFalse(self.protocol.data_received.called)
 
     def test_read_ready_recv_write(self):
-        self.loop.remove_reader = mock.Mock()
-        self.loop.add_writer = mock.Mock()
+        self.loop._remove_reader = mock.Mock()
+        self.loop._add_writer = mock.Mock()
         self.sslsock.recv.side_effect = ssl.SSLWantWriteError
         transport = self._make_one()
         transport._read_ready()
         self.assertFalse(self.protocol.data_received.called)
         self.assertTrue(transport._read_wants_write)
 
-        self.loop.remove_reader.assert_called_with(transport._sock_fd)
-        self.loop.add_writer.assert_called_with(
+        self.loop._remove_reader.assert_called_with(transport._sock_fd)
+        self.loop._add_writer.assert_called_with(
             transport._sock_fd, transport._write_ready)
 
     def test_read_ready_recv_exc(self):
@@ -1359,20 +1461,19 @@ class SelectorSslTransportTests(test_utils.TestCase):
     def test_write_ready_send_closing(self):
         self.sslsock.send.return_value = 4
         transport = self._make_one()
-        transport.close()
         transport._buffer = list_to_buffer([b'data'])
+        transport.close()
         transport._write_ready()
-        self.assertFalse(self.loop.writers)
         self.protocol.connection_lost.assert_called_with(None)
 
     def test_write_ready_send_closing_empty_buffer(self):
         self.sslsock.send.return_value = 4
+        call_soon = self.loop.call_soon = mock.Mock()
         transport = self._make_one()
-        transport.close()
         transport._buffer = list_to_buffer()
+        transport.close()
         transport._write_ready()
-        self.assertFalse(self.loop.writers)
-        self.protocol.connection_lost.assert_called_with(None)
+        call_soon.assert_called_with(transport._call_connection_lost, None)
 
     def test_write_ready_send_retry(self):
         transport = self._make_one()
@@ -1390,12 +1491,12 @@ class SelectorSslTransportTests(test_utils.TestCase):
         transport = self._make_one()
         transport._buffer = list_to_buffer([b'data'])
 
-        self.loop.remove_writer = mock.Mock()
+        self.loop._remove_writer = mock.Mock()
         self.sslsock.send.side_effect = ssl.SSLWantReadError
         transport._write_ready()
         self.assertFalse(self.protocol.data_received.called)
         self.assertTrue(transport._write_wants_read)
-        self.loop.remove_writer.assert_called_with(transport._sock_fd)
+        self.loop._remove_writer.assert_called_with(transport._sock_fd)
 
     def test_write_ready_send_exc(self):
         err = self.sslsock.send.side_effect = OSError()
@@ -1410,7 +1511,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
         self.assertEqual(list_to_buffer(), transport._buffer)
 
     def test_write_ready_read_wants_write(self):
-        self.loop.add_reader = mock.Mock()
+        self.loop._add_reader = mock.Mock()
         self.sslsock.send.side_effect = BlockingIOError
         transport = self._make_one()
         transport._read_wants_write = True
@@ -1419,7 +1520,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
 
         self.assertFalse(transport._read_wants_write)
         transport._read_ready.assert_called_with()
-        self.loop.add_reader.assert_called_with(
+        self.loop._add_reader.assert_called_with(
             transport._sock_fd, transport._read_ready)
 
     def test_write_eof(self):
@@ -1431,7 +1532,7 @@ class SelectorSslTransportTests(test_utils.TestCase):
         tr = self._make_one()
         tr.close()
 
-        self.assertTrue(tr._closing)
+        self.assertTrue(tr.is_closing())
         self.assertEqual(1, self.loop.remove_reader_count[1])
         self.assertEqual(tr._conn_lost, 1)
 
@@ -1472,6 +1573,7 @@ class SelectorSslWithoutSslTransportTests(unittest.TestCase):
 class SelectorDatagramTransportTests(test_utils.TestCase):
 
     def setUp(self):
+        super().setUp()
         self.loop = self.new_test_loop()
         self.protocol = test_utils.make_test_protocol(asyncio.DatagramProtocol)
         self.sock = mock.Mock(spec_set=socket.socket)
@@ -1670,7 +1772,7 @@ class SelectorDatagramTransportTests(test_utils.TestCase):
 
         transport = self.datagram_transport()
         transport._buffer.append((data, ('0.0.0.0', 12345)))
-        self.loop.add_writer(7, transport._sendto_ready)
+        self.loop._add_writer(7, transport._sendto_ready)
         transport._sendto_ready()
         self.assertTrue(self.sock.sendto.called)
         self.assertEqual(
@@ -1684,7 +1786,7 @@ class SelectorDatagramTransportTests(test_utils.TestCase):
         transport = self.datagram_transport()
         transport._closing = True
         transport._buffer.append((data, ()))
-        self.loop.add_writer(7, transport._sendto_ready)
+        self.loop._add_writer(7, transport._sendto_ready)
         transport._sendto_ready()
         self.sock.sendto.assert_called_with(data, ())
         self.assertFalse(self.loop.writers)
@@ -1693,7 +1795,7 @@ class SelectorDatagramTransportTests(test_utils.TestCase):
 
     def test_sendto_ready_no_data(self):
         transport = self.datagram_transport()
-        self.loop.add_writer(7, transport._sendto_ready)
+        self.loop._add_writer(7, transport._sendto_ready)
         transport._sendto_ready()
         self.assertFalse(self.sock.sendto.called)
         self.assertFalse(self.loop.writers)
@@ -1703,7 +1805,7 @@ class SelectorDatagramTransportTests(test_utils.TestCase):
 
         transport = self.datagram_transport()
         transport._buffer.extend([(b'data1', ()), (b'data2', ())])
-        self.loop.add_writer(7, transport._sendto_ready)
+        self.loop._add_writer(7, transport._sendto_ready)
         transport._sendto_ready()
 
         self.loop.assert_writer(7, transport._sendto_ready)
@@ -1754,6 +1856,31 @@ class SelectorDatagramTransportTests(test_utils.TestCase):
             test_utils.MockPattern(
                 'Fatal error on transport\nprotocol:.*\ntransport:.*'),
             exc_info=(ConnectionRefusedError, MOCK_ANY, MOCK_ANY))
+
+
+class TestSelectorUtils(test_utils.TestCase):
+    def check_set_nodelay(self, sock):
+        opt = sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+        self.assertFalse(opt)
+
+        _set_nodelay(sock)
+
+        opt = sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+        self.assertTrue(opt)
+
+    @unittest.skipUnless(hasattr(socket, 'TCP_NODELAY'),
+                         'need socket.TCP_NODELAY')
+    def test_set_nodelay(self):
+        sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                             proto=socket.IPPROTO_TCP)
+        with sock:
+            self.check_set_nodelay(sock)
+
+        sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                             proto=socket.IPPROTO_TCP)
+        with sock:
+            sock.setblocking(False)
+            self.check_set_nodelay(sock)
 
 
 if __name__ == '__main__':

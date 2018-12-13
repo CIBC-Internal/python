@@ -20,8 +20,6 @@ def _retry_thrice(func, exc, *args, **kwargs):
         except exc as e:
             last_exc = e
             continue
-        except:
-            raise
     raise last_exc
 
 def _wrap_with_retry_thrice(func, exc):
@@ -99,11 +97,9 @@ class OtherNetworkTests(unittest.TestCase):
 
     def test_ftp(self):
         urls = [
-            'ftp://ftp.debian.org/debian/README',
-            ('ftp://ftp.debian.org/debian/non-existent-file',
+            'ftp://www.pythontest.net/README',
+            ('ftp://www.pythontest.net/non-existent-file',
              None, urllib.error.URLError),
-            'ftp://gatekeeper.research.compaq.com/pub/DEC/SRC'
-                '/research-reports/00README-Legal-Rules-Regs',
             ]
         self._test_urls(urls, self._extra_handlers())
 
@@ -181,6 +177,7 @@ class OtherNetworkTests(unittest.TestCase):
             opener.open(request)
             self.assertEqual(request.get_header('User-agent'),'Test-Agent')
 
+    @unittest.skip('XXX: http://www.imdb.com is gone')
     def test_sites_no_connection_close(self):
         # Some sites do not send Connection: close header.
         # Verify that those work properly. (#issue12576)
@@ -291,7 +288,7 @@ class TimeoutTest(unittest.TestCase):
             self.addCleanup(u.close)
             self.assertEqual(u.fp.raw._sock.gettimeout(), 120)
 
-    FTP_HOST = "ftp://ftp.mirror.nl/pub/gnu/"
+    FTP_HOST = 'ftp://www.pythontest.net/'
 
     def test_ftp_basic(self):
         self.assertIsNone(socket.getdefaulttimeout())

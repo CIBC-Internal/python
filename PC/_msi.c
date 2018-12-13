@@ -243,8 +243,13 @@ static PyObject* fcicreate(PyObject* obj, PyObject* args)
     for (i=0; i < PyList_GET_SIZE(files); i++) {
         PyObject *item = PyList_GET_ITEM(files, i);
         char *filename, *cabname;
-        if (!PyArg_ParseTuple(item, "ss", &filename, &cabname))
-            goto err;
+
+        if (!PyArg_ParseTuple(item, "ss", &filename, &cabname)) {
+            PyErr_SetString(PyExc_TypeError, "FCICreate expects a list of tuples containing two strings");
+            FCIDestroy(hfci);
+            return NULL;
+        }
+
         if (!FCIAddFile(hfci, filename, cabname, FALSE,
             cb_getnextcabinet, cb_status, cb_getopeninfo,
             tcompTYPE_MSZIP))
@@ -260,7 +265,11 @@ static PyObject* fcicreate(PyObject* obj, PyObject* args)
     Py_INCREF(Py_None);
     return Py_None;
 err:
-    PyErr_Format(PyExc_ValueError, "FCI error %d", erf.erfOper); /* XXX better error type */
+    if(erf.fError)
+        PyErr_Format(PyExc_ValueError, "FCI error %d", erf.erfOper); /* XXX better error type */
+    else
+        PyErr_SetString(PyExc_ValueError, "FCI general error");
+
     FCIDestroy(hfci);
     return NULL;
 }
@@ -275,6 +284,7 @@ msiobj_dealloc(msiobj* msidb)
 {
     MsiCloseHandle(msidb->h);
     msidb->h = 0;
+    PyObject_Del(msidb);
 }
 
 static PyObject*
@@ -315,6 +325,12 @@ msierror(int status)
         case ERROR_INVALID_PARAMETER:
             PyErr_SetString(MSIError, "invalid parameter");
             return NULL;
+        case ERROR_OPEN_FAILED:
+            PyErr_SetString(MSIError, "open failed");
+            return NULL;
+        case ERROR_CREATE_FAILED:
+            PyErr_SetString(MSIError, "create failed");
+            return NULL;
         default:
             PyErr_Format(MSIError, "unknown error %x", status);
             return NULL;
@@ -324,6 +340,10 @@ msierror(int status)
     code = MsiRecordGetInteger(err, 1); /* XXX code */
     if (MsiFormatRecord(0, err, res, &size) == ERROR_MORE_DATA) {
         res = malloc(size+1);
+        if (res == NULL) {
+            MsiCloseHandle(err);
+            return PyErr_NoMemory();
+        }
         MsiFormatRecord(0, err, res, &size);
         res[size]='\0';
     }
@@ -547,6 +567,9 @@ summary_getproperty(msiobj* si, PyObject *args)
         &fval, sval, &ssize);
     if (status == ERROR_MORE_DATA) {
         sval = malloc(ssize);
+        if (sval == NULL) {
+            return PyErr_NoMemory();
+        }
         status = MsiSummaryInfoGetProperty(si->h, field, &type, &ival,
             &fval, sval, &ssize);
     }
@@ -562,6 +585,8 @@ summary_getproperty(msiobj* si, PyObject *args)
             if (sval != sbuf)
                 free(sval);
             return result;
+        case VT_EMPTY:
+            Py_RETURN_NONE;
     }
     PyErr_Format(PyExc_NotImplementedError, "result of type %d", type);
     return NULL;
@@ -591,8 +616,12 @@ summary_setproperty(msiobj* si, PyObject *args)
         return NULL;
 
     if (PyUnicode_Check(data)) {
+        const WCHAR *value = _PyUnicode_AsUnicode(data);
+        if (value == NULL) {
+            return NULL;
+        }
         status = MsiSummaryInfoSetPropertyW(si->h, field, VT_LPSTR,
-            0, NULL, PyUnicode_AsUnicode(data));
+            0, NULL, value);
     } else if (PyLong_CheckExact(data)) {
         long value = PyLong_AsLong(data);
         if (value == -1 && PyErr_Occurred()) {
@@ -715,8 +744,12 @@ view_fetch(msiobj *view, PyObject*args)
     int status;
     MSIHANDLE result;
 
-    if ((status = MsiViewFetch(view->h, &result)) != ERROR_SUCCESS)
+    status = MsiViewFetch(view->h, &result);
+    if (status == ERROR_NO_MORE_ITEMS) {
+        Py_RETURN_NONE;
+    } else if (status != ERROR_SUCCESS) {
         return msierror(status);
+    }
 
     return record_new(result);
 }
@@ -946,6 +979,17 @@ static PyTypeObject msidb_Type = {
         0,                      /*tp_is_gc*/
 };
 
+#define Py_NOT_PERSIST(x, flag)                        \
+    (x != (int)(flag) &&                      \
+    x != ((int)(flag) | MSIDBOPEN_PATCHFILE))
+
+#define Py_INVALID_PERSIST(x)                \
+    (Py_NOT_PERSIST(x, MSIDBOPEN_READONLY) &&  \
+    Py_NOT_PERSIST(x, MSIDBOPEN_TRANSACT) &&   \
+    Py_NOT_PERSIST(x, MSIDBOPEN_DIRECT) &&     \
+    Py_NOT_PERSIST(x, MSIDBOPEN_CREATE) &&     \
+    Py_NOT_PERSIST(x, MSIDBOPEN_CREATEDIRECT))
+
 static PyObject* msiopendb(PyObject *obj, PyObject *args)
 {
     int status;
@@ -953,11 +997,14 @@ static PyObject* msiopendb(PyObject *obj, PyObject *args)
     int persist;
     MSIHANDLE h;
     msiobj *result;
-
     if (!PyArg_ParseTuple(args, "si:MSIOpenDatabase", &path, &persist))
         return NULL;
-
-        status = MsiOpenDatabase(path, (LPCSTR)persist, &h);
+    /* We need to validate that persist is a valid MSIDBOPEN_* value. Otherwise,
+       MsiOpenDatabase may treat the value as a pointer, leading to unexpected
+       behavior. */
+    if (Py_INVALID_PERSIST(persist))
+        return msierror(ERROR_INVALID_PARAMETER);
+    status = MsiOpenDatabase(path, (LPCSTR)persist, &h);
     if (status != ERROR_SUCCESS)
         return msierror(status);
 
@@ -1023,12 +1070,12 @@ PyInit__msi(void)
     if (m == NULL)
         return NULL;
 
-    PyModule_AddIntConstant(m, "MSIDBOPEN_CREATEDIRECT", (int)MSIDBOPEN_CREATEDIRECT);
-    PyModule_AddIntConstant(m, "MSIDBOPEN_CREATE", (int)MSIDBOPEN_CREATE);
-    PyModule_AddIntConstant(m, "MSIDBOPEN_DIRECT", (int)MSIDBOPEN_DIRECT);
-    PyModule_AddIntConstant(m, "MSIDBOPEN_READONLY", (int)MSIDBOPEN_READONLY);
-    PyModule_AddIntConstant(m, "MSIDBOPEN_TRANSACT", (int)MSIDBOPEN_TRANSACT);
-    PyModule_AddIntConstant(m, "MSIDBOPEN_PATCHFILE", (int)MSIDBOPEN_PATCHFILE);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_CREATEDIRECT", (long)MSIDBOPEN_CREATEDIRECT);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_CREATE", (long)MSIDBOPEN_CREATE);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_DIRECT", (long)MSIDBOPEN_DIRECT);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_READONLY", (long)MSIDBOPEN_READONLY);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_TRANSACT", (long)MSIDBOPEN_TRANSACT);
+    PyModule_AddIntConstant(m, "MSIDBOPEN_PATCHFILE", (long)MSIDBOPEN_PATCHFILE);
 
     PyModule_AddIntMacro(m, MSICOLINFO_NAMES);
     PyModule_AddIntMacro(m, MSICOLINFO_TYPES);

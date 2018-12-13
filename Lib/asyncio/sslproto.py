@@ -1,11 +1,12 @@
 import collections
-import sys
 import warnings
 try:
     import ssl
 except ImportError:  # pragma: no cover
     ssl = None
 
+from . import base_events
+from . import compat
 from . import protocols
 from . import transports
 from .log import logger
@@ -293,15 +294,24 @@ class _SSLPipe(object):
 class _SSLProtocolTransport(transports._FlowControlMixin,
                             transports.Transport):
 
-    def __init__(self, loop, ssl_protocol, app_protocol):
+    def __init__(self, loop, ssl_protocol):
         self._loop = loop
+        # SSLProtocol instance
         self._ssl_protocol = ssl_protocol
-        self._app_protocol = app_protocol
         self._closed = False
 
     def get_extra_info(self, name, default=None):
         """Get optional transport information."""
         return self._ssl_protocol._get_extra_info(name, default)
+
+    def set_protocol(self, protocol):
+        self._ssl_protocol._app_protocol = protocol
+
+    def get_protocol(self):
+        return self._ssl_protocol._app_protocol
+
+    def is_closing(self):
+        return self._closed
 
     def close(self):
         """Close the transport.
@@ -317,10 +327,11 @@ class _SSLProtocolTransport(transports._FlowControlMixin,
     # On Python 3.3 and older, objects with a destructor part of a reference
     # cycle are never destroyed. It's not more the case on Python 3.4 thanks
     # to the PEP 442.
-    if sys.version_info >= (3, 4):
+    if compat.PY34:
         def __del__(self):
             if not self._closed:
-                warnings.warn("unclosed transport %r" % self, ResourceWarning)
+                warnings.warn("unclosed transport %r" % self, ResourceWarning,
+                              source=self)
                 self.close()
 
     def pause_reading(self):
@@ -348,7 +359,7 @@ class _SSLProtocolTransport(transports._FlowControlMixin,
         high-water limit.  Neither value can be negative.
 
         The defaults are implementation-specific.  If only the
-        high-water limit is given, the low-water limit defaults to a
+        high-water limit is given, the low-water limit defaults to an
         implementation-specific value less than or equal to the
         high-water limit.  Setting high to zero forces low to zero as
         well, and causes pause_writing() to be called whenever the
@@ -399,7 +410,8 @@ class SSLProtocol(protocols.Protocol):
     """
 
     def __init__(self, loop, app_protocol, sslcontext, waiter,
-                 server_side=False, server_hostname=None):
+                 server_side=False, server_hostname=None,
+                 call_connection_made=True):
         if ssl is None:
             raise RuntimeError('stdlib ssl module not available')
 
@@ -423,13 +435,15 @@ class SSLProtocol(protocols.Protocol):
         self._waiter = waiter
         self._loop = loop
         self._app_protocol = app_protocol
-        self._app_transport = _SSLProtocolTransport(self._loop,
-                                                    self, self._app_protocol)
+        self._app_transport = _SSLProtocolTransport(self._loop, self)
+        # _SSLPipe instance (None until the connection is made)
         self._sslpipe = None
         self._session_established = False
         self._in_handshake = False
         self._in_shutdown = False
+        # transport, ex: SelectorSocketTransport
         self._transport = None
+        self._call_connection_made = call_connection_made
 
     def _wakeup_waiter(self, exc=None):
         if self._waiter is None:
@@ -464,6 +478,7 @@ class SSLProtocol(protocols.Protocol):
             self._loop.call_soon(self._app_protocol.connection_lost, exc)
         self._transport = None
         self._app_transport = None
+        self._wakeup_waiter(exc)
 
     def pause_writing(self):
         """Called when the low-level transport's buffer goes over
@@ -482,6 +497,10 @@ class SSLProtocol(protocols.Protocol):
 
         The argument is a bytes object.
         """
+        if self._sslpipe is None:
+            # transport closing, sslpipe is destroyed
+            return
+
         try:
             ssldata, appdata = self._sslpipe.feed_ssldata(data)
         except ssl.SSLError as e:
@@ -526,14 +545,19 @@ class SSLProtocol(protocols.Protocol):
     def _get_extra_info(self, name, default=None):
         if name in self._extra:
             return self._extra[name]
-        else:
+        elif self._transport is not None:
             return self._transport.get_extra_info(name, default)
+        else:
+            return default
 
     def _start_shutdown(self):
         if self._in_shutdown:
             return
-        self._in_shutdown = True
-        self._write_appdata(b'')
+        if self._in_handshake:
+            self._abort()
+        else:
+            self._in_shutdown = True
+            self._write_appdata(b'')
 
     def _write_appdata(self, data):
         self._write_backlog.append((data, 0))
@@ -550,7 +574,7 @@ class SSLProtocol(protocols.Protocol):
         # (b'', 1) is a special value in _process_write_backlog() to do
         # the SSL handshake
         self._write_backlog.append((b'', 1))
-        self._loop.call_soon(self._process_write_backlog)
+        self._process_write_backlog()
 
     def _on_handshake_complete(self, handshake_exc):
         self._in_handshake = False
@@ -591,12 +615,14 @@ class SSLProtocol(protocols.Protocol):
         self._extra.update(peercert=peercert,
                            cipher=sslobj.cipher(),
                            compression=sslobj.compression(),
+                           ssl_object=sslobj,
                            )
-        self._app_protocol.connection_made(self._app_transport)
+        if self._call_connection_made:
+            self._app_protocol.connection_made(self._app_transport)
         self._wakeup_waiter()
         self._session_established = True
         # In case transport.write() was already called. Don't call
-        # immediatly _process_write_backlog(), but schedule it:
+        # immediately _process_write_backlog(), but schedule it:
         # _on_handshake_complete() can be called indirectly from
         # _process_write_backlog(), and _process_write_backlog() is not
         # reentrant.
@@ -604,7 +630,7 @@ class SSLProtocol(protocols.Protocol):
 
     def _process_write_backlog(self):
         # Try to make progress on the write backlog.
-        if self._transport is None:
+        if self._transport is None or self._sslpipe is None:
             return
 
         try:
@@ -613,7 +639,8 @@ class SSLProtocol(protocols.Protocol):
                 if data:
                     ssldata, offset = self._sslpipe.feed_appdata(data, offset)
                 elif offset:
-                    ssldata = self._sslpipe.do_handshake(self._on_handshake_complete)
+                    ssldata = self._sslpipe.do_handshake(
+                        self._on_handshake_complete)
                     offset = 1
                 else:
                     ssldata = self._sslpipe.shutdown(self._finalize)
@@ -637,13 +664,17 @@ class SSLProtocol(protocols.Protocol):
                 self._write_buffer_size -= len(data)
         except BaseException as exc:
             if self._in_handshake:
+                # BaseExceptions will be re-raised in _on_handshake_complete.
                 self._on_handshake_complete(exc)
             else:
                 self._fatal_error(exc, 'Fatal error on SSL transport')
+            if not isinstance(exc, Exception):
+                # BaseException
+                raise
 
     def _fatal_error(self, exc, message='Fatal error on transport'):
         # Should be called from exception handler only.
-        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+        if isinstance(exc, base_events._FATAL_ERROR_IGNORE):
             if self._loop.get_debug():
                 logger.debug("%r: %s", self, message, exc_info=True)
         else:
@@ -657,12 +688,14 @@ class SSLProtocol(protocols.Protocol):
             self._transport._force_close(exc)
 
     def _finalize(self):
+        self._sslpipe = None
+
         if self._transport is not None:
             self._transport.close()
 
     def _abort(self):
-        if self._transport is not None:
-            try:
+        try:
+            if self._transport is not None:
                 self._transport.abort()
-            finally:
-                self._finalize()
+        finally:
+            self._finalize()

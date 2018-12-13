@@ -99,18 +99,24 @@ Abstract Grammar
 The abstract grammar is currently defined as follows:
 
 .. literalinclude:: ../../Parser/Python.asdl
+   :language: none
 
 
 :mod:`ast` Helpers
 ------------------
 
-Apart from the node classes, :mod:`ast` module defines these utility functions
+Apart from the node classes, the :mod:`ast` module defines these utility functions
 and classes for traversing abstract syntax trees:
 
 .. function:: parse(source, filename='<unknown>', mode='exec')
 
    Parse the source into an AST node.  Equivalent to ``compile(source,
    filename, mode, ast.PyCF_ONLY_AST)``.
+
+   .. warning::
+      It is possible to crash the Python interpreter with a
+      sufficiently large/complex string due to stack depth limitations
+      in Python's AST compiler.
 
 
 .. function:: literal_eval(node_or_string)
@@ -124,6 +130,11 @@ and classes for traversing abstract syntax trees:
    untrusted sources without the need to parse the values oneself.  It is not
    capable of evaluating arbitrarily complex expressions, for example involving
    operators or indexing.
+
+   .. warning::
+      It is possible to crash the Python interpreter with a
+      sufficiently large/complex string due to stack depth limitations
+      in Python's AST compiler.
 
    .. versionchanged:: 3.2
       Now allows bytes and set literals.
@@ -249,3 +260,8 @@ and classes for traversing abstract syntax trees:
    wanted *annotate_fields* must be set to ``False``.  Attributes such as line
    numbers and column offsets are not dumped by default.  If this is wanted,
    *include_attributes* can be set to ``True``.
+
+.. seealso::
+
+    `Green Tree Snakes <https://greentreesnakes.readthedocs.org/>`_, an external documentation resource, has good
+    details on working with Python ASTs.

@@ -75,14 +75,14 @@ The constants defined in this module are:
 
 .. _string-formatting:
 
-String Formatting
------------------
+Custom String Formatting
+------------------------
 
 The built-in string class provides the ability to do complex variable
-substitutions and value formatting via the :func:`format` method described in
+substitutions and value formatting via the :meth:`~str.format` method described in
 :pep:`3101`.  The :class:`Formatter` class in the :mod:`string` module allows
 you to create and customize your own string formatting behaviors using the same
-implementation as the built-in :meth:`format` method.
+implementation as the built-in :meth:`~str.format` method.
 
 
 .. class:: Formatter
@@ -91,9 +91,13 @@ implementation as the built-in :meth:`format` method.
 
    .. method:: format(format_string, *args, **kwargs)
 
-      :meth:`format` is the primary API method.  It takes a format string and
+      The primary API method.  It takes a format string and
       an arbitrary set of positional and keyword arguments.
-      :meth:`format` is just a wrapper that calls :meth:`vformat`.
+      It is just a wrapper that calls :meth:`vformat`.
+
+      .. deprecated:: 3.5
+         Passing a format string as keyword argument *format_string* has been
+         deprecated.
 
    .. method:: vformat(format_string, args, kwargs)
 
@@ -184,7 +188,9 @@ Format String Syntax
 
 The :meth:`str.format` method and the :class:`Formatter` class share the same
 syntax for format strings (although in the case of :class:`Formatter`,
-subclasses can define their own format string syntax).
+subclasses can define their own format string syntax).  The syntax is
+related to that of :ref:`formatted string literals <f-strings>`, but
+there are differences.
 
 Format strings contain "replacement fields" surrounded by curly braces ``{}``.
 Anything that is not contained in braces is considered literal text, which is
@@ -196,9 +202,9 @@ The grammar for a replacement field is as follows:
    .. productionlist:: sf
       replacement_field: "{" [`field_name`] ["!" `conversion`] [":" `format_spec`] "}"
       field_name: arg_name ("." `attribute_name` | "[" `element_index` "]")*
-      arg_name: [`identifier` | `integer`]
+      arg_name: [`identifier` | `digit`+]
       attribute_name: `identifier`
-      element_index: `integer` | `index_string`
+      element_index: `digit`+ | `index_string`
       index_string: <any source character except "]"> +
       conversion: "r" | "s" | "a"
       format_spec: <described in the next section>
@@ -225,17 +231,20 @@ attribute using :func:`getattr`, while an expression of the form ``'[index]'``
 does an index lookup using :func:`__getitem__`.
 
 .. versionchanged:: 3.1
-   The positional argument specifiers can be omitted, so ``'{} {}'`` is
-   equivalent to ``'{0} {1}'``.
+   The positional argument specifiers can be omitted for :meth:`str.format`,
+   so ``'{} {}'.format(a, b)`` is equivalent to ``'{0} {1}'.format(a, b)``.
+
+.. versionchanged:: 3.4
+   The positional argument specifiers can be omitted for :class:`Formatter`.
 
 Some simple format string examples::
 
-   "First, thou shalt count to {0}" # References first positional argument
-   "Bring me a {}"                  # Implicitly references the first positional argument
-   "From {} to {}"                  # Same as "From {0} to {1}"
-   "My quest is {name}"             # References keyword argument 'name'
-   "Weight in tons {0.weight}"      # 'weight' attribute of first positional arg
-   "Units destroyed: {players[0]}"  # First element of keyword argument 'players'.
+   "First, thou shalt count to {0}"  # References first positional argument
+   "Bring me a {}"                   # Implicitly references the first positional argument
+   "From {} to {}"                   # Same as "From {0} to {1}"
+   "My quest is {name}"              # References keyword argument 'name'
+   "Weight in tons {0.weight}"       # 'weight' attribute of first positional arg
+   "Units destroyed: {players[0]}"   # First element of keyword argument 'players'.
 
 The *conversion* field causes a type coercion before formatting.  Normally, the
 job of formatting a value is done by the :meth:`__format__` method of the value
@@ -263,8 +272,9 @@ Most built-in types support a common formatting mini-language, which is
 described in the next section.
 
 A *format_spec* field can also include nested replacement fields within it.
-These nested replacement fields can contain only a field name; conversion flags
-and format specifications are not allowed.  The replacement fields within the
+These nested replacement fields may contain a field name, conversion flag
+and format specification, but deeper nesting is
+not allowed.  The replacement fields within the
 format_spec are substituted before the *format_spec* string is interpreted.
 This allows the formatting of a value to be dynamically specified.
 
@@ -278,7 +288,8 @@ Format Specification Mini-Language
 
 "Format specifications" are used within replacement fields contained within a
 format string to define how individual values are presented (see
-:ref:`formatstrings`).  They can also be passed directly to the built-in
+:ref:`formatstrings` and :ref:`f-strings`).
+They can also be passed directly to the built-in
 :func:`format` function.  Each formattable type may define how the format
 specification is to be interpreted.
 
@@ -292,18 +303,22 @@ non-empty format string typically modifies the result.
 The general form of a *standard format specifier* is:
 
 .. productionlist:: sf
-   format_spec: [[`fill`]`align`][`sign`][#][0][`width`][,][.`precision`][`type`]
+   format_spec: [[`fill`]`align`][`sign`][#][0][`width`][`grouping_option`][.`precision`][`type`]
    fill: <any character>
    align: "<" | ">" | "=" | "^"
    sign: "+" | "-" | " "
-   width: `integer`
-   precision: `integer`
+   width: `digit`+
+   grouping_option: "_" | ","
+   precision: `digit`+
    type: "b" | "c" | "d" | "e" | "E" | "f" | "F" | "g" | "G" | "n" | "o" | "s" | "x" | "X" | "%"
 
 If a valid *align* value is specified, it can be preceded by a *fill*
 character that can be any character and defaults to a space if omitted.
-Note that it is not possible to use ``{`` and ``}`` as *fill* char while
-using the :meth:`str.format` method; this limitation however doesn't
+It is not possible to use a literal curly brace ("``{``" or "``}``") as
+the *fill* character in a :ref:`formatted string literal
+<f-strings>` or when using the :meth:`str.format`
+method.  However, it is possible to insert a curly brace
+with a nested replacement field.  This limitation doesn't
 affect the :func:`format` function.
 
 The meaning of the various alignment options is as follows:
@@ -320,7 +335,8 @@ The meaning of the various alignment options is as follows:
    | ``'='`` | Forces the padding to be placed after the sign (if any)  |
    |         | but before the digits.  This is used for printing fields |
    |         | in the form '+000000120'. This alignment option is only  |
-   |         | valid for numeric types.                                 |
+   |         | valid for numeric types.  It becomes the default when '0'|
+   |         | immediately precedes the field width.                    |
    +---------+----------------------------------------------------------+
    | ``'^'`` | Forces the field to be centered within the available     |
    |         | space.                                                   |
@@ -366,10 +382,21 @@ instead.
 .. versionchanged:: 3.1
    Added the ``','`` option (see also :pep:`378`).
 
+The ``'_'`` option signals the use of an underscore for a thousands
+separator for floating point presentation types and for integer
+presentation type ``'d'``.  For integer presentation types ``'b'``,
+``'o'``, ``'x'``, and ``'X'``, underscores will be inserted every 4
+digits.  For other presentation types, specifying this option is an
+error.
+
+.. versionchanged:: 3.6
+   Added the ``'_'`` option (see also :pep:`515`).
+
 *width* is a decimal integer defining the minimum field width.  If not
 specified, then the field width will be determined by the content.
 
-Preceding the *width* field by a zero (``'0'``) character enables
+When no explicit alignment is given, preceding the *width* field by a zero
+(``'0'``) character enables
 sign-aware zero-padding for numeric types.  This is equivalent to a *fill*
 character of ``'0'`` with an *alignment* type of ``'='``.
 
@@ -422,7 +449,7 @@ The available integer presentation types are:
 
 In addition to the above presentation types, integers can be formatted
 with the floating point presentation types listed below (except
-``'n'`` and None). When doing so, :func:`float` is used to convert the
+``'n'`` and ``None``). When doing so, :func:`float` is used to convert the
 integer to a floating point number before formatting.
 
 The available presentation types for floating point and decimal values are:
@@ -437,11 +464,11 @@ The available presentation types for floating point and decimal values are:
    | ``'E'`` | Exponent notation. Same as ``'e'`` except it uses an     |
    |         | upper case 'E' as the separator character.               |
    +---------+----------------------------------------------------------+
-   | ``'f'`` | Fixed point. Displays the number as a fixed-point        |
-   |         | number.  The default precision is ``6``.                 |
+   | ``'f'`` | Fixed-point notation. Displays the number as a           |
+   |         | fixed-point number.  The default precision is ``6``.     |
    +---------+----------------------------------------------------------+
-   | ``'F'`` | Fixed point. Same as ``'f'``, but converts ``nan`` to    |
-   |         | ``NAN`` and ``inf`` to ``INF``.                          |
+   | ``'F'`` | Fixed-point notation. Same as ``'f'``, but converts      |
+   |         | ``nan`` to  ``NAN`` and ``inf`` to ``INF``.              |
    +---------+----------------------------------------------------------+
    | ``'g'`` | General format.  For a given precision ``p >= 1``,       |
    |         | this rounds the number to ``p`` significant digits and   |
@@ -492,8 +519,8 @@ The available presentation types for floating point and decimal values are:
 Format examples
 ^^^^^^^^^^^^^^^
 
-This section contains examples of the new format syntax and comparison with
-the old ``%``-formatting.
+This section contains examples of the :meth:`str.format` syntax and
+comparison with the old ``%``-formatting.
 
 In most of the cases the syntax is similar to the old ``%``-formatting, with the
 addition of the ``{}`` and with ``:`` used instead of ``%``.
@@ -640,12 +667,14 @@ Instead of the normal ``%``\ -based substitutions, Templates support ``$``\
 * ``$$`` is an escape; it is replaced with a single ``$``.
 
 * ``$identifier`` names a substitution placeholder matching a mapping key of
-  ``"identifier"``.  By default, ``"identifier"`` must spell a Python
-  identifier.  The first non-identifier character after the ``$`` character
-  terminates this placeholder specification.
+  ``"identifier"``.  By default, ``"identifier"`` is restricted to any
+  case-insensitive ASCII alphanumeric string (including underscores) that
+  starts with an underscore or ASCII letter.  The first non-identifier
+  character after the ``$`` character terminates this placeholder
+  specification.
 
-* ``${identifier}`` is equivalent to ``$identifier``.  It is required when valid
-  identifier characters follow the placeholder but are not part of the
+* ``${identifier}`` is equivalent to ``$identifier``.  It is required when
+  valid identifier characters follow the placeholder but are not part of the
   placeholder, such as ``"${noun}ification"``.
 
 Any other appearance of ``$`` in the string will result in a :exc:`ValueError`
@@ -720,8 +749,18 @@ to parse template strings.  To do this, you can override these class attributes:
 
 * *idpattern* -- This is the regular expression describing the pattern for
   non-braced placeholders (the braces will be added automatically as
-  appropriate).  The default value is the regular expression
-  ``[_a-z][_a-z0-9]*``.
+  appropriate). The default value is the regular expression
+  ``(?-i:[_a-zA-Z][_a-zA-Z0-9]*)``.
+
+  .. note::
+
+     Since default *flags* is ``re.IGNORECASE``, pattern ``[a-z]`` can match
+     with some non-ASCII characters. That's why we use local ``-i`` flag here.
+
+     While *flags* is kept to ``re.IGNORECASE`` for backward compatibility,
+     you can override it to ``0`` or ``re.IGNORECASE | re.ASCII`` when
+     subclassing.
+
 
 * *flags* -- The regular expression flags that will be applied when compiling
   the regular expression used for recognizing substitutions.  The default value

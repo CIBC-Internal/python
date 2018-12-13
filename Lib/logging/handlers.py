@@ -1,4 +1,4 @@
-# Copyright 2001-2013 by Vinay Sajip. All Rights Reserved.
+# Copyright 2001-2016 by Vinay Sajip. All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and its
 # documentation for any purpose and without fee is hereby granted,
@@ -18,7 +18,7 @@
 Additional handlers for the logging package for Python. The core package is
 based on PEP 282 and comments thereto in comp.lang.python.
 
-Copyright (C) 2001-2013 Vinay Sajip. All Rights Reserved.
+Copyright (C) 2001-2016 Vinay Sajip. All Rights Reserved.
 
 To use, simply 'import logging.handlers' and log away!
 """
@@ -246,6 +246,9 @@ class TimedRotatingFileHandler(BaseRotatingHandler):
 
         self.extMatch = re.compile(self.extMatch, re.ASCII)
         self.interval = self.interval * interval # multiply by units requested
+        # The following line added because the filename passed in could be a
+        # path object (see Issue #27493), but self.baseFilename will be a string
+        filename = self.baseFilename
         if os.path.exists(filename):
             t = os.stat(filename)[ST_MTIME]
         else:
@@ -353,10 +356,10 @@ class TimedRotatingFileHandler(BaseRotatingHandler):
                 suffix = fileName[plen:]
                 if self.extMatch.match(suffix):
                     result.append(os.path.join(dirName, fileName))
-        result.sort()
         if len(result) < self.backupCount:
             result = []
         else:
+            result.sort()
             result = result[:len(result) - self.backupCount]
         return result
 
@@ -440,11 +443,11 @@ class WatchedFileHandler(logging.FileHandler):
             sres = os.fstat(self.stream.fileno())
             self.dev, self.ino = sres[ST_DEV], sres[ST_INO]
 
-    def emit(self, record):
+    def reopenIfNeeded(self):
         """
-        Emit a record.
+        Reopen log file if needed.
 
-        First check if the underlying file has changed, and if it
+        Checks if the underlying file has changed, and if it
         has, close the old stream and reopen the file to get the
         current stream.
         """
@@ -467,6 +470,15 @@ class WatchedFileHandler(logging.FileHandler):
                 # open a new file handle and get new stat info from that fd
                 self.stream = self._open()
                 self._statstream()
+
+    def emit(self, record):
+        """
+        Emit a record.
+
+        If underlying file has changed, reopen the file before emitting the
+        record to it.
+        """
+        self.reopenIfNeeded()
         logging.FileHandler.emit(self, record)
 
 
@@ -588,6 +600,8 @@ class SocketHandler(logging.Handler):
         d['msg'] = record.getMessage()
         d['args'] = None
         d['exc_info'] = None
+        # Issue #25685: delete 'message' if present: redundant with 'msg'
+        d.pop('message', None)
         s = pickle.dumps(d, 1)
         slen = struct.pack(">L", len(s))
         return slen + s
@@ -627,9 +641,10 @@ class SocketHandler(logging.Handler):
         """
         self.acquire()
         try:
-            if self.sock:
-                self.sock.close()
+            sock = self.sock
+            if sock:
                 self.sock = None
+                sock.close()
             logging.Handler.close(self)
         finally:
             self.release()
@@ -800,16 +815,38 @@ class SysLogHandler(logging.Handler):
 
         if isinstance(address, str):
             self.unixsocket = True
-            self._connect_unixsocket(address)
+            # Syslog server may be unavailable during handler initialisation.
+            # C's openlog() function also ignores connection errors.
+            # Moreover, we ignore these errors while logging, so it not worse
+            # to ignore it also here.
+            try:
+                self._connect_unixsocket(address)
+            except OSError:
+                pass
         else:
             self.unixsocket = False
             if socktype is None:
                 socktype = socket.SOCK_DGRAM
-            self.socket = socket.socket(socket.AF_INET, socktype)
-            if socktype == socket.SOCK_STREAM:
-                self.socket.connect(address)
+            host, port = address
+            ress = socket.getaddrinfo(host, port, 0, socktype)
+            if not ress:
+                raise OSError("getaddrinfo returns an empty list")
+            for res in ress:
+                af, socktype, proto, _, sa = res
+                err = sock = None
+                try:
+                    sock = socket.socket(af, socktype, proto)
+                    if socktype == socket.SOCK_STREAM:
+                        sock.connect(sa)
+                    break
+                except OSError as exc:
+                    err = exc
+                    if sock is not None:
+                        sock.close()
+            if err is not None:
+                raise err
+            self.socket = sock
             self.socktype = socktype
-        self.formatter = None
 
     def _connect_unixsocket(self, address):
         use_socktype = self.socktype
@@ -848,7 +885,7 @@ class SysLogHandler(logging.Handler):
             priority = self.priority_names[priority]
         return (facility << 3) | priority
 
-    def close (self):
+    def close(self):
         """
         Closes the socket.
         """
@@ -964,24 +1001,26 @@ class SMTPHandler(logging.Handler):
         """
         try:
             import smtplib
-            from email.utils import formatdate
+            from email.message import EmailMessage
+            import email.utils
+
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
             smtp = smtplib.SMTP(self.mailhost, port, timeout=self.timeout)
-            msg = self.format(record)
-            msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
-                            self.fromaddr,
-                            ",".join(self.toaddrs),
-                            self.getSubject(record),
-                            formatdate(), msg)
+            msg = EmailMessage()
+            msg['From'] = self.fromaddr
+            msg['To'] = ','.join(self.toaddrs)
+            msg['Subject'] = self.getSubject(record)
+            msg['Date'] = email.utils.localtime()
+            msg.set_content(self.format(record))
             if self.username:
                 if self.secure is not None:
                     smtp.ehlo()
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
                 smtp.login(self.username, self.password)
-            smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+            smtp.send_message(msg)
             smtp.quit()
         except Exception:
             self.handleError(record)
@@ -1144,15 +1183,17 @@ class HTTPHandler(logging.Handler):
             i = host.find(":")
             if i >= 0:
                 host = host[:i]
-            h.putheader("Host", host)
+            # See issue #30904: putrequest call above already adds this header
+            # on Python 3.x.
+            # h.putheader("Host", host)
             if self.method == "POST":
                 h.putheader("Content-type",
                             "application/x-www-form-urlencoded")
                 h.putheader("Content-length", str(len(data)))
             if self.credentials:
                 import base64
-                s = ('u%s:%s' % self.credentials).encode('utf-8')
-                s = 'Basic ' + base64.b64encode(s).strip()
+                s = ('%s:%s' % self.credentials).encode('utf-8')
+                s = 'Basic ' + base64.b64encode(s).strip().decode('ascii')
                 h.putheader('Authorization', s)
             h.endheaders()
             if self.method == "POST":
@@ -1213,8 +1254,10 @@ class BufferingHandler(logging.Handler):
 
         This version just flushes and chains to the parent class' close().
         """
-        self.flush()
-        logging.Handler.close(self)
+        try:
+            self.flush()
+        finally:
+            logging.Handler.close(self)
 
 class MemoryHandler(BufferingHandler):
     """
@@ -1222,17 +1265,25 @@ class MemoryHandler(BufferingHandler):
     flushing them to a target handler. Flushing occurs whenever the buffer
     is full, or when an event of a certain severity or greater is seen.
     """
-    def __init__(self, capacity, flushLevel=logging.ERROR, target=None):
+    def __init__(self, capacity, flushLevel=logging.ERROR, target=None,
+                 flushOnClose=True):
         """
         Initialize the handler with the buffer size, the level at which
         flushing should occur and an optional target.
 
         Note that without a target being set either here or via setTarget(),
         a MemoryHandler is no use to anyone!
+
+        The ``flushOnClose`` argument is ``True`` for backward compatibility
+        reasons - the old behaviour is that when the handler is closed, the
+        buffer is flushed, even if the flush level hasn't been exceeded nor the
+        capacity exceeded. To prevent this, set ``flushOnClose`` to ``False``.
         """
         BufferingHandler.__init__(self, capacity)
         self.flushLevel = flushLevel
         self.target = target
+        # See Issue #26559 for why this has been added
+        self.flushOnClose = flushOnClose
 
     def shouldFlush(self, record):
         """
@@ -1266,15 +1317,19 @@ class MemoryHandler(BufferingHandler):
 
     def close(self):
         """
-        Flush, set the target to None and lose the buffer.
+        Flush, if appropriately configured, set the target to None and lose the
+        buffer.
         """
-        self.flush()
-        self.acquire()
         try:
-            self.target = None
-            BufferingHandler.close(self)
+            if self.flushOnClose:
+                self.flush()
         finally:
-            self.release()
+            self.acquire()
+            try:
+                self.target = None
+                BufferingHandler.close(self)
+            finally:
+                self.release()
 
 
 class QueueHandler(logging.Handler):
@@ -1350,15 +1405,15 @@ if threading:
         """
         _sentinel = None
 
-        def __init__(self, queue, *handlers):
+        def __init__(self, queue, *handlers, respect_handler_level=False):
             """
             Initialise an instance with the specified queue and
             handlers.
             """
             self.queue = queue
             self.handlers = handlers
-            self._stop = threading.Event()
             self._thread = None
+            self.respect_handler_level = respect_handler_level
 
         def dequeue(self, block):
             """
@@ -1377,7 +1432,7 @@ if threading:
             LogRecords to process.
             """
             self._thread = t = threading.Thread(target=self._monitor)
-            t.setDaemon(True)
+            t.daemon = True
             t.start()
 
         def prepare(self , record):
@@ -1399,7 +1454,12 @@ if threading:
             """
             record = self.prepare(record)
             for handler in self.handlers:
-                handler.handle(record)
+                if not self.respect_handler_level:
+                    process = True
+                else:
+                    process = record.levelno >= handler.level
+                if process:
+                    handler.handle(record)
 
         def _monitor(self):
             """
@@ -1411,20 +1471,9 @@ if threading:
             """
             q = self.queue
             has_task_done = hasattr(q, 'task_done')
-            while not self._stop.isSet():
-                try:
-                    record = self.dequeue(True)
-                    if record is self._sentinel:
-                        break
-                    self.handle(record)
-                    if has_task_done:
-                        q.task_done()
-                except queue.Empty:
-                    pass
-            # There might still be records in the queue.
             while True:
                 try:
-                    record = self.dequeue(False)
+                    record = self.dequeue(True)
                     if record is self._sentinel:
                         break
                     self.handle(record)
@@ -1451,7 +1500,6 @@ if threading:
             Note that if you don't call this before your application exits, there
             may be some records still left on the queue, which won't be processed.
             """
-            self._stop.set()
             self.enqueue_sentinel()
             self._thread.join()
             self._thread = None
