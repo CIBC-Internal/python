@@ -51,6 +51,9 @@ Summarizing:
                 : | `with_stmt`
                 : | `funcdef`
                 : | `classdef`
+                : | `async_with_stmt`
+                : | `async_for_stmt`
+                : | `async_funcdef`
    suite: `stmt_list` NEWLINE | NEWLINE INDENT `statement`+ DEDENT
    statement: `stmt_list` NEWLINE | `compound_stmt`
    stmt_list: `simple_stmt` (";" `simple_stmt`)* [";"]
@@ -436,7 +439,7 @@ is equivalent to ::
 
 .. seealso::
 
-   :pep:`0343` - The "with" statement
+   :pep:`343` - The "with" statement
       The specification, background, and examples for the Python :keyword:`with`
       statement.
 
@@ -466,7 +469,7 @@ A function definition defines a user-defined function object (see section
 .. productionlist::
    funcdef: [`decorators`] "def" `funcname` "(" [`parameter_list`] ")" ["->" `expression`] ":" `suite`
    decorators: `decorator`+
-   decorator: "@" `dotted_name` ["(" [`parameter_list` [","]] ")"] NEWLINE
+   decorator: "@" `dotted_name` ["(" [`argument_list` [","]] ")"] NEWLINE
    dotted_name: `identifier` ("." `identifier`)*
    parameter_list: (`defparameter` ",")*
                  : | "*" [`parameter`] ("," `defparameter`)* ["," "**" `parameter`]
@@ -500,10 +503,12 @@ are applied in nested fashion. For example, the following code ::
    @f2
    def func(): pass
 
-is equivalent to ::
+is roughly equivalent to ::
 
    def func(): pass
    func = f1(arg)(f2(func))
+
+except that the original function is not temporarily bound to the name ``func``.
 
 .. index::
    triple: default; parameter; value
@@ -601,7 +606,7 @@ A class definition defines a class object (see section :ref:`types`):
 
 .. productionlist::
    classdef: [`decorators`] "class" `classname` [`inheritance`] ":" `suite`
-   inheritance: "(" [`parameter_list`] ")"
+   inheritance: "(" [`argument_list`] ")"
    classname: `identifier`
 
 A class definition is an executable statement.  The inheritance list usually
@@ -635,14 +640,13 @@ Classes can also be decorated: just like when decorating functions, ::
    @f2
    class Foo: pass
 
-is equivalent to ::
+is roughly equivalent to ::
 
    class Foo: pass
    Foo = f1(arg)(f2(Foo))
 
 The evaluation rules for the decorator expressions are the same as for function
-decorators.  The result must be a class object, which is then bound to the class
-name.
+decorators.  The result is then bound to the class name.
 
 **Programmer's note:** Variables defined in the class definition are class
 attributes; they are shared by instances.  Instance attributes can be set in a
@@ -658,6 +662,130 @@ can be used to create instance variables with different implementation details.
 
    :pep:`3115` - Metaclasses in Python 3
    :pep:`3129` - Class Decorators
+
+
+Coroutines
+==========
+
+.. versionadded:: 3.5
+
+.. index:: statement: async def
+.. _`async def`:
+
+Coroutine function definition
+-----------------------------
+
+.. productionlist::
+   async_funcdef: [`decorators`] "async" "def" `funcname` "(" [`parameter_list`] ")" ["->" `expression`] ":" `suite`
+
+.. index::
+   keyword: async
+   keyword: await
+
+Execution of Python coroutines can be suspended and resumed at many points
+(see :term:`coroutine`).  In the body of a coroutine, any ``await`` and
+``async`` identifiers become reserved keywords; :keyword:`await` expressions,
+:keyword:`async for` and :keyword:`async with` can only be used in
+coroutine bodies.
+
+Functions defined with ``async def`` syntax are always coroutine functions,
+even if they do not contain ``await`` or ``async`` keywords.
+
+It is a :exc:`SyntaxError` to use :keyword:`yield` expressions in
+``async def`` coroutines.
+
+An example of a coroutine function::
+
+    async def func(param1, param2):
+        do_stuff()
+        await some_coroutine()
+
+
+.. index:: statement: async for
+.. _`async for`:
+
+The :keyword:`async for` statement
+----------------------------------
+
+.. productionlist::
+   async_for_stmt: "async" `for_stmt`
+
+An :term:`asynchronous iterable` is able to call asynchronous code in its
+*iter* implementation, and :term:`asynchronous iterator` can call asynchronous
+code in its *next* method.
+
+The ``async for`` statement allows convenient iteration over asynchronous
+iterators.
+
+The following code::
+
+    async for TARGET in ITER:
+        BLOCK
+    else:
+        BLOCK2
+
+Is semantically equivalent to::
+
+    iter = (ITER)
+    iter = type(iter).__aiter__(iter)
+    running = True
+    while running:
+        try:
+            TARGET = await type(iter).__anext__(iter)
+        except StopAsyncIteration:
+            running = False
+        else:
+            BLOCK
+    else:
+        BLOCK2
+
+See also :meth:`__aiter__` and :meth:`__anext__` for details.
+
+It is a :exc:`SyntaxError` to use ``async for`` statement outside of an
+:keyword:`async def` function.
+
+
+.. index:: statement: async with
+.. _`async with`:
+
+The :keyword:`async with` statement
+-----------------------------------
+
+.. productionlist::
+   async_with_stmt: "async" `with_stmt`
+
+An :term:`asynchronous context manager` is a :term:`context manager` that is
+able to suspend execution in its *enter* and *exit* methods.
+
+The following code::
+
+    async with EXPR as VAR:
+        BLOCK
+
+Is semantically equivalent to::
+
+    mgr = (EXPR)
+    aexit = type(mgr).__aexit__
+    aenter = type(mgr).__aenter__(mgr)
+    exc = True
+
+    VAR = await aenter
+    try:
+        BLOCK
+    except:
+        if not await aexit(mgr, *sys.exc_info()):
+            raise
+    else:
+        await aexit(mgr, None, None, None)
+
+See also :meth:`__aenter__` and :meth:`__aexit__` for details.
+
+It is a :exc:`SyntaxError` to use ``async with`` statement outside of an
+:keyword:`async def` function.
+
+.. seealso::
+
+   :pep:`492` - Coroutines with async and await syntax
 
 
 .. rubric:: Footnotes

@@ -4,7 +4,6 @@ Test the API of the symtable module.
 import symtable
 import unittest
 
-from test import support
 
 
 TEST_CODE = """
@@ -149,15 +148,23 @@ class SymtableTest(unittest.TestCase):
     def test_filename_correct(self):
         ### Bug tickler: SyntaxError file name correct whether error raised
         ### while parsing or building symbol table.
-        def checkfilename(brokencode):
+        def checkfilename(brokencode, offset):
             try:
                 symtable.symtable(brokencode, "spam", "exec")
             except SyntaxError as e:
                 self.assertEqual(e.filename, "spam")
+                self.assertEqual(e.lineno, 1)
+                self.assertEqual(e.offset, offset)
             else:
                 self.fail("no SyntaxError for %r" % (brokencode,))
-        checkfilename("def f(x): foo)(")  # parse-time
-        checkfilename("def f(x): global x")  # symtable-build-time
+        checkfilename("def f(x): foo)(", 14)  # parse-time
+        checkfilename("def f(x): global x", 10)  # symtable-build-time
+        symtable.symtable("pass", b"spam", "exec")
+        with self.assertRaises(TypeError):
+            symtable.symtable("pass", bytearray(b"spam"), "exec")
+        symtable.symtable("pass", memoryview(b"spam"), "exec")
+        with self.assertRaises(TypeError):
+            symtable.symtable("pass", list(b"spam"), "exec")
 
     def test_eval(self):
         symbols = symtable.symtable("42", "?", "eval")
@@ -169,8 +176,5 @@ class SymtableTest(unittest.TestCase):
         symbols = symtable.symtable("def f(x): return x", "?", "exec")
 
 
-def test_main():
-    support.run_unittest(SymtableTest)
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

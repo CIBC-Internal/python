@@ -52,16 +52,8 @@ whose size is determined when the object is allocated.
 */
 
 /* Py_DEBUG implies Py_TRACE_REFS. */
-#if !defined(_WIN32)
-
 #if defined(Py_DEBUG) && !defined(Py_TRACE_REFS)
 #define Py_TRACE_REFS
-#endif
-
-#else
-
-#undef Py_TRACE_REFS
-
 #endif
 
 /* Py_TRACE_REFS implies Py_REF_DEBUG. */
@@ -72,6 +64,7 @@ whose size is determined when the object is allocated.
 #if defined(Py_LIMITED_API) && defined(Py_REF_DEBUG)
 #error Py_LIMITED_API is incompatible with Py_DEBUG, Py_TRACE_REFS, and Py_REF_DEBUG
 #endif
+
 
 #ifdef Py_TRACE_REFS
 /* Define pointers to support a doubly-linked list of all live heap objects. */
@@ -141,7 +134,7 @@ typedef struct {
    usage, the string "foo" is interned, and the structures are linked. On interpreter
    shutdown, all strings are released (through _PyUnicode_ClearStaticStrings).
 
-   Alternatively, _Py_static_string allows to choose the variable name.
+   Alternatively, _Py_static_string allows choosing the variable name.
    _PyUnicode_FromId returns a borrowed reference to the interned string.
    _PyObject_{Get,Set,Has}AttrId are __getattr__ versions using _Py_Identifier*.
 */
@@ -283,6 +276,9 @@ typedef struct {
     binaryfunc nb_inplace_true_divide;
 
     unaryfunc nb_index;
+
+    binaryfunc nb_matrix_multiply;
+    binaryfunc nb_inplace_matrix_multiply;
 } PyNumberMethods;
 
 typedef struct {
@@ -305,6 +301,11 @@ typedef struct {
     objobjargproc mp_ass_subscript;
 } PyMappingMethods;
 
+typedef struct {
+    unaryfunc am_await;
+    unaryfunc am_aiter;
+    unaryfunc am_anext;
+} PyAsyncMethods;
 
 typedef struct {
      getbufferproc bf_getbuffer;
@@ -350,7 +351,8 @@ typedef struct _typeobject {
     printfunc tp_print;
     getattrfunc tp_getattr;
     setattrfunc tp_setattr;
-    void *tp_reserved; /* formerly known as tp_compare */
+    PyAsyncMethods *tp_as_async; /* formerly known as tp_compare (Python 2)
+                                    or tp_reserved (Python 3) */
     reprfunc tp_repr;
 
     /* Method suites for standard classes */
@@ -457,6 +459,7 @@ typedef struct _heaptypeobject {
     /* Note: there's a dependency on the order of these members
        in slotptr() in typeobject.c . */
     PyTypeObject ht_type;
+    PyAsyncMethods as_async;
     PyNumberMethods as_number;
     PyMappingMethods as_mapping;
     PySequenceMethods as_sequence; /* as_sequence comes after as_mapping,
@@ -579,13 +582,6 @@ PyAPI_FUNC(PyObject *) PyObject_Dir(PyObject *);
 /* Helpers for printing recursive container types */
 PyAPI_FUNC(int) Py_ReprEnter(PyObject *);
 PyAPI_FUNC(void) Py_ReprLeave(PyObject *);
-
-#ifndef Py_LIMITED_API
-/* Helper for passing objects to printf and the like.
-   Leaks refcounts.  Don't use it!
-*/
-#define PyObject_REPR(obj) PyUnicode_AsUTF8(PyObject_Repr(obj))
-#endif
 
 /* Flag bits for printing: */
 #define Py_PRINT_RAW    1       /* No string quotes etc. */
@@ -722,11 +718,17 @@ PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
                 _Py_NegativeRefcount(__FILE__, __LINE__,        \
                                      (PyObject *)(OP));         \
 }
+/* Py_REF_DEBUG also controls the display of refcounts and memory block
+ * allocations at the interactive prompt and at interpreter shutdown
+ */
+PyAPI_FUNC(void) _PyDebug_PrintTotalRefs(void);
+#define _PY_DEBUG_PRINT_TOTAL_REFS() _PyDebug_PrintTotalRefs()
 #else
 #define _Py_INC_REFTOTAL
 #define _Py_DEC_REFTOTAL
 #define _Py_REF_DEBUG_COMMA
 #define _Py_CHECK_REFCNT(OP)    /* a semicolon */;
+#define _PY_DEBUG_PRINT_TOTAL_REFS()
 #endif /* Py_REF_DEBUG */
 
 #ifdef COUNT_ALLOCS
@@ -787,7 +789,7 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
     } while (0)
 
 /* Safely decref `op` and set `op` to NULL, especially useful in tp_clear
- * and tp_dealloc implementatons.
+ * and tp_dealloc implementations.
  *
  * Note that "the obvious" code can be deadly:
  *
@@ -843,6 +845,42 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
         if (_py_xdecref_tmp != NULL)                  \
             Py_DECREF(_py_xdecref_tmp);               \
     } while (0)
+
+#ifndef Py_LIMITED_API
+/* Safely decref `op` and set `op` to `op2`.
+ *
+ * As in case of Py_CLEAR "the obvious" code can be deadly:
+ *
+ *     Py_DECREF(op);
+ *     op = op2;
+ *
+ * The safe way is:
+ *
+ *      Py_SETREF(op, op2);
+ *
+ * That arranges to set `op` to `op2` _before_ decref'ing, so that any code
+ * triggered as a side-effect of `op` getting torn down no longer believes
+ * `op` points to a valid object.
+ *
+ * Py_XSETREF is a variant of Py_SETREF that uses Py_XDECREF instead of
+ * Py_DECREF.
+ */
+
+#define Py_SETREF(op, op2)                      \
+    do {                                        \
+        PyObject *_py_tmp = (PyObject *)(op);   \
+        (op) = (op2);                           \
+        Py_DECREF(_py_tmp);                     \
+    } while (0)
+
+#define Py_XSETREF(op, op2)                     \
+    do {                                        \
+        PyObject *_py_tmp = (PyObject *)(op);   \
+        (op) = (op2);                           \
+        Py_XDECREF(_py_tmp);                    \
+    } while (0)
+
+#endif /* ifndef Py_LIMITED_API */
 
 /*
 These are provided as conveniences to Python runtime embedders, so that

@@ -52,7 +52,12 @@ extern PyObject *_PyIncrementalNewlineDecoder_decode(
    which can be safely put aside until another search.
 
    NOTE: for performance reasons, `end` must point to a NUL character ('\0').
-   Otherwise, the function will scan further and return garbage. */
+   Otherwise, the function will scan further and return garbage.
+
+   There are three modes, in order of priority:
+   * translated: Only find \n (assume newlines already translated)
+   * universal: Use universal newlines algorithm
+   * Otherwise, the line ending is specified by readnl, a str object */
 extern Py_ssize_t _PyIO_find_line_ending(
     int translated, int universal, PyObject *readnl,
     int kind, char *start, char *end, Py_ssize_t *consumed);
@@ -69,7 +74,7 @@ extern int _PyIO_trap_eintr(void);
  * Offset type for positioning.
  */
 
-/* Printing a variable of type off_t (with e.g., PyString_FromFormat)
+/* Printing a variable of type off_t (with e.g., PyUnicode_FromFormat)
    correctly and without producing compiler warnings is surprisingly painful.
    We identify an integer type whose size matches off_t and then: (1) cast the
    off_t to that integer type and (2) use the appropriate conversion

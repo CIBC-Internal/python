@@ -3,10 +3,7 @@
 import sys as _sys
 import _thread
 
-try:
-    from time import monotonic as _time
-except ImportError:
-    from time import time as _time
+from time import monotonic as _time
 from traceback import format_exc as _format_exc
 from _weakrefset import WeakSet
 from itertools import islice as _islice, count as _count
@@ -106,8 +103,14 @@ class _RLock:
             owner = _active[owner].name
         except KeyError:
             pass
-        return "<%s owner=%r count=%d>" % (
-                self.__class__.__name__, owner, self._count)
+        return "<%s %s.%s object owner=%r count=%d at %s>" % (
+            "locked" if self._block.locked() else "unlocked",
+            self.__class__.__module__,
+            self.__class__.__qualname__,
+            owner,
+            self._count,
+            hex(id(self))
+        )
 
     def acquire(self, blocking=True, timeout=-1):
         """Acquire a lock, blocking or non-blocking.
@@ -496,7 +499,7 @@ class Event:
 
     def _reset_internal_locks(self):
         # private!  called by Thread._reset_internal_locks by _after_fork()
-        self._cond.__init__()
+        self._cond.__init__(Lock())
 
     def is_set(self):
         """Return true if and only if the internal flag is true."""
@@ -511,12 +514,9 @@ class Event:
         that call wait() once the flag is true will not block at all.
 
         """
-        self._cond.acquire()
-        try:
+        with self._cond:
             self._flag = True
             self._cond.notify_all()
-        finally:
-            self._cond.release()
 
     def clear(self):
         """Reset the internal flag to false.
@@ -525,11 +525,8 @@ class Event:
         set the internal flag to true again.
 
         """
-        self._cond.acquire()
-        try:
+        with self._cond:
             self._flag = False
-        finally:
-            self._cond.release()
 
     def wait(self, timeout=None):
         """Block until the internal flag is true.
@@ -546,14 +543,11 @@ class Event:
         True except if a timeout is given and the operation times out.
 
         """
-        self._cond.acquire()
-        try:
+        with self._cond:
             signaled = self._flag
             if not signaled:
                 signaled = self._cond.wait(timeout)
             return signaled
-        finally:
-            self._cond.release()
 
 
 # A barrier class.  Inspired in part by the pthread_barrier_* api and
@@ -645,7 +639,7 @@ class Barrier:
             self._break()
             raise
 
-    # Wait in the barrier until we are relased.  Raise an exception
+    # Wait in the barrier until we are released.  Raise an exception
     # if the barrier is reset or broken.
     def _wait(self, timeout):
         if not self._cond.wait_for(lambda : self._state != 0, timeout):
@@ -927,7 +921,7 @@ class Thread:
                 # self.
                 if _sys and _sys.stderr is not None:
                     print("Exception in thread %s:\n%s" %
-                          (self.name, _format_exc()), file=self._stderr)
+                          (self.name, _format_exc()), file=_sys.stderr)
                 elif self._stderr is not None:
                     # Do the best job possible w/o a huge amt. of code to
                     # approximate a traceback (code ideas from
@@ -1067,7 +1061,7 @@ class Thread:
         # Issue #18808: wait for the thread state to be gone.
         # At the end of the thread's life, after all knowledge of the thread
         # is removed from C data structures, C code releases our _tstate_lock.
-        # This method passes its arguments to _tstate_lock.aquire().
+        # This method passes its arguments to _tstate_lock.acquire().
         # If the lock is acquired, the C code is done, and self._stop() is
         # called.  That sets ._is_stopped to True, and ._tstate_lock to None.
         lock = self._tstate_lock
@@ -1220,6 +1214,10 @@ class _DummyThread(Thread):
 
     def _stop(self):
         pass
+
+    def is_alive(self):
+        assert not self._is_stopped and self._started.is_set()
+        return True
 
     def join(self, timeout=None):
         assert False, "cannot join a dummy thread"

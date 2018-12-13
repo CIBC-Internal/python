@@ -26,6 +26,37 @@ _testfunc_cbk_reg_double(double a, double b, double c, double d, double e,
     return func(a*a, b*b, c*c, d*d, e*e);
 }
 
+/*
+ * This structure should be the same as in test_callbacks.py and the
+ * method test_callback_large_struct. See issues 17310 and 20160: the
+ * structure must be larger than 8 bytes long.
+ */
+
+typedef struct {
+    unsigned long first;
+    unsigned long second;
+    unsigned long third;
+} Test;
+
+EXPORT(void)
+_testfunc_cbk_large_struct(Test in, void (*func)(Test))
+{
+    func(in);
+}
+
+/*
+ * See issue 29565. Update a structure passed by value;
+ * the caller should not see any change.
+ */
+
+EXPORT(void)
+_testfunc_large_struct_update_value(Test in)
+{
+    ((volatile Test *)&in)->first = 0x0badf00d;
+    ((volatile Test *)&in)->second = 0x0badf00d;
+    ((volatile Test *)&in)->third = 0x0badf00d;
+}
+
 EXPORT(void)testfunc_array(int values[4])
 {
     printf("testfunc_array %d %d %d %d\n",

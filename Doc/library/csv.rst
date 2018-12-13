@@ -3,12 +3,16 @@
 
 .. module:: csv
    :synopsis: Write and read tabular data to and from delimited files.
+
 .. sectionauthor:: Skip Montanaro <skip@pobox.com>
 
+**Source code:** :source:`Lib/csv.py`
 
 .. index::
    single: csv
    pair: data; tabular
+
+--------------
 
 The so-called CSV (Comma Separated Values) format is the most common import and
 export format for spreadsheets and databases.  CSV format was used for many
@@ -108,7 +112,7 @@ The :mod:`csv` module defines the following functions:
           spamwriter.writerow(['Spam', 'Lovely Spam', 'Wonderful Spam'])
 
 
-.. function:: register_dialect(name[, dialect], **fmtparams)
+.. function:: register_dialect(name[, dialect[, **fmtparams]])
 
    Associate *dialect* with *name*.  *name* must be a string. The
    dialect can be specified either by passing a sub-class of :class:`Dialect`, or
@@ -324,7 +328,7 @@ Dialects support the following attributes:
 
 .. attribute:: Dialect.doublequote
 
-   Controls how instances of *quotechar* appearing inside a field should be
+   Controls how instances of *quotechar* appearing inside a field should
    themselves be quoted.  When :const:`True`, the character is doubled. When
    :const:`False`, the *escapechar* is used as a prefix to the *quotechar*.  It
    defaults to :const:`True`.
@@ -386,8 +390,10 @@ Reader objects (:class:`DictReader` instances and objects returned by the
 
 .. method:: csvreader.__next__()
 
-   Return the next row of the reader's iterable object as a list, parsed according
-   to the current dialect.  Usually you should call this as ``next(reader)``.
+   Return the next row of the reader's iterable object as a list (if the object
+   was returned from :func:`reader`) or a dict (if it is a :class:`DictReader`
+   instance), parsed according to the current dialect.  Usually you should call
+   this as ``next(reader)``.
 
 
 Reader objects have the following public attributes:
@@ -418,7 +424,7 @@ Writer Objects
 
 :class:`Writer` objects (:class:`DictWriter` instances and objects returned by
 the :func:`writer` function) have the following public methods.  A *row* must be
-a sequence of strings or numbers for :class:`Writer` objects and a dictionary
+an iterable of strings or numbers for :class:`Writer` objects and a dictionary
 mapping fieldnames to strings or numbers (by passing them through :func:`str`
 first) for :class:`DictWriter` objects.  Note that complex numbers are written
 out surrounded by parens. This may cause some problems for other programs which
@@ -430,6 +436,8 @@ read CSV files (assuming they support complex numbers at all).
    Write the *row* parameter to the writer's file object, formatted according to
    the current dialect.
 
+   .. versionchanged:: 3.5
+      Added support of arbitrary iterables.
 
 .. method:: csvwriter.writerows(rows)
 

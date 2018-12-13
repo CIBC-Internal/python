@@ -54,9 +54,10 @@ copy_grouping(char* s)
     int i;
     PyObject *result, *val = NULL;
 
-    if (s[0] == '\0')
+    if (s[0] == '\0') {
         /* empty string: no grouping at all */
         return PyList_New(0);
+    }
 
     for (i = 0; s[i] != '\0' && s[i] != CHAR_MAX; i++)
         ; /* nothing */
@@ -214,10 +215,10 @@ PyLocale_strcoll(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "UU:strcoll", &os1, &os2))
         return NULL;
     /* Convert the unicode strings to wchar[]. */
-    ws1 = PyUnicode_AsWideCharString(os1, NULL);
+    ws1 = _PyUnicode_AsWideCharString(os1);
     if (ws1 == NULL)
         goto done;
-    ws2 = PyUnicode_AsWideCharString(os2, NULL);
+    ws2 = _PyUnicode_AsWideCharString(os2);
     if (ws2 == NULL)
         goto done;
     /* Collate the strings. */
@@ -251,10 +252,15 @@ PyLocale_strxfrm(PyObject* self, PyObject* args)
     s = PyUnicode_AsWideCharString(str, &n1);
     if (s == NULL)
         goto exit;
+    if (wcslen(s) != (size_t)n1) {
+        PyErr_SetString(PyExc_ValueError,
+                        "embedded null character");
+        goto exit;
+    }
 
     /* assume no change in size, first */
     n1 = n1 + 1;
-    buf = PyMem_Malloc(n1 * sizeof(wchar_t));
+    buf = PyMem_New(wchar_t, n1);
     if (!buf) {
         PyErr_NoMemory();
         goto exit;

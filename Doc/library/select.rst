@@ -4,6 +4,7 @@
 .. module:: select
    :synopsis: Wait for I/O completion on multiple streams.
 
+--------------
 
 This module provides access to the :c:func:`select` and :c:func:`poll` functions
 available in most operating systems, :c:func:`devpoll` available on
@@ -56,9 +57,7 @@ The module defines the following:
 
    (Only supported on Linux 2.5.44 and newer.) Return an edge polling object,
    which can be used as Edge or Level Triggered interface for I/O
-   events. *sizehint* is deprecated and completely ignored. *flags* can be set
-   to :const:`EPOLL_CLOEXEC`, which causes the epoll descriptor to be closed
-   automatically when :func:`os.execve` is called.
+   events. *sizehint* and *flags* are deprecated and completely ignored.
 
    See the :ref:`epoll-objects` section below for the methods supported by
    epolling objects.
@@ -75,6 +74,10 @@ The module defines the following:
    .. versionchanged:: 3.4
       Support for the :keyword:`with` statement was added.
       The new file descriptor is now non-inheritable.
+
+   .. deprecated:: 3.4
+      The *flags* parameter.  ``select.EPOLL_CLOEXEC`` is used by default now.
+      Use :func:`os.set_inheritable` to make the file descriptor inheritable.
 
 
 .. function:: poll()
@@ -145,6 +148,13 @@ The module defines the following:
       library, and does not handle file descriptors that don't originate from
       WinSock.
 
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
+
+
 .. attribute:: PIPE_BUF
 
    The minimum number of bytes which can be written without blocking to a pipe
@@ -207,7 +217,7 @@ object.
    .. warning::
 
       Registering a file descriptor that's already registered is not an
-      error, but the result is undefined. The appropiate action is to
+      error, but the result is undefined. The appropriate action is to
       unregister or modify it first. This is an important difference
       compared with :c:func:`poll`.
 
@@ -241,6 +251,12 @@ object.
    length of time in milliseconds which the system will wait for events before
    returning. If *timeout* is omitted, -1, or :const:`None`, the call will
    block until there is an event for this poll object.
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _epoll-objects:
@@ -322,6 +338,12 @@ Edge and Level Trigger Polling (epoll) Objects
 
    Wait for events. timeout in seconds (float)
 
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
+
 
 .. _poll-objects:
 
@@ -401,6 +423,12 @@ linearly scanned again. :c:func:`select` is O(highest file descriptor), while
    returning. If *timeout* is omitted, negative, or :const:`None`, the call will
    block until there is an event for this poll object.
 
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
+
 
 .. _kqueue-objects:
 
@@ -431,9 +459,15 @@ Kqueue Objects
 
    Low level interface to kevent
 
-   - changelist must be an iterable of kevent object or None
+   - changelist must be an iterable of kevent object or ``None``
    - max_events must be 0 or a positive integer
    - timeout in seconds (floats possible)
+
+   .. versionchanged:: 3.5
+      The function is now retried with a recomputed timeout when interrupted by
+      a signal, except if the signal handler raises an exception (see
+      :pep:`475` for the rationale), instead of raising
+      :exc:`InterruptedError`.
 
 
 .. _kevent-objects:
@@ -441,7 +475,7 @@ Kqueue Objects
 Kevent Objects
 --------------
 
-http://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
+https://www.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
 
 .. attribute:: kevent.ident
 

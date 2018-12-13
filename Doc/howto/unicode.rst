@@ -43,9 +43,9 @@ hold values ranging from 0 to 255.  ASCII codes only went up to 127, so some
 machines assigned values between 128 and 255 to accented characters.  Different
 machines had different codes, however, which led to problems exchanging files.
 Eventually various commonly used sets of values for the 128--255 range emerged.
-Some were true standards, defined by the International Standards Organization,
-and some were *de facto* conventions that were invented by one company or
-another and managed to catch on.
+Some were true standards, defined by the International Organization for
+Standardization, and some were *de facto* conventions that were invented by one
+company or another and managed to catch on.
 
 255 characters aren't very many.  For example, you can't fit both the accented
 characters used in Western Europe and the Cyrillic alphabet used for Russian
@@ -73,7 +73,7 @@ revision of Unicode.
 precise historical details aren't necessary for understanding how to
 use Unicode effectively, but if you're curious, consult the Unicode
 consortium site listed in the References or
-the `Wikipedia entry for Unicode <http://en.wikipedia.org/wiki/Unicode#History>`_
+the `Wikipedia entry for Unicode <https://en.wikipedia.org/wiki/Unicode#History>`_
 for more information.)
 
 
@@ -192,7 +192,7 @@ frequently used than UTF-8.)  UTF-8 uses the following rules:
 UTF-8 has several convenient properties:
 
 1. It can handle any Unicode code point.
-2. A Unicode string is turned into a string of bytes containing no embedded zero
+2. A Unicode string is turned into a sequence of bytes containing no embedded zero
    bytes.  This avoids byte-ordering issues, and means UTF-8 strings can be
    processed by C functions such as ``strcpy()`` and sent through protocols that
    can't handle zero bytes.
@@ -214,7 +214,7 @@ difficult reading.  `A chronology <http://www.unicode.org/history/>`_ of the
 origin and development of Unicode is also available on the site.
 
 To help understand the standard, Jukka Korpela has written `an introductory
-guide <http://www.cs.tut.fi/~jkorpela/unicode/guide.html>`_ to reading the
+guide <https://www.cs.tut.fi/~jkorpela/unicode/guide.html>`_ to reading the
 Unicode character tables.
 
 Another `good introductory article <http://www.joelonsoftware.com/articles/Unicode.html>`_
@@ -223,8 +223,8 @@ If this introduction didn't make things clear to you, you should try
 reading this alternate article before continuing.
 
 Wikipedia entries are often helpful; see the entries for "`character encoding
-<http://en.wikipedia.org/wiki/Character_encoding>`_" and `UTF-8
-<http://en.wikipedia.org/wiki/UTF-8>`_, for example.
+<https://en.wikipedia.org/wiki/Character_encoding>`_" and `UTF-8
+<https://en.wikipedia.org/wiki/UTF-8>`_, for example.
 
 
 Python's Unicode Support
@@ -280,8 +280,9 @@ and optionally an *errors* argument.
 The *errors* argument specifies the response when the input string can't be
 converted according to the encoding's rules.  Legal values for this argument are
 ``'strict'`` (raise a :exc:`UnicodeDecodeError` exception), ``'replace'`` (use
-``U+FFFD``, ``REPLACEMENT CHARACTER``), or ``'ignore'`` (just leave the
-character out of the Unicode result).
+``U+FFFD``, ``REPLACEMENT CHARACTER``), ``'ignore'`` (just leave the
+character out of the Unicode result), or ``'backslashreplace'`` (inserts a
+``\xNN`` escape sequence).
 The following examples show the differences::
 
     >>> b'\x80abc'.decode("utf-8", "strict")  #doctest: +NORMALIZE_WHITESPACE
@@ -291,11 +292,10 @@ The following examples show the differences::
       invalid start byte
     >>> b'\x80abc'.decode("utf-8", "replace")
     '\ufffdabc'
+    >>> b'\x80abc'.decode("utf-8", "backslashreplace")
+    '\\x80abc'
     >>> b'\x80abc'.decode("utf-8", "ignore")
     'abc'
-
-(In this code example, the Unicode replacement character has been replaced by
-a question mark because it may not be displayed on some systems.)
 
 Encodings are specified as strings containing the encoding's name.  Python 3.2
 comes with roughly 100 different encodings; see the Python Library Reference at
@@ -325,8 +325,9 @@ The *errors* parameter is the same as the parameter of the
 :meth:`~bytes.decode` method but supports a few more possible handlers. As well as
 ``'strict'``, ``'ignore'``, and ``'replace'`` (which in this case
 inserts a question mark instead of the unencodable character), there is
-also ``'xmlcharrefreplace'`` (inserts an XML character reference) and
-``backslashreplace`` (inserts a ``\uNNNN`` escape sequence).
+also ``'xmlcharrefreplace'`` (inserts an XML character reference),
+``backslashreplace`` (inserts a ``\uNNNN`` escape sequence) and
+``namereplace`` (inserts a ``\N{...}`` escape sequence).
 
 The following example shows the different results::
 
@@ -346,6 +347,8 @@ The following example shows the different results::
     b'&#40960;abcd&#1972;'
     >>> u.encode('ascii', 'backslashreplace')
     b'\\ua000abcd\\u07b4'
+    >>> u.encode('ascii', 'namereplace')
+    b'\\N{YI SYLLABLE IT}abcd\\u07b4'
 
 The low-level routines for registering and accessing the available
 encodings are found in the :mod:`codecs` module.  Implementing new
@@ -610,7 +613,9 @@ program::
    print(os.listdir(b'.'))
    print(os.listdir('.'))
 
-will produce the following output::
+will produce the following output:
+
+.. code-block:: shell-session
 
    amk:~$ python t.py
    [b'filename\xe4\x94\x80abc', ...]
@@ -684,7 +689,7 @@ with the ``surrogateescape`` error handler::
    # make changes to the string 'data'
 
    with open(fname + '.new', 'w',
-              encoding="ascii", errors="surrogateescape") as f:
+             encoding="ascii", errors="surrogateescape") as f:
        f.write(data)
 
 The ``surrogateescape`` error handler will decode any non-ASCII bytes

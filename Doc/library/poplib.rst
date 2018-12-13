@@ -3,12 +3,13 @@
 
 .. module:: poplib
    :synopsis: POP3 protocol client (requires sockets).
+
 .. sectionauthor:: Andrew T. Csillag
 .. revised by ESR, January 2000
 
-.. index:: pair: POP3; protocol
-
 **Source code:** :source:`Lib/poplib.py`
+
+.. index:: pair: POP3; protocol
 
 --------------
 
@@ -193,6 +194,15 @@ An :class:`POP3` instance has the following methods:
    Return message digest (unique id) list. If *which* is specified, result contains
    the unique id for that message in the form ``'response mesgnum uid``, otherwise
    result is list ``(response, ['mesgnum uid', ...], octets)``.
+
+
+.. method:: POP3.utf8()
+
+   Try to switch to UTF-8 mode. Returns the server response if successful,
+   raises :class:`error_proto` if not. Specified in :RFC:`6856`.
+
+   .. versionadded:: 3.5
+
 
 .. method:: POP3.stls(context=None)
 

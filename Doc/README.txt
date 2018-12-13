@@ -3,7 +3,7 @@ Python Documentation README
 
 This directory contains the reStructuredText (reST) sources to the Python
 documentation.  You don't need to build them yourself, prebuilt versions are
-available at <https://docs.python.org/3.4/download.html>.
+available at <https://docs.python.org/dev/download.html>.
 
 Documentation on authoring Python documentation, including information about
 both style and markup, is available in the "Documenting Python" chapter of the
@@ -119,27 +119,3 @@ and we will process your request as soon as possible.
 
 If you want to help the Documentation Team, you are always welcome.  Just send
 a mail to docs@python.org.
-
-
-Copyright notice
-================
-
-The Python source is copyrighted, but you can freely use and copy it
-as long as you don't change or remove the copyright notice:
-
-----------------------------------------------------------------------
-Copyright (c) 2000-2015 Python Software Foundation.
-All rights reserved.
-
-Copyright (c) 2000 BeOpen.com.
-All rights reserved.
-
-Copyright (c) 1995-2000 Corporation for National Research Initiatives.
-All rights reserved.
-
-Copyright (c) 1991-1995 Stichting Mathematisch Centrum.
-All rights reserved.
-
-See the file "license.rst" for information on usage and redistribution
-of this file, and for a DISCLAIMER OF ALL WARRANTIES.
-----------------------------------------------------------------------

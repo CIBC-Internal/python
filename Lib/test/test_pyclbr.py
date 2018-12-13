@@ -2,11 +2,10 @@
    Test cases for pyclbr.py
    Nick Mathewson
 '''
-from test.support import run_unittest
 import sys
 from types import FunctionType, MethodType, BuiltinFunctionType
 import pyclbr
-from unittest import TestCase
+from unittest import TestCase, main as unittest_main
 
 StaticMethodType = type(staticmethod(lambda: None))
 ClassMethodType = type(classmethod(lambda c: None))
@@ -173,9 +172,5 @@ class PyclbrTest(TestCase):
         self.assertRaises(ImportError, pyclbr.readmodule_ex, 'asyncore.foo')
 
 
-def test_main():
-    run_unittest(PyclbrTest)
-
-
 if __name__ == "__main__":
-    test_main()
+    unittest_main()

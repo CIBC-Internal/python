@@ -314,11 +314,11 @@ Then::
     >>> str(Mood.funky)
     'my custom str! 1'
 
-The rules for what is allowed are as follows: _sunder_ names (starting and
-ending with a single underscore) are reserved by enum and cannot be used;
-all other attributes defined within an enumeration will become members of this
-enumeration, with the exception of *__dunder__* names and descriptors (methods
-are also descriptors).
+The rules for what is allowed are as follows: names that start and end with
+a single underscore are reserved by enum and cannot be used; all other
+attributes defined within an enumeration will become members of this
+enumeration, with the exception of special methods (:meth:`__str__`,
+:meth:`__add__`, etc.) and descriptors (methods are also descriptors).
 
 Note:  if your enumeration defines :meth:`__new__` and/or :meth:`__init__` then
 whatever value(s) were given to the enum member will be passed into those
@@ -400,7 +400,8 @@ The second argument is the *source* of enumeration member names.  It can be a
 whitespace-separated string of names, a sequence of names, a sequence of
 2-tuples with key/value pairs, or a mapping (e.g. dictionary) of names to
 values.  The last two options enable assigning arbitrary values to
-enumerations; the others auto-assign increasing integers starting with 1.  A
+enumerations; the others auto-assign increasing integers starting with 1 (use
+the ``start`` parameter to specify a different starting value).  A
 new class derived from :class:`Enum` is returned.  In other words, the above
 assignment to :class:`Animal` is equivalent to::
 
@@ -430,7 +431,7 @@ The solution is to specify the module name explicitly as follows::
     the source, pickling will be disabled.
 
 The new pickle protocol 4 also, in some circumstances, relies on
-:attr:`__qualname__` being set to the location where pickle will be able
+:attr:`~definition.__qualname__` being set to the location where pickle will be able
 to find the class.  For example, if the class was made available in class
 SomeData in the global scope::
 
@@ -438,12 +439,12 @@ SomeData in the global scope::
 
 The complete signature is::
 
-    Enum(value='NewEnumName', names=<...>, *, module='...', qualname='...', type=<mixed-in class>)
+    Enum(value='NewEnumName', names=<...>, *, module='...', qualname='...', type=<mixed-in class>, start=1)
 
 :value: What the new Enum class will record as its name.
 
 :names: The Enum members.  This can be a whitespace or comma separated string
-  (values will start at 1)::
+  (values will start at 1 unless otherwise specified)::
 
     'red green blue' | 'red,green,blue' | 'red, green, blue'
 
@@ -464,6 +465,11 @@ The complete signature is::
 :qualname: where in module new Enum class can be found.
 
 :type: type to mix in to new Enum class.
+
+:start: number to start counting at if only names are passed in.
+
+.. versionchanged:: 3.5
+   The *start* parameter was added.
 
 
 Derived Enumerations
@@ -549,12 +555,12 @@ Some rules:
 3. When another data type is mixed in, the :attr:`value` attribute is *not the
    same* as the enum member itself, although it is equivalent and will compare
    equal.
-4. %-style formatting:  `%s` and `%r` call :class:`Enum`'s :meth:`__str__` and
-   :meth:`__repr__` respectively; other codes (such as `%i` or `%h` for
-   IntEnum) treat the enum member as its mixed-in type.
-5. :meth:`str.__format__` (or :func:`format`) will use the mixed-in
-   type's :meth:`__format__`.  If the :class:`Enum`'s :func:`str` or
-   :func:`repr` is desired use the `!s` or `!r` :class:`str` format codes.
+4. %-style formatting:  `%s` and `%r` call the :class:`Enum` class's
+   :meth:`__str__` and :meth:`__repr__` respectively; other codes (such as
+   `%i` or `%h` for IntEnum) treat the enum member as its mixed-in type.
+5. :meth:`str.format` (or :func:`format`) will use the mixed-in
+   type's :meth:`__format__`.  If the :class:`Enum` class's :func:`str` or
+   :func:`repr` is desired, use the `!s` or `!r` format codes.
 
 
 Interesting examples
@@ -708,7 +714,7 @@ allow one to do things with an :class:`Enum` class that fail on a typical
 class, such as `list(Color)` or `some_var in Color`.  :class:`EnumMeta` is
 responsible for ensuring that various other methods on the final :class:`Enum`
 class are correct (such as :meth:`__new__`, :meth:`__getnewargs__`,
-:meth:`__str__` and :meth:`__repr__`)
+:meth:`__str__` and :meth:`__repr__`).
 
 
 Enum Members (aka instances)
@@ -724,18 +730,24 @@ member instances.
 Finer Points
 ^^^^^^^^^^^^
 
-Enum members are instances of an Enum class, and even though they are
-accessible as `EnumClass.member`, they are not accessible directly from
-the member::
+:class:`Enum` members are instances of an :class:`Enum` class, and even
+though they are accessible as `EnumClass.member`, they should not be accessed
+directly from the member as that lookup may fail or, worse, return something
+besides the :class:`Enum` member you looking for::
 
-    >>> Color.red
-    <Color.red: 1>
-    >>> Color.red.blue
-    Traceback (most recent call last):
+    >>> class FieldTypes(Enum):
+    ...     name = 0
+    ...     value = 1
+    ...     size = 2
     ...
-    AttributeError: 'Color' object has no attribute 'blue'
+    >>> FieldTypes.value.size
+    <FieldTypes.size: 2>
+    >>> FieldTypes.size.value
+    2
 
-Likewise, the :attr:`__members__` is only available on the class.
+.. versionchanged:: 3.5
+
+The :attr:`__members__` attribute is only available on the class.
 
 If you give your :class:`Enum` subclass extra methods, like the `Planet`_
 class above, those methods will show up in a :func:`dir` of the member,

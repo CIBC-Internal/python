@@ -1,4 +1,4 @@
-# Copyright 2001-2014 by Vinay Sajip. All Rights Reserved.
+# Copyright 2001-2016 by Vinay Sajip. All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and its
 # documentation for any purpose and without fee is hereby granted,
@@ -18,7 +18,7 @@
 Logging package for Python. Based on PEP 282 and comments thereto in
 comp.lang.python.
 
-Copyright (C) 2001-2014 Vinay Sajip. All Rights Reserved.
+Copyright (C) 2001-2016 Vinay Sajip. All Rights Reserved.
 
 To use, simply 'import logging' and log away!
 """
@@ -129,8 +129,14 @@ def getLevelName(level):
 
     Otherwise, the string "Level %s" % level is returned.
     """
-    # See Issue #22386 for the reason for this convoluted expression
-    return _levelToName.get(level, _nameToLevel.get(level, ("Level %s" % level)))
+    # See Issues #22386, #27937 and #29220 for why it's this way
+    result = _levelToName.get(level)
+    if result is not None:
+        return result
+    result = _nameToLevel.get(level)
+    if result is not None:
+        return result
+    return "Level %s" % level
 
 def addLevelName(level, levelName):
     """
@@ -316,6 +322,8 @@ class LogRecord(object):
         return '<LogRecord: %s, %s, %s, %s, "%s">'%(self.name, self.levelno,
             self.pathname, self.lineno, self.msg)
 
+    __repr__ = __str__
+
     def getMessage(self):
         """
         Return the message for this LogRecord.
@@ -469,7 +477,7 @@ class Formatter(object):
         use one of %-formatting, :meth:`str.format` (``{}``) formatting or
         :class:`string.Template` formatting in your format string.
 
-        .. versionchanged: 3.2
+        .. versionchanged:: 3.2
            Added the ``style`` parameter.
         """
         if style not in _STYLES:
@@ -698,7 +706,7 @@ class Filterer(object):
         this and the record is then dropped. Returns a zero value if a record
         is to be dropped, else non-zero.
 
-        .. versionchanged: 3.2
+        .. versionchanged:: 3.2
 
            Allow filters to be just callables.
         """
@@ -1011,14 +1019,19 @@ class FileHandler(StreamHandler):
         """
         self.acquire()
         try:
-            if self.stream:
-                self.flush()
-                if hasattr(self.stream, "close"):
-                    self.stream.close()
-                self.stream = None
-            # Issue #19523: call unconditionally to
-            # prevent a handler leak when delay is set
-            StreamHandler.close(self)
+            try:
+                if self.stream:
+                    try:
+                        self.flush()
+                    finally:
+                        stream = self.stream
+                        self.stream = None
+                        if hasattr(stream, "close"):
+                            stream.close()
+            finally:
+                # Issue #19523: call unconditionally to
+                # prevent a handler leak when delay is set
+                StreamHandler.close(self)
         finally:
             self.release()
 
@@ -1086,7 +1099,6 @@ class PlaceHolder(object):
 #
 #   Determine which class to use when instantiating loggers.
 #
-_loggerClass = None
 
 def setLoggerClass(klass):
     """
@@ -1105,7 +1117,6 @@ def getLoggerClass():
     """
     Return the class to be used when instantiating a logger.
     """
-
     return _loggerClass
 
 class Manager(object):
@@ -1302,12 +1313,11 @@ class Logger(Filterer):
         if self.isEnabledFor(ERROR):
             self._log(ERROR, msg, args, **kwargs)
 
-    def exception(self, msg, *args, **kwargs):
+    def exception(self, msg, *args, exc_info=True, **kwargs):
         """
         Convenience method for logging an ERROR with exception information.
         """
-        kwargs['exc_info'] = True
-        self.error(msg, *args, **kwargs)
+        self.error(msg, *args, exc_info=exc_info, **kwargs)
 
     def critical(self, msg, *args, **kwargs):
         """
@@ -1402,7 +1412,9 @@ class Logger(Filterer):
         else: # pragma: no cover
             fn, lno, func = "(unknown file)", 0, "(unknown function)"
         if exc_info:
-            if not isinstance(exc_info, tuple):
+            if isinstance(exc_info, BaseException):
+                exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
+            elif not isinstance(exc_info, tuple):
                 exc_info = sys.exc_info()
         record = self.makeRecord(self.name, level, fn, lno, msg, args,
                                  exc_info, func, extra, sinfo)
@@ -1612,12 +1624,11 @@ class LoggerAdapter(object):
         """
         self.log(ERROR, msg, *args, **kwargs)
 
-    def exception(self, msg, *args, **kwargs):
+    def exception(self, msg, *args, exc_info=True, **kwargs):
         """
         Delegate an exception call to the underlying logger.
         """
-        kwargs["exc_info"] = True
-        self.log(ERROR, msg, *args, **kwargs)
+        self.log(ERROR, msg, *args, exc_info=exc_info, **kwargs)
 
     def critical(self, msg, *args, **kwargs):
         """
@@ -1734,8 +1745,8 @@ def basicConfig(**kwargs):
                                      "specified together with 'handlers'")
             if handlers is None:
                 filename = kwargs.pop("filename", None)
+                mode = kwargs.pop("filemode", 'a')
                 if filename:
-                    mode = kwargs.pop("filemode", 'a')
                     h = FileHandler(filename, mode)
                 else:
                     stream = kwargs.pop("stream", None)
@@ -1799,14 +1810,13 @@ def error(msg, *args, **kwargs):
         basicConfig()
     root.error(msg, *args, **kwargs)
 
-def exception(msg, *args, **kwargs):
+def exception(msg, *args, exc_info=True, **kwargs):
     """
     Log a message with severity 'ERROR' on the root logger, with exception
     information. If the logger has no handlers, basicConfig() is called to add
     a console handler with a pre-defined format.
     """
-    kwargs['exc_info'] = True
-    error(msg, *args, **kwargs)
+    error(msg, *args, exc_info=exc_info, **kwargs)
 
 def warning(msg, *args, **kwargs):
     """

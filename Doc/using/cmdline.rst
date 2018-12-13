@@ -41,7 +41,7 @@ additional methods of invocation:
 
 * When called with standard input connected to a tty device, it prompts for
   commands and executes them until an EOF (an end-of-file character, you can
-  produce that with *Ctrl-D* on UNIX or *Ctrl-Z, Enter* on Windows) is read.
+  produce that with :kbd:`Ctrl-D` on UNIX or :kbd:`Ctrl-Z, Enter` on Windows) is read.
 * When called with a file name argument or with a file as standard input, it
   reads and executes a script from that file.
 * When called with a directory name argument, it reads and executes an
@@ -77,7 +77,7 @@ source.
    the :mod:`__main__` module.
 
    Since the argument is a *module* name, you must not give a file extension
-   (``.py``).  The ``module-name`` should be a valid Python module name, but
+   (``.py``).  The module name should be a valid absolute Python module name, but
    the implementation may not always enforce this (e.g. it may allow you to
    use a name that includes a hyphen).
 
@@ -190,13 +190,16 @@ Miscellaneous options
 
 .. cmdoption:: -b
 
-   Issue a warning when comparing str and bytes. Issue an error when the
-   option is given twice (:option:`-bb`).
+   Issue a warning when comparing :class:`bytes` or :class:`bytearray` with
+   :class:`str` or :class:`bytes` with :class:`int`.  Issue an error when the
+   option is given twice (:option:`!-bb`).
 
+   .. versionchanged:: 3.5
+      Affects comparisons of :class:`bytes` with :class:`int`.
 
 .. cmdoption:: -B
 
-   If given, Python won't try to write ``.pyc`` or ``.pyo`` files on the
+   If given, Python won't try to write ``.pyc`` files on the
    import of source modules.  See also :envvar:`PYTHONDONTWRITEBYTECODE`.
 
 
@@ -236,9 +239,7 @@ Miscellaneous options
 
 .. cmdoption:: -O
 
-   Turn on basic optimizations.  This changes the filename extension for
-   compiled (:term:`bytecode`) files from ``.pyc`` to ``.pyo``.  See also
-   :envvar:`PYTHONOPTIMIZE`.
+   Turn on basic optimizations.  See also :envvar:`PYTHONOPTIMIZE`.
 
 
 .. cmdoption:: -OO
@@ -307,11 +308,12 @@ Miscellaneous options
 
    Print a message each time a module is initialized, showing the place
    (filename or built-in module) from which it is loaded.  When given twice
-   (:option:`-vv`), print a message for each file that is checked for when
+   (:option:`!-vv`), print a message for each file that is checked for when
    searching for a module.  Also provides information on module cleanup at exit.
    See also :envvar:`PYTHONVERBOSE`.
 
 
+.. _using-on-warnings:
 .. cmdoption:: -W arg
 
    Warning control.  Python's warning machinery by default prints warning
@@ -395,7 +397,7 @@ Miscellaneous options
      tracing with a traceback limit of *NFRAME* frames. See the
      :func:`tracemalloc.start` for more information.
 
-   It also allows to pass arbitrary values and retrieve them through the
+   It also allows passing arbitrary values and retrieving them through the
    :data:`sys._xoptions` dictionary.
 
    .. versionchanged:: 3.2
@@ -516,8 +518,8 @@ conflict.
 
 .. envvar:: PYTHONDONTWRITEBYTECODE
 
-   If this is set to a non-empty string, Python won't try to write ``.pyc`` or
-   ``.pyo`` files on the import of source modules.  This is equivalent to
+   If this is set to a non-empty string, Python won't try to write ``.pyc``
+   files on the import of source modules.  This is equivalent to
    specifying the :option:`-B` option.
 
 

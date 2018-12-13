@@ -4,12 +4,17 @@
 
 .. module:: turtle
    :synopsis: An educational framework for simple graphics applications
+
 .. sectionauthor:: Gregor Lingl <gregor.lingl@aon.at>
+
+**Source code:** :source:`Lib/turtle.py`
 
 .. testsetup:: default
 
    from turtle import *
    turtle = Turtle()
+
+--------------
 
 Introduction
 ============
@@ -544,7 +549,7 @@ Turtle motion
 
    :param n: an integer (or ``None``)
 
-   Delete all or first/last *n* of turtle's stamps.  If *n* is None, delete
+   Delete all or first/last *n* of turtle's stamps.  If *n* is ``None``, delete
    all stamps, if *n* > 0 delete first *n* stamps, else if *n* < 0 delete
    last *n* stamps.
 
@@ -1792,9 +1797,9 @@ Input methods
    :param prompt: string
 
    Pop up a dialog window for input of a string. Parameter title is
-   the title of the dialog window, propmt is a text mostly describing
+   the title of the dialog window, prompt is a text mostly describing
    what information to input.
-   Return the string input. If the dialog is canceled, return None. ::
+   Return the string input. If the dialog is canceled, return ``None``. ::
 
       >>> screen.textinput("NIM", "Name of first player:")
 
@@ -1809,12 +1814,12 @@ Input methods
 
    Pop up a dialog window for input of a number. title is the title of the
    dialog window, prompt is a text mostly describing what numerical information
-   to input. default: default value, minval: minimum value for imput,
+   to input. default: default value, minval: minimum value for input,
    maxval: maximum value for input
    The number input must be in the range minval .. maxval if these are
    given. If not, a hint is issued and the dialog remains open for
    correction.
-   Return the number input. If the dialog is canceled,  return None. ::
+   Return the number input. If the dialog is canceled,  return ``None``. ::
 
       >>> screen.numinput("Poker", "Your stakes:", 1000, minval=10, maxval=10000)
 
@@ -1879,7 +1884,7 @@ Settings and special methods
 
       >>> cv = screen.getcanvas()
       >>> cv
-      <turtle.ScrolledCanvas object at ...>
+      <turtle.ScrolledCanvas object ...>
 
 
 .. function:: getshapes()
@@ -1979,10 +1984,10 @@ Methods specific to Screen, not inherited from TurtleScreen
    :param height: if an integer, the height in pixels, if a float, a fraction of
                   the screen; default is 75% of screen
    :param startx: if positive, starting position in pixels from the left
-                  edge of the screen, if negative from the right edge, if None,
+                  edge of the screen, if negative from the right edge, if ``None``,
                   center window horizontally
    :param starty: if positive, starting position in pixels from the top
-                  edge of the screen, if negative from the bottom edge, if None,
+                  edge of the screen, if negative from the bottom edge, if ``None``,
                   center window vertically
 
    .. doctest::
@@ -2351,6 +2356,9 @@ The demo scripts are:
 |                | pairwise in opposite         | shapesize, tilt,      |
 |                | direction                    | get_shapepoly, update |
 +----------------+------------------------------+-----------------------+
+| sorting_animate| visual demonstration of      | simple alignment,     |
+|                | different sorting methods    | randomization         |
++----------------+------------------------------+-----------------------+
 | tree           | a (graphical) breadth        | :func:`clone`         |
 |                | first tree (using generators)|                       |
 +----------------+------------------------------+-----------------------+
@@ -2360,7 +2368,7 @@ The demo scripts are:
 | wikipedia      | a pattern from the wikipedia | :func:`clone`,        |
 |                | article on turtle graphics   | :func:`undo`          |
 +----------------+------------------------------+-----------------------+
-| yingyang       | another elementary example   | :func:`circle`        |
+| yinyang        | another elementary example   | :func:`circle`        |
 +----------------+------------------------------+-----------------------+
 
 Have fun!
@@ -2402,7 +2410,7 @@ Changes since Python 3.0
   Accordingly the latter has got an alias: :meth:`Screen.onkeyrelease`.
 
 - The method  :meth:`Screen.mainloop` has been added. So when working only
-  with Screen and Turtle objects one must not additonally import
+  with Screen and Turtle objects one must not additionally import
   :func:`mainloop` anymore.
 
 - Two input methods has been added :meth:`Screen.textinput` and

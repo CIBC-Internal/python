@@ -4,6 +4,9 @@
 .. module:: email.parser
    :synopsis: Parse flat text email messages to produce a message object structure.
 
+**Source code:** :source:`Lib/email/parser.py`
+
+--------------
 
 Message object structures can be created in one of two ways: they can be created
 from whole cloth by instantiating :class:`~email.message.Message` objects and
@@ -146,7 +149,7 @@ have the same API as the :class:`Parser` and :class:`BytesParser` classes.
       methods on file-like objects.
 
       The text contained in *fp* must be formatted as a block of :rfc:`2822`
-      style headers and header continuation lines, optionally preceded by a
+      style headers and header continuation lines, optionally preceded by an
       envelope header.  The header block is terminated either by the end of the
       data or by a blank line.  Following the header block is the body of the
       message (which may contain MIME-encoded subparts).
@@ -189,7 +192,7 @@ have the same API as the :class:`Parser` and :class:`BytesParser` classes.
       methods on file-like objects.
 
       The bytes contained in *fp* must be formatted as a block of :rfc:`2822`
-      style headers and header continuation lines, optionally preceded by a
+      style headers and header continuation lines, optionally preceded by an
       envelope header.  The header block is terminated either by the end of the
       data or by a blank line.  Following the header block is the body of the
       message (which may contain MIME-encoded subparts, including subparts
@@ -199,12 +202,12 @@ have the same API as the :class:`Parser` and :class:`BytesParser` classes.
       reading the headers or not.  The default is ``False``, meaning it parses
       the entire contents of the file.
 
-   .. method:: parsebytes(bytes, headersonly=False)
+   .. method:: parsebytes(text, headersonly=False)
 
-      Similar to the :meth:`parse` method, except it takes a byte string object
-      instead of a file-like object.  Calling this method on a byte string is
-      exactly equivalent to wrapping *text* in a :class:`~io.BytesIO` instance
-      first and calling :meth:`parse`.
+      Similar to the :meth:`parse` method, except it takes a :term:`bytes-like
+      object` instead of a file-like object.  Calling this method is equivalent
+      to wrapping *text* in a :class:`~io.BytesIO` instance first and calling
+      :meth:`parse`.
 
       Optional *headersonly* is as with the :meth:`parse` method.
 
@@ -230,7 +233,7 @@ in the top-level :mod:`email` package namespace.
 .. function:: message_from_bytes(s, _class=email.message.Message, *, \
                                  policy=policy.compat32)
 
-   Return a message object structure from a byte string.  This is exactly
+   Return a message object structure from a :term:`bytes-like object`.  This is exactly
    equivalent to ``BytesParser().parsebytes(s)``.  Optional *_class* and
    *strict* are interpreted as with the :class:`~email.parser.Parser` class
    constructor.
@@ -247,7 +250,7 @@ in the top-level :mod:`email` package namespace.
    and *policy* are interpreted as with the :class:`~email.parser.Parser` class
    constructor.
 
-   .. versionchanged::
+   .. versionchanged:: 3.3
       Removed the *strict* argument.  Added the *policy* keyword.
 
 .. function:: message_from_binary_file(fp, _class=email.message.Message, *, \

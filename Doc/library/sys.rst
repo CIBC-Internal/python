@@ -4,6 +4,7 @@
 .. module:: sys
    :synopsis: Access system-specific parameters and functions.
 
+--------------
 
 This module provides access to some variables used or maintained by the
 interpreter and to functions that interact strongly with the interpreter. It is
@@ -167,7 +168,7 @@ always available.
 
 .. data:: dont_write_bytecode
 
-   If this is true, Python won't try to write ``.pyc`` or ``.pyo`` files on the
+   If this is true, Python won't try to write ``.pyc`` files on the
    import of source modules.  This value is initially set to ``True`` or
    ``False`` depending on the :option:`-B` command line option and the
    :envvar:`PYTHONDONTWRITEBYTECODE` environment variable, but you can set it
@@ -255,7 +256,7 @@ always available.
    (defaulting to zero), or another type of object.  If it is an integer, zero
    is considered "successful termination" and any nonzero value is considered
    "abnormal termination" by shells and the like.  Most systems require it to be
-   in the range 0-127, and produce undefined results otherwise.  Some systems
+   in the range 0--127, and produce undefined results otherwise.  Some systems
    have a convention for assigning specific meanings to specific exit codes, but
    these are generally underdeveloped; Unix programs generally use 2 for command
    line syntax errors and 1 for all other kind of errors.  If another type of
@@ -474,7 +475,7 @@ always available.
    additional garbage collector overhead if the object is managed by the garbage
    collector.
 
-   See `recursive sizeof recipe <http://code.activestate.com/recipes/577504>`_
+   See `recursive sizeof recipe <https://code.activestate.com/recipes/577504>`_
    for an example of using :func:`getsizeof` recursively to find the size of
    containers and all their contents.
 
@@ -576,6 +577,18 @@ always available.
       *service_pack_major*, *suite_mask*, and *product_type*.
 
 
+.. function:: get_coroutine_wrapper()
+
+   Returns ``None``, or a wrapper set by :func:`set_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+
 .. data:: hash_info
 
    A :term:`struct sequence` giving parameters of the numeric hash
@@ -629,7 +642,7 @@ always available.
    :term:`struct sequence`  :data:`sys.version_info` may be used for a more
    human-friendly encoding of the same information.
 
-   More details of ``hexversion`` can be found at :ref:`apiabiversion`
+   More details of ``hexversion`` can be found at :ref:`apiabiversion`.
 
 
 .. data:: implementation
@@ -718,6 +731,14 @@ always available.
    value of :func:`intern` around to benefit from it.
 
 
+.. function:: is_finalizing()
+
+   Return :const:`True` if the Python interpreter is
+   :term:`shutting down <interpreter shutdown>`, :const:`False` otherwise.
+
+   .. versionadded:: 3.5
+
+
 .. data:: last_type
           last_value
           last_traceback
@@ -754,19 +775,32 @@ always available.
 
 .. data:: meta_path
 
-    A list of :term:`finder` objects that have their :meth:`find_module`
-    methods called to see if one of the objects can find the module to be
-    imported. The :meth:`find_module` method is called at least with the
-    absolute name of the module being imported. If the module to be imported is
-    contained in package then the parent package's :attr:`__path__` attribute
-    is passed in as a second argument. The method returns ``None`` if
-    the module cannot be found, else returns a :term:`loader`.
+    A list of :term:`meta path finder` objects that have their
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` methods called to see if one
+    of the objects can find the module to be imported. The
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` method is called with at
+    least the absolute name of the module being imported. If the module to be
+    imported is contained in a package, then the parent package's :attr:`__path__`
+    attribute is passed in as a second argument. The method returns a
+    :term:`module spec`, or ``None`` if the module cannot be found.
 
-    :data:`sys.meta_path` is searched before any implicit default finders or
-    :data:`sys.path`.
+    .. seealso::
 
-    See :pep:`302` for the original specification.
+        :class:`importlib.abc.MetaPathFinder`
+          The abstract base class defining the interface of finder objects on
+          :data:`meta_path`.
+        :class:`importlib.machinery.ModuleSpec`
+          The concrete class which
+          :meth:`~importlib.abc.MetaPathFinder.find_spec` should return
+          instances of.
 
+    .. versionchanged:: 3.4
+
+        :term:`Module specs <module spec>` were introduced in Python 3.4, by
+        :pep:`451`. Earlier versions of Python looked for a method called
+        :meth:`~importlib.abc.MetaPathFinder.find_module`.
+        This is still called as a fallback if a :data:`meta_path` entry doesn't
+        have a :meth:`~importlib.abc.MetaPathFinder.find_spec` method.
 
 .. data:: modules
 
@@ -955,6 +989,13 @@ always available.
    that supports a higher limit.  This should be done with care, because a too-high
    limit can lead to a crash.
 
+   If the new limit is too low at the current recursion depth, a
+   :exc:`RecursionError` exception is raised.
+
+   .. versionchanged:: 3.5.1
+      A :exc:`RecursionError` exception is now raised if the new limit is too
+      low at the current recursion depth.
+
 
 .. function:: setswitchinterval(interval)
 
@@ -1053,6 +1094,46 @@ always available.
       thus not likely to be implemented elsewhere.
 
 
+.. function:: set_coroutine_wrapper(wrapper)
+
+   Allows intercepting creation of :term:`coroutine` objects (only ones that
+   are created by an :keyword:`async def` function; generators decorated with
+   :func:`types.coroutine` or :func:`asyncio.coroutine` will not be
+   intercepted).
+
+   The *wrapper* argument must be either:
+
+   * a callable that accepts one argument (a coroutine object);
+   * ``None``, to reset the wrapper.
+
+   If called twice, the new wrapper replaces the previous one.  The function
+   is thread-specific.
+
+   The *wrapper* callable cannot define new coroutines directly or indirectly::
+
+        def wrapper(coro):
+            async def wrap(coro):
+                return await coro
+            return wrap(coro)
+        sys.set_coroutine_wrapper(wrapper)
+
+        async def foo():
+            pass
+
+        # The following line will fail with a RuntimeError, because
+        # ``wrapper`` creates a ``wrap(coro)`` coroutine:
+        foo()
+
+   See also :func:`get_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+
 .. data:: stdin
           stdout
           stderr
@@ -1111,7 +1192,7 @@ always available.
    .. note::
        Under some conditions ``stdin``, ``stdout`` and ``stderr`` as well as the
        original values ``__stdin__``, ``__stdout__`` and ``__stderr__`` can be
-       None. It is usually the case for Windows GUI apps that aren't connected
+       ``None``. It is usually the case for Windows GUI apps that aren't connected
        to a console and Python apps started with :program:`pythonw`.
 
 
@@ -1139,7 +1220,7 @@ always available.
    |                  |  * ``None`` if this information is unknown              |
    +------------------+---------------------------------------------------------+
    | :const:`version` | Name and version of the thread library. It is a string, |
-   |                  | or ``None`` if these informations are unknown.          |
+   |                  | or ``None`` if this information is unknown.             |
    +------------------+---------------------------------------------------------+
 
    .. versionadded:: 3.3
@@ -1201,7 +1282,9 @@ always available.
 
    A dictionary of the various implementation-specific flags passed through
    the :option:`-X` command-line option.  Option names are either mapped to
-   their values, if given explicitly, or to :const:`True`.  Example::
+   their values, if given explicitly, or to :const:`True`.  Example:
+
+   .. code-block:: shell-session
 
       $ ./python -Xa=b -Xc
       Python 3.2a3+ (py3k, Oct 16 2010, 20:14:50)
@@ -1223,4 +1306,3 @@ always available.
 .. rubric:: Citations
 
 .. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf\ .
-

@@ -62,6 +62,7 @@ PyAPI_FUNC(void) PyBytes_Concat(PyObject **, PyObject *);
 PyAPI_FUNC(void) PyBytes_ConcatAndDel(PyObject **, PyObject *);
 #ifndef Py_LIMITED_API
 PyAPI_FUNC(int) _PyBytes_Resize(PyObject **, Py_ssize_t);
+PyAPI_FUNC(PyObject *) _PyBytes_Format(PyObject *, PyObject *);
 #endif
 PyAPI_FUNC(PyObject *) PyBytes_DecodeEscape(const char *, Py_ssize_t,
 						   const char *, Py_ssize_t,
@@ -81,7 +82,7 @@ PyAPI_FUNC(PyObject *) _PyBytes_Join(PyObject *sep, PyObject *x);
 #endif
 
 /* Provides access to the internal data buffer and size of a string
-   object or the default encoded version of an Unicode object. Passing
+   object or the default encoded version of a Unicode object. Passing
    NULL as *len parameter will force the string buffer to be
    0-terminated (passing a string with embedded NULL characters will
    cause an exception).  */

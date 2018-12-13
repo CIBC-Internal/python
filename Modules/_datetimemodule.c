@@ -7,6 +7,10 @@
 
 #include <time.h>
 
+#ifdef MS_WINDOWS
+#  include <winsock2.h>         /* struct timeval */
+#endif
+
 /* Differentiate between building the core module and building extension
  * modules.
  */
@@ -21,6 +25,8 @@ module datetime
 class datetime.datetime "PyDateTime_DateTime *" "&PyDateTime_DateTimeType"
 [clinic start generated code]*/
 /*[clinic end generated code: output=da39a3ee5e6b4b0d input=78142cb64b9e98bc]*/
+
+#include "clinic/_datetimemodule.c.h"
 
 /* We require that C int be at least 32 bits, and use int virtually
  * everywhere.  In just a few cases we use a temp long, where a Python
@@ -213,7 +219,7 @@ days_in_month(int year, int month)
         return _days_in_month[month];
 }
 
-/* year, month -> number of days in year preceeding first day of month */
+/* year, month -> number of days in year preceding first day of month */
 static int
 days_before_month(int year, int month)
 {
@@ -1067,7 +1073,7 @@ format_utcoffset(char *buf, size_t buflen, const char *sep,
     minutes = divmod(seconds, 60, &seconds);
     hours = divmod(minutes, 60, &minutes);
     assert(seconds == 0);
-    /* XXX ignore sub-minute data, curently not allowed. */
+    /* XXX ignore sub-minute data, currently not allowed. */
     PyOS_snprintf(buf, buflen, "%c%02d%s%02d", sign, hours, sep, minutes);
 
     return 0;
@@ -2459,7 +2465,7 @@ date_local_from_object(PyObject *cls, PyObject *obj)
     struct tm *tm;
     time_t t;
 
-    if (_PyTime_ObjectToTime_t(obj, &t, _PyTime_ROUND_DOWN) == -1)
+    if (_PyTime_ObjectToTime_t(obj, &t, _PyTime_ROUND_FLOOR) == -1)
         return NULL;
 
     tm = localtime(&t);
@@ -3040,7 +3046,7 @@ tzinfo_fromutc(PyDateTime_TZInfo *self, PyObject *dt)
         goto Fail;
     if (dst == Py_None)
         goto Inconsistent;
-    if (delta_bool(delta) != 0) {
+    if (delta_bool((PyDateTime_Delta *)dst) != 0) {
         PyObject *temp = result;
         result = add_datetime_timedelta((PyDateTime_DateTime *)result,
                                         (PyDateTime_Delta *)dst, 1);
@@ -3298,7 +3304,7 @@ timezone_str(PyDateTime_TimeZone *self)
     Py_DECREF(offset);
     minutes = divmod(seconds, 60, &seconds);
     hours = divmod(minutes, 60, &minutes);
-    /* XXX ignore sub-minute data, curently not allowed. */
+    /* XXX ignore sub-minute data, currently not allowed. */
     assert(seconds == 0);
     return PyUnicode_FromFormat("UTC%c%02d:%02d", sign, hours, minutes);
 }
@@ -3805,29 +3811,6 @@ time_replace(PyDateTime_Time *self, PyObject *args, PyObject *kw)
     return clone;
 }
 
-static int
-time_bool(PyObject *self)
-{
-    PyObject *offset, *tzinfo;
-    int offsecs = 0;
-
-    if (TIME_GET_SECOND(self) || TIME_GET_MICROSECOND(self)) {
-        /* Since utcoffset is in whole minutes, nothing can
-         * alter the conclusion that this is nonzero.
-         */
-        return 1;
-    }
-    tzinfo = GET_TIME_TZINFO(self);
-    if (tzinfo != Py_None) {
-        offset = call_utcoffset(tzinfo, Py_None);
-        if (offset == NULL)
-            return -1;
-        offsecs = GET_TD_DAYS(offset)*86400 + GET_TD_SECONDS(offset);
-        Py_DECREF(offset);
-    }
-    return (TIME_GET_MINUTE(self)*60 - offsecs + TIME_GET_HOUR(self)*3600) != 0;
-}
-
 /* Pickle support, a simple use of __reduce__. */
 
 /* Let basestate be the non-tzinfo data string.
@@ -3895,19 +3878,6 @@ PyDoc_STR("time([hour[, minute[, second[, microsecond[, tzinfo]]]]]) --> a time 
 All arguments are optional. tzinfo may be None, or an instance of\n\
 a tzinfo subclass. The remaining arguments may be ints.\n");
 
-static PyNumberMethods time_as_number = {
-    0,                                          /* nb_add */
-    0,                                          /* nb_subtract */
-    0,                                          /* nb_multiply */
-    0,                                          /* nb_remainder */
-    0,                                          /* nb_divmod */
-    0,                                          /* nb_power */
-    0,                                          /* nb_negative */
-    0,                                          /* nb_positive */
-    0,                                          /* nb_absolute */
-    (inquiry)time_bool,                         /* nb_bool */
-};
-
 static PyTypeObject PyDateTime_TimeType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "datetime.time",                            /* tp_name */
@@ -3919,7 +3889,7 @@ static PyTypeObject PyDateTime_TimeType = {
     0,                                          /* tp_setattr */
     0,                                          /* tp_reserved */
     (reprfunc)time_repr,                        /* tp_repr */
-    &time_as_number,                            /* tp_as_number */
+    0,                                          /* tp_as_number */
     0,                                          /* tp_as_sequence */
     0,                                          /* tp_as_mapping */
     (hashfunc)time_hash,                        /* tp_hash */
@@ -4113,6 +4083,44 @@ datetime_from_timet_and_us(PyObject *cls, TM_FUNC f, time_t timet, int us,
                                  tzinfo);
 }
 
+static time_t
+_PyTime_DoubleToTimet(double x)
+{
+    time_t result;
+    double diff;
+
+    result = (time_t)x;
+    /* How much info did we lose?  time_t may be an integral or
+     * floating type, and we don't know which.  If it's integral,
+     * we don't know whether C truncates, rounds, returns the floor,
+     * etc.  If we lost a second or more, the C rounding is
+     * unreasonable, or the input just doesn't fit in a time_t;
+     * call it an error regardless.  Note that the original cast to
+     * time_t can cause a C error too, but nothing we can do to
+     * worm around that.
+     */
+    diff = x - (double)result;
+    if (diff <= -1.0 || diff >= 1.0) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "timestamp out of range for platform time_t");
+        result = (time_t)-1;
+    }
+    return result;
+}
+
+/* Round a double to the nearest long.  |x| must be small enough to fit
+ * in a C long; this is not checked.
+ */
+static double
+_PyTime_RoundHalfEven(double x)
+{
+    double rounded = round(x);
+    if (fabs(x-rounded) == 0.5)
+        /* halfway case: round to even */
+        rounded = 2.0*round(x/2.0);
+    return rounded;
+}
+
 /* Internal helper.
  * Build datetime from a Python timestamp.  Pass localtime or gmtime for f,
  * to control the interpretation of the timestamp.  Since a double doesn't
@@ -4121,15 +4129,32 @@ datetime_from_timet_and_us(PyObject *cls, TM_FUNC f, time_t timet, int us,
  * to get that much precision (e.g., C time() isn't good enough).
  */
 static PyObject *
-datetime_from_timestamp(PyObject *cls, TM_FUNC f, PyObject *timestamp,
+datetime_from_timestamp(PyObject *cls, TM_FUNC f, double timestamp,
                         PyObject *tzinfo)
 {
     time_t timet;
-    long us;
+    double fraction;
+    int us;
 
-    if (_PyTime_ObjectToTimeval(timestamp, &timet, &us, _PyTime_ROUND_DOWN) == -1)
+    timet = _PyTime_DoubleToTimet(timestamp);
+    if (timet == (time_t)-1 && PyErr_Occurred())
         return NULL;
-    return datetime_from_timet_and_us(cls, f, timet, (int)us, tzinfo);
+    fraction = timestamp - (double)timet;
+    us = (int)_PyTime_RoundHalfEven(fraction * 1e6);
+    if (us < 0) {
+        /* Truncation towards zero is not what we wanted
+           for negative numbers (Python's mod semantics) */
+        timet -= 1;
+        us += 1000000;
+    }
+    /* If timestamp is less than one microsecond smaller than a
+     * full second, round up. Otherwise, ValueErrors are raised
+     * for some floats. */
+    if (us == 1000000) {
+        timet += 1;
+        us = 0;
+    }
+    return datetime_from_timet_and_us(cls, f, timet, us, tzinfo);
 }
 
 /* Internal helper.
@@ -4139,10 +4164,15 @@ datetime_from_timestamp(PyObject *cls, TM_FUNC f, PyObject *timestamp,
 static PyObject *
 datetime_best_possible(PyObject *cls, TM_FUNC f, PyObject *tzinfo)
 {
-    _PyTime_timeval t;
-    _PyTime_gettimeofday(&t);
-    return datetime_from_timet_and_us(cls, f, t.tv_sec, (int)t.tv_usec,
-                                      tzinfo);
+    _PyTime_t ts = _PyTime_GetSystemClock();
+    time_t secs;
+    int us;
+
+    if (_PyTime_AsTimevalTime_t(ts, &secs, &us, _PyTime_ROUND_FLOOR) < 0)
+        return NULL;
+    assert(0 <= us && us <= 999999);
+
+    return datetime_from_timet_and_us(cls, f, secs, us, tzinfo);
 }
 
 /*[clinic input]
@@ -4158,43 +4188,9 @@ Returns new datetime object representing current time local to tz.
 If no tz is specified, uses local timezone.
 [clinic start generated code]*/
 
-PyDoc_STRVAR(datetime_datetime_now__doc__,
-"now($type, /, tz=None)\n"
-"--\n"
-"\n"
-"Returns new datetime object representing current time local to tz.\n"
-"\n"
-"  tz\n"
-"    Timezone object.\n"
-"\n"
-"If no tz is specified, uses local timezone.");
-
-#define DATETIME_DATETIME_NOW_METHODDEF    \
-    {"now", (PyCFunction)datetime_datetime_now, METH_VARARGS|METH_KEYWORDS|METH_CLASS, datetime_datetime_now__doc__},
-
-static PyObject *
-datetime_datetime_now_impl(PyTypeObject *type, PyObject *tz);
-
-static PyObject *
-datetime_datetime_now(PyTypeObject *type, PyObject *args, PyObject *kwargs)
-{
-    PyObject *return_value = NULL;
-    static char *_keywords[] = {"tz", NULL};
-    PyObject *tz = Py_None;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-        "|O:now", _keywords,
-        &tz))
-        goto exit;
-    return_value = datetime_datetime_now_impl(type, tz);
-
-exit:
-    return return_value;
-}
-
 static PyObject *
 datetime_datetime_now_impl(PyTypeObject *type, PyObject *tz)
-/*[clinic end generated code: output=583c5637e3c843fa input=80d09869c5267d00]*/
+/*[clinic end generated code: output=b3386e5345e2b47a input=80d09869c5267d00]*/
 {
     PyObject *self;
 
@@ -4231,11 +4227,11 @@ static PyObject *
 datetime_fromtimestamp(PyObject *cls, PyObject *args, PyObject *kw)
 {
     PyObject *self;
-    PyObject *timestamp;
+    double timestamp;
     PyObject *tzinfo = Py_None;
     static char *keywords[] = {"timestamp", "tz", NULL};
 
-    if (! PyArg_ParseTupleAndKeywords(args, kw, "O|O:fromtimestamp",
+    if (! PyArg_ParseTupleAndKeywords(args, kw, "d|O:fromtimestamp",
                                       keywords, &timestamp, &tzinfo))
         return NULL;
     if (check_tzinfo_subclass(tzinfo) < 0)
@@ -4259,10 +4255,10 @@ datetime_fromtimestamp(PyObject *cls, PyObject *args, PyObject *kw)
 static PyObject *
 datetime_utcfromtimestamp(PyObject *cls, PyObject *args)
 {
-    PyObject *timestamp;
+    double timestamp;
     PyObject *result = NULL;
 
-    if (PyArg_ParseTuple(args, "O:utcfromtimestamp", &timestamp))
+    if (PyArg_ParseTuple(args, "d:utcfromtimestamp", &timestamp))
         result = datetime_from_timestamp(cls, gmtime, timestamp,
                                          Py_None);
     return result;
@@ -4753,7 +4749,12 @@ local_timezone(PyDateTime_DateTime *utc_time)
     PyObject *nameo = NULL;
     const char *zone = NULL;
 
-    delta = datetime_subtract((PyObject *)utc_time, PyDateTime_Epoch);
+    delta = new_delta(ymd_to_ord(GET_YEAR(utc_time), GET_MONTH(utc_time),
+                                 GET_DAY(utc_time)) - 719163,
+                      60 * (60 * DATE_GET_HOUR(utc_time) +
+                            DATE_GET_MINUTE(utc_time)) +
+                      DATE_GET_SECOND(utc_time),
+                      0, 0);
     if (delta == NULL)
         return NULL;
     one_second = new_delta(0, 1, 0, 0);
@@ -5056,8 +5057,7 @@ static PyMethodDef datetime_methods[] = {
 
     {"utcfromtimestamp", (PyCFunction)datetime_utcfromtimestamp,
      METH_VARARGS | METH_CLASS,
-     PyDoc_STR("timestamp -> UTC datetime from a POSIX timestamp "
-               "(like time.time()).")},
+     PyDoc_STR("Construct a naive UTC datetime from a POSIX timestamp.")},
 
     {"strptime", (PyCFunction)datetime_strptime,
      METH_VARARGS | METH_CLASS,

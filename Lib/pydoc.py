@@ -28,7 +28,7 @@ to a file named "<name>.html".
 
 Module docs for core modules are assumed to be in
 
-    http://docs.python.org/X.Y/library/
+    https://docs.python.org/X.Y/library/
 
 This can be overridden by setting the PYTHONDOCS environment variable
 to a different URL or to a local directory containing the Library
@@ -53,6 +53,7 @@ Richard Chamberlain, for the first implementation of textdoc.
 
 import builtins
 import importlib._bootstrap
+import importlib._bootstrap_external
 import importlib.machinery
 import importlib.util
 import inspect
@@ -213,7 +214,7 @@ def classify_class_attrs(object):
 def ispackage(path):
     """Guess whether a path refers to a package directory."""
     if os.path.isdir(path):
-        for ext in ('.py', '.pyc', '.pyo'):
+        for ext in ('.py', '.pyc'):
             if os.path.isfile(os.path.join(path, '__init__' + ext)):
                 return True
     return False
@@ -264,13 +265,12 @@ def synopsis(filename, cache={}):
             # XXX We probably don't need to pass in the loader here.
             spec = importlib.util.spec_from_file_location('__temp__', filename,
                                                           loader=loader)
-            _spec = importlib._bootstrap._SpecMethods(spec)
             try:
-                module = _spec.load()
+                module = importlib._bootstrap._load(spec)
             except:
                 return None
             del sys.modules['__temp__']
-            result = (module.__doc__ or '').splitlines()[0]
+            result = module.__doc__.splitlines()[0] if module.__doc__ else None
         # Cache the result.
         cache[filename] = (mtime, result)
     return result
@@ -289,18 +289,22 @@ def importfile(path):
     """Import a Python source file or compiled file given its path."""
     magic = importlib.util.MAGIC_NUMBER
     with open(path, 'rb') as file:
-        is_bytecode = magic == file.read(len(magic))
+        first_bytes = file.read(len(magic))
+        is_bytecode = first_bytes in (magic,
+                                      # Issue #29537: handle issue27286
+                                      #               bytecode incompatibility
+                                      # See Lib/importlib/_bootstrap_external.py
+                                      importlib.util._BACKCOMPAT_MAGIC_NUMBER)
     filename = os.path.basename(path)
     name, ext = os.path.splitext(filename)
     if is_bytecode:
-        loader = importlib._bootstrap.SourcelessFileLoader(name, path)
+        loader = importlib._bootstrap_external.SourcelessFileLoader(name, path)
     else:
-        loader = importlib._bootstrap.SourceFileLoader(name, path)
+        loader = importlib._bootstrap_external.SourceFileLoader(name, path)
     # XXX We probably don't need to pass in the loader here.
     spec = importlib.util.spec_from_file_location(name, path, loader=loader)
-    _spec = importlib._bootstrap._SpecMethods(spec)
     try:
-        return _spec.load()
+        return importlib._bootstrap._load(spec)
     except:
         raise ErrorDuringImport(path, sys.exc_info())
 
@@ -355,7 +359,7 @@ def safeimport(path, forceload=0, cache={}):
 class Doc:
 
     PYTHONDOCS = os.environ.get("PYTHONDOCS",
-                                "http://docs.python.org/%d.%d/library"
+                                "https://docs.python.org/%d.%d/library"
                                 % sys.version_info[:2])
 
     def document(self, object, name=None, *args):
@@ -384,7 +388,9 @@ class Doc:
 
     docmodule = docclass = docroutine = docother = docproperty = docdata = fail
 
-    def getdocloc(self, object):
+    def getdocloc(self, object,
+                  basedir=os.path.join(sys.base_exec_prefix, "lib",
+                                       "python%d.%d" %  sys.version_info[:2])):
         """Return the location of module docs or None"""
 
         try:
@@ -394,8 +400,7 @@ class Doc:
 
         docloc = os.environ.get("PYTHONDOCS", self.PYTHONDOCS)
 
-        basedir = os.path.join(sys.base_exec_prefix, "lib",
-                               "python%d.%d" %  sys.version_info[:2])
+        basedir = os.path.normcase(basedir)
         if (isinstance(object, type(os)) and
             (object.__name__ in ('errno', 'exceptions', 'gc', 'imp',
                                  'marshal', 'posix', 'signal', 'sys',
@@ -403,10 +408,10 @@ class Doc:
              (file.startswith(basedir) and
               not file.startswith(os.path.join(basedir, 'site-packages')))) and
             object.__name__ not in ('xml.etree', 'test.pydoc_mod')):
-            if docloc.startswith("http://"):
-                docloc = "%s/%s" % (docloc.rstrip("/"), object.__name__)
+            if docloc.startswith(("http://", "https://")):
+                docloc = "%s/%s" % (docloc.rstrip("/"), object.__name__.lower())
             else:
-                docloc = os.path.join(docloc, object.__name__ + ".html")
+                docloc = os.path.join(docloc, object.__name__.lower() + ".html")
         else:
             docloc = None
         return docloc
@@ -1407,9 +1412,6 @@ class _PlainTextDoc(TextDoc):
 def pager(text):
     """The first time this is called, determine what kind of pager to use."""
     global pager
-    # Escape non-encodable characters to avoid encoding errors later
-    encoding = sys.getfilesystemencoding()
-    text = text.encode(encoding, 'backslashreplace').decode(encoding)
     pager = getpager()
     pager(text)
 
@@ -1452,27 +1454,46 @@ def plain(text):
 
 def pipepager(text, cmd):
     """Page through text by feeding it to another program."""
-    pipe = os.popen(cmd, 'w')
+    import subprocess
+    proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE)
     try:
-        pipe.write(text)
-        pipe.close()
+        with io.TextIOWrapper(proc.stdin, errors='backslashreplace') as pipe:
+            try:
+                pipe.write(text)
+            except KeyboardInterrupt:
+                # We've hereby abandoned whatever text hasn't been written,
+                # but the pager is still in control of the terminal.
+                pass
     except OSError:
         pass # Ignore broken pipes caused by quitting the pager program.
+    while True:
+        try:
+            proc.wait()
+            break
+        except KeyboardInterrupt:
+            # Ignore ctl-c like the pager itself does.  Otherwise the pager is
+            # left running and the terminal is in raw mode and unusable.
+            pass
 
 def tempfilepager(text, cmd):
     """Page through text by invoking a program on a temporary file."""
     import tempfile
     filename = tempfile.mktemp()
-    with open(filename, 'w') as file:
+    with open(filename, 'w', errors='backslashreplace') as file:
         file.write(text)
     try:
         os.system(cmd + ' "' + filename + '"')
     finally:
         os.unlink(filename)
 
+def _escape_stdout(text):
+    # Escape non-encodable characters to avoid encoding errors later
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    return text.encode(encoding, 'backslashreplace').decode(encoding)
+
 def ttypager(text):
     """Page through text on a text terminal."""
-    lines = plain(text).split('\n')
+    lines = plain(_escape_stdout(text)).split('\n')
     try:
         import tty
         fd = sys.stdin.fileno()
@@ -1516,7 +1537,7 @@ def ttypager(text):
 
 def plainpager(text):
     """Simply print unformatted text.  This is the ultimate fallback."""
-    sys.stdout.write(plain(text))
+    sys.stdout.write(plain(_escape_stdout(text)))
 
 def describe(thing):
     """Produce a short description of the given thing."""
@@ -1574,8 +1595,11 @@ def resolve(thing, forceload=0):
     """Given an object or a path to an object, get the object and its name."""
     if isinstance(thing, str):
         object = locate(thing, forceload)
-        if not object:
-            raise ImportError('no Python documentation found for %r' % thing)
+        if object is None:
+            raise ImportError('''\
+No Python documentation found for %r.
+Use help() to get the interactive help utility.
+Use help(str) for help on the str class.''' % thing)
         return object, thing
     else:
         name = getattr(thing, '__name__', None)
@@ -1622,9 +1646,8 @@ def writedoc(thing, forceload=0):
     try:
         object, name = resolve(thing, forceload)
         page = html.page(describe(object), html.document(object, name))
-        file = open(name + '.html', 'w', encoding='utf-8')
-        file.write(page)
-        file.close()
+        with open(name + '.html', 'w', encoding='utf-8') as file:
+            file.write(page)
         print('wrote', name + '.html')
     except (ImportError, ErrorDuringImport) as value:
         print(value)
@@ -1819,7 +1842,8 @@ class Helper:
         if inspect.stack()[1][3] == '?':
             self()
             return ''
-        return '<pydoc.Helper instance>'
+        return '<%s.%s instance>' % (self.__class__.__module__,
+                                     self.__class__.__qualname__)
 
     _GoInteractive = object()
     def __call__(self, request=_GoInteractive):
@@ -1845,7 +1869,10 @@ has the same effect as typing a particular string at the help> prompt.
                 break
             request = replace(request, '"', '', "'", '').strip()
             if request.lower() in ('q', 'quit'): break
-            self.help(request)
+            if request == 'help':
+                self.intro()
+            else:
+                self.help(request)
 
     def getline(self, prompt):
         """Read one line, using input() when appropriate."""
@@ -1859,8 +1886,7 @@ has the same effect as typing a particular string at the help> prompt.
     def help(self, request):
         if type(request) is type(''):
             request = request.strip()
-            if request == 'help': self.intro()
-            elif request == 'keywords': self.listkeywords()
+            if request == 'keywords': self.listkeywords()
             elif request == 'symbols': self.listsymbols()
             elif request == 'topics': self.listtopics()
             elif request == 'modules': self.listmodules()
@@ -1873,6 +1899,7 @@ has the same effect as typing a particular string at the help> prompt.
             elif request in self.keywords: self.showtopic(request)
             elif request in self.topics: self.showtopic(request)
             elif request: doc(request, 'Help on %s:', output=self._output)
+            else: doc(str, 'Help on %s:', output=self._output)
         elif isinstance(request, Helper): self()
         else: doc(request, 'Help on %s:', output=self._output)
         self.output.write('\n')
@@ -2068,14 +2095,13 @@ class ModuleScanner:
                     else:
                         path = None
                 else:
-                    _spec = importlib._bootstrap._SpecMethods(spec)
                     try:
-                        module = _spec.load()
+                        module = importlib._bootstrap._load(spec)
                     except ImportError:
                         if onerror:
                             onerror(modname)
                         continue
-                    desc = (module.__doc__ or '').splitlines()[0]
+                    desc = module.__doc__.splitlines()[0] if module.__doc__ else ''
                     path = getattr(module,'__file__',None)
                 name = modname + ' - ' + desc
                 if name.lower().find(key) >= 0:
@@ -2339,7 +2365,9 @@ def _url_handler(url, content_type="text/html"):
 
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore') # ignore problems during import
-            ModuleScanner().run(callback, key)
+            def onerror(modname):
+                pass
+            ModuleScanner().run(callback, key, onerror=onerror)
 
         # format page
         def bltinlink(name):

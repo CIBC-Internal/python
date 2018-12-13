@@ -157,8 +157,10 @@ _ctypes_get_errobj(int **pspace)
             return NULL;
         memset(space, 0, sizeof(int) * 2);
         errobj = PyCapsule_New(space, CTYPES_CAPSULE_NAME_PYMEM, pymem_destructor);
-        if (errobj == NULL)
+        if (errobj == NULL) {
+            PyMem_Free(space);
             return NULL;
+        }
         if (-1 == PyDict_SetItem(dict, error_object_name,
                                  errobj)) {
             Py_DECREF(errobj);
@@ -670,7 +672,7 @@ static int ConvParam(PyObject *obj, Py_ssize_t index, struct argument *pa)
 #ifdef CTYPES_UNICODE
     if (PyUnicode_Check(obj)) {
         pa->ffi_type = &ffi_type_pointer;
-        pa->value.p = PyUnicode_AsWideCharString(obj, NULL);
+        pa->value.p = _PyUnicode_AsWideCharString(obj);
         if (pa->value.p == NULL)
             return -1;
         pa->keep = PyCapsule_New(pa->value.p, CTYPES_CAPSULE_NAME_PYMEM, pymem_destructor);
@@ -1233,14 +1235,15 @@ The handle may be used to locate exported functions in this\n\
 module.\n";
 static PyObject *load_library(PyObject *self, PyObject *args)
 {
-    WCHAR *name;
+    const WCHAR *name;
     PyObject *nameobj;
     PyObject *ignored;
     HMODULE hMod;
-    if (!PyArg_ParseTuple(args, "O|O:LoadLibrary", &nameobj, &ignored))
+
+    if (!PyArg_ParseTuple(args, "U|O:LoadLibrary", &nameobj, &ignored))
         return NULL;
 
-    name = PyUnicode_AsUnicode(nameobj);
+    name = _PyUnicode_AsUnicode(nameobj);
     if (!name)
         return NULL;
 
@@ -1603,7 +1606,7 @@ resize(PyObject *self, PyObject *args)
                      "Memory cannot be resized because this object doesn't own it");
         return NULL;
     }
-    if (size <= sizeof(obj->b_value)) {
+    if ((size_t)size <= sizeof(obj->b_value)) {
         /* internal default buffer is large enough */
         obj->b_size = size;
         goto done;
@@ -1668,7 +1671,9 @@ POINTER(PyObject *self, PyObject *cls)
         return result;
     }
     if (PyUnicode_CheckExact(cls)) {
-        char *name = _PyUnicode_AsString(cls);
+        const char *name = PyUnicode_AsUTF8(cls);
+        if (name == NULL)
+            return NULL;
         buf = PyMem_Malloc(strlen(name) + 3 + 1);
         if (buf == NULL)
             return PyErr_NoMemory();
@@ -1681,6 +1686,10 @@ POINTER(PyObject *self, PyObject *cls)
         if (result == NULL)
             return result;
         key = PyLong_FromVoidPtr(result);
+        if (key == NULL) {
+            Py_DECREF(result);
+            return NULL;
+        }
     } else if (PyType_Check(cls)) {
         typ = (PyTypeObject *)cls;
         buf = PyMem_Malloc(strlen(typ->tp_name) + 3 + 1);

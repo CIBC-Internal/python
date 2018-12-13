@@ -21,7 +21,12 @@ typedef struct {
     PyObject *co_varnames;	/* tuple of strings (local variable names) */
     PyObject *co_freevars;	/* tuple of strings (free variable names) */
     PyObject *co_cellvars;      /* tuple of strings (cell variable names) */
-    /* The rest doesn't count for hash or comparisons */
+    /* The rest aren't used in either hash or comparisons, except for
+       co_name (used in both) and co_firstlineno (used only in
+       comparisons).  This is done to preserve the name and line number
+       for tracebacks and debuggers; otherwise, constant de-duplication
+       would collapse identical functions/lambdas defined on different lines.
+    */
     unsigned char *co_cell2arg; /* Maps cell vars which are arguments. */
     PyObject *co_filename;	/* unicode (where it was loaded from) */
     PyObject *co_name;		/* unicode (name, for reference) */
@@ -46,6 +51,11 @@ typedef struct {
 */
 #define CO_NOFREE       0x0040
 
+/* The CO_COROUTINE flag is set for coroutine functions (defined with
+   ``async def`` keywords) */
+#define CO_COROUTINE            0x0080
+#define CO_ITERABLE_COROUTINE   0x0100
+
 /* These are no longer used. */
 #if 0
 #define CO_GENERATOR_ALLOWED    0x1000
@@ -57,6 +67,7 @@ typedef struct {
 #define CO_FUTURE_UNICODE_LITERALS 0x20000
 
 #define CO_FUTURE_BARRY_AS_BDFL  0x40000
+#define CO_FUTURE_GENERATOR_STOP  0x80000
 
 /* This value is found in the co_cell2arg array when the associated cell
    variable does not correspond to an argument. The maximum number of
@@ -97,12 +108,21 @@ typedef struct _addr_pair {
         int ap_upper;
 } PyAddrPair;
 
+#ifndef Py_LIMITED_API
 /* Update *bounds to describe the first and one-past-the-last instructions in the
    same line as lasti.  Return the number of that line.
 */
-#ifndef Py_LIMITED_API
 PyAPI_FUNC(int) _PyCode_CheckLineNumber(PyCodeObject* co,
                                         int lasti, PyAddrPair *bounds);
+
+/* Create a comparable key used to compare constants taking in account the
+ * object type. It is used to make sure types are not coerced (e.g., float and
+ * complex) _and_ to distinguish 0.0 from -0.0 e.g. on IEEE platforms
+ *
+ * Return (type(obj), obj, ...): a tuple with variable size (at least 2 items)
+ * depending on the type and the value. The type is the first item to not
+ * compare bytes and str which can raise a BytesWarning exception. */
+PyAPI_FUNC(PyObject*) _PyCode_ConstantKey(PyObject *obj);
 #endif
 
 PyAPI_FUNC(PyObject*) PyCode_Optimize(PyObject *code, PyObject* consts,

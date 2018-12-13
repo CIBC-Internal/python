@@ -26,10 +26,28 @@ if sys.flags.no_site:
 
 import site
 
-if site.ENABLE_USER_SITE and not os.path.isdir(site.USER_SITE):
-    # need to add user site directory for tests
-    os.makedirs(site.USER_SITE)
-    site.addsitedir(site.USER_SITE)
+
+OLD_SYS_PATH = None
+
+
+def setUpModule():
+    global OLD_SYS_PATH
+    OLD_SYS_PATH = sys.path[:]
+
+    if site.ENABLE_USER_SITE and not os.path.isdir(site.USER_SITE):
+        # need to add user site directory for tests
+        try:
+            os.makedirs(site.USER_SITE)
+            # modify sys.path: will be restored by tearDownModule()
+            site.addsitedir(site.USER_SITE)
+        except PermissionError as exc:
+            raise unittest.SkipTest('unable to create user site directory (%r): %s'
+                                    % (site.USER_SITE, exc))
+
+
+def tearDownModule():
+    sys.path[:] = OLD_SYS_PATH
+
 
 class HelperFunctionsTests(unittest.TestCase):
     """Tests for helper functions.
@@ -147,7 +165,7 @@ class HelperFunctionsTests(unittest.TestCase):
             re.escape(os.path.join(pth_dir, pth_fn)))
         # XXX: ditto previous XXX comment.
         self.assertRegex(err_out.getvalue(), 'Traceback')
-        self.assertRegex(err_out.getvalue(), 'TypeError')
+        self.assertRegex(err_out.getvalue(), 'ValueError')
 
     def test_addsitedir(self):
         # Same tests for test_addpackage since addsitedir() essentially just
@@ -235,20 +253,18 @@ class HelperFunctionsTests(unittest.TestCase):
             # OS X framework builds
             site.PREFIXES = ['Python.framework']
             dirs = site.getsitepackages()
-            self.assertEqual(len(dirs), 3)
+            self.assertEqual(len(dirs), 2)
             wanted = os.path.join('/Library',
                                   sysconfig.get_config_var("PYTHONFRAMEWORK"),
                                   sys.version[:3],
                                   'site-packages')
-            self.assertEqual(dirs[2], wanted)
+            self.assertEqual(dirs[1], wanted)
         elif os.sep == '/':
             # OS X non-framwework builds, Linux, FreeBSD, etc
-            self.assertEqual(len(dirs), 2)
+            self.assertEqual(len(dirs), 1)
             wanted = os.path.join('xoxo', 'lib', 'python' + sys.version[:3],
                                   'site-packages')
             self.assertEqual(dirs[0], wanted)
-            wanted = os.path.join('xoxo', 'lib', 'site-python')
-            self.assertEqual(dirs[1], wanted)
         else:
             # other platforms
             self.assertEqual(len(dirs), 2)
@@ -357,8 +373,12 @@ class ImportSideEffectTests(unittest.TestCase):
         stdout, stderr = proc.communicate()
         self.assertEqual(proc.returncode, 0)
         os__file__, os__cached__ = stdout.splitlines()[:2]
-        self.assertTrue(os.path.isabs(os__file__))
-        self.assertTrue(os.path.isabs(os__cached__))
+        self.assertTrue(os.path.isabs(os__file__),
+                        "expected absolute path, got {}"
+                        .format(os__file__.decode('ascii')))
+        self.assertTrue(os.path.isabs(os__cached__),
+                        "expected absolute path, got {}"
+                        .format(os__cached__.decode('ascii')))
 
     def test_no_duplicate_paths(self):
         # No duplicate paths should exist in sys.path

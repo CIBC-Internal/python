@@ -10,12 +10,13 @@ from concurrent.futures import _base
 import queue
 import threading
 import weakref
+import os
 
 # Workers are created as daemon threads. This is done to allow the interpreter
 # to exit when there are still idle threads in a ThreadPoolExecutor's thread
 # pool (i.e. shutdown() was not called). However, allowing workers to die with
 # the interpreter has two undesirable properties:
-#   - The workers would still be running during interpretor shutdown,
+#   - The workers would still be running during interpreter shutdown,
 #     meaning that they would fail in unpredictable ways.
 #   - The workers could be killed while evaluating a work item, which could
 #     be bad if the callable being evaluated has external side-effects e.g.
@@ -80,13 +81,20 @@ def _worker(executor_reference, work_queue):
         _base.LOGGER.critical('Exception in worker', exc_info=True)
 
 class ThreadPoolExecutor(_base.Executor):
-    def __init__(self, max_workers):
+    def __init__(self, max_workers=None):
         """Initializes a new ThreadPoolExecutor instance.
 
         Args:
             max_workers: The maximum number of threads that can be used to
                 execute the given calls.
         """
+        if max_workers is None:
+            # Use this number because ThreadPoolExecutor is often
+            # used to overlap I/O instead of CPU work.
+            max_workers = (os.cpu_count() or 1) * 5
+        if max_workers <= 0:
+            raise ValueError("max_workers must be greater than 0")
+
         self._max_workers = max_workers
         self._work_queue = queue.Queue()
         self._threads = set()

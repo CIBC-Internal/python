@@ -4,6 +4,9 @@
 .. module:: email.mime
    :synopsis: Build MIME messages.
 
+**Source code:** :source:`Lib/email/mime/`
+
+--------------
 
 Ordinarily, you get a message object structure by passing a file or some text to
 a parser, which parses the text and returns the root message object.  However
@@ -195,14 +198,18 @@ Here are the classes:
    set of the text and is passed as an argument to the
    :class:`~email.mime.nonmultipart.MIMENonMultipart` constructor; it defaults
    to ``us-ascii`` if the string contains only ``ascii`` code points, and
-   ``utf-8`` otherwise.
+   ``utf-8`` otherwise.  The *_charset* parameter accepts either a string or a
+   :class:`~email.charset.Charset` instance.
 
    Unless the *_charset* argument is explicitly set to ``None``, the
    MIMEText object created will have both a :mailheader:`Content-Type` header
-   with a ``charset`` parameter, and a :mailheader:`Content-Transfer-Endcoding`
+   with a ``charset`` parameter, and a :mailheader:`Content-Transfer-Encoding`
    header.  This means that a subsequent ``set_payload`` call will not result
    in an encoded payload, even if a charset is passed in the ``set_payload``
    command.  You can "reset" this behavior by deleting the
    ``Content-Transfer-Encoding`` header, after which a ``set_payload`` call
    will automatically encode the new payload (and add a new
    :mailheader:`Content-Transfer-Encoding` header).
+
+   .. versionchanged:: 3.5
+      *_charset* also accepts :class:`~email.charset.Charset` instances.

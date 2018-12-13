@@ -632,18 +632,83 @@ processor's time-stamp counter."
 static PyObject *
 sys_setrecursionlimit(PyObject *self, PyObject *args)
 {
-    int new_limit;
+    int new_limit, mark;
+    PyThreadState *tstate;
+
     if (!PyArg_ParseTuple(args, "i:setrecursionlimit", &new_limit))
         return NULL;
-    if (new_limit <= 0) {
+
+    if (new_limit < 1) {
         PyErr_SetString(PyExc_ValueError,
-                        "recursion limit must be positive");
+                        "recursion limit must be greater or equal than 1");
         return NULL;
     }
+
+    /* Issue #25274: When the recursion depth hits the recursion limit in
+       _Py_CheckRecursiveCall(), the overflowed flag of the thread state is
+       set to 1 and a RecursionError is raised. The overflowed flag is reset
+       to 0 when the recursion depth goes below the low-water mark: see
+       Py_LeaveRecursiveCall().
+
+       Reject too low new limit if the current recursion depth is higher than
+       the new low-water mark. Otherwise it may not be possible anymore to
+       reset the overflowed flag to 0. */
+    mark = _Py_RecursionLimitLowerWaterMark(new_limit);
+    tstate = PyThreadState_GET();
+    if (tstate->recursion_depth >= mark) {
+        PyErr_Format(PyExc_RecursionError,
+                     "cannot set the recursion limit to %i at "
+                     "the recursion depth %i: the limit is too low",
+                     new_limit, tstate->recursion_depth);
+        return NULL;
+    }
+
     Py_SetRecursionLimit(new_limit);
     Py_INCREF(Py_None);
     return Py_None;
 }
+
+static PyObject *
+sys_set_coroutine_wrapper(PyObject *self, PyObject *wrapper)
+{
+    if (wrapper != Py_None) {
+        if (!PyCallable_Check(wrapper)) {
+            PyErr_Format(PyExc_TypeError,
+                         "callable expected, got %.50s",
+                         Py_TYPE(wrapper)->tp_name);
+            return NULL;
+        }
+        _PyEval_SetCoroutineWrapper(wrapper);
+    }
+    else {
+        _PyEval_SetCoroutineWrapper(NULL);
+    }
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(set_coroutine_wrapper_doc,
+"set_coroutine_wrapper(wrapper)\n\
+\n\
+Set a wrapper for coroutine objects."
+);
+
+static PyObject *
+sys_get_coroutine_wrapper(PyObject *self, PyObject *args)
+{
+    PyObject *wrapper = _PyEval_GetCoroutineWrapper();
+    if (wrapper == NULL) {
+        wrapper = Py_None;
+    }
+    Py_INCREF(wrapper);
+    return wrapper;
+}
+
+PyDoc_STRVAR(get_coroutine_wrapper_doc,
+"get_coroutine_wrapper()\n\
+\n\
+Return the wrapper for coroutine objects set by sys.set_coroutine_wrapper."
+);
+
 
 static PyTypeObject Hash_InfoType;
 
@@ -760,6 +825,7 @@ static PyStructSequence_Field windows_version_fields[] = {
     {"service_pack_minor", "Service Pack minor version number"},
     {"suite_mask", "Bit mask identifying available product suites"},
     {"product_type", "System product type"},
+    {"_platform_version", "Diagnostic version number"},
     {0}
 };
 
@@ -772,12 +838,24 @@ static PyStructSequence_Desc windows_version_desc = {
                                  via indexing, the rest are name only */
 };
 
+/* Disable deprecation warnings about GetVersionEx as the result is
+   being passed straight through to the caller, who is responsible for
+   using it correctly. */
+#pragma warning(push)
+#pragma warning(disable:4996)
+
 static PyObject *
 sys_getwindowsversion(PyObject *self)
 {
     PyObject *version;
     int pos = 0;
     OSVERSIONINFOEX ver;
+    DWORD realMajor, realMinor, realBuild;
+    HANDLE hKernel32;
+    wchar_t kernel32_path[MAX_PATH];
+    LPVOID verblock;
+    DWORD verblock_size;
+
     ver.dwOSVersionInfoSize = sizeof(ver);
     if (!GetVersionEx((OSVERSIONINFO*) &ver))
         return PyErr_SetFromWindowsErr(0);
@@ -796,12 +874,44 @@ sys_getwindowsversion(PyObject *self)
     PyStructSequence_SET_ITEM(version, pos++, PyLong_FromLong(ver.wSuiteMask));
     PyStructSequence_SET_ITEM(version, pos++, PyLong_FromLong(ver.wProductType));
 
+    realMajor = ver.dwMajorVersion;
+    realMinor = ver.dwMinorVersion;
+    realBuild = ver.dwBuildNumber;
+
+    // GetVersion will lie if we are running in a compatibility mode.
+    // We need to read the version info from a system file resource
+    // to accurately identify the OS version. If we fail for any reason,
+    // just return whatever GetVersion said.
+    hKernel32 = GetModuleHandleW(L"kernel32.dll");
+    if (hKernel32 && GetModuleFileNameW(hKernel32, kernel32_path, MAX_PATH) &&
+        (verblock_size = GetFileVersionInfoSizeW(kernel32_path, NULL)) &&
+        (verblock = PyMem_RawMalloc(verblock_size))) {
+        VS_FIXEDFILEINFO *ffi;
+        UINT ffi_len;
+
+        if (GetFileVersionInfoW(kernel32_path, 0, verblock_size, verblock) &&
+            VerQueryValueW(verblock, L"", (LPVOID)&ffi, &ffi_len)) {
+            realMajor = HIWORD(ffi->dwProductVersionMS);
+            realMinor = LOWORD(ffi->dwProductVersionMS);
+            realBuild = HIWORD(ffi->dwProductVersionLS);
+        }
+        PyMem_RawFree(verblock);
+    }
+    PyStructSequence_SET_ITEM(version, pos++, Py_BuildValue("(kkk)",
+        realMajor,
+        realMinor,
+        realBuild
+    ));
+
     if (PyErr_Occurred()) {
         Py_DECREF(version);
         return NULL;
     }
+
     return version;
 }
+
+#pragma warning(pop)
 
 #endif /* MS_WINDOWS */
 
@@ -1121,6 +1231,16 @@ PyDoc_STRVAR(sys_clear_type_cache__doc__,
 "_clear_type_cache() -> None\n\
 Clear the internal type lookup cache.");
 
+static PyObject *
+sys_is_finalizing(PyObject* self, PyObject* args)
+{
+    return PyBool_FromLong(_Py_Finalizing != NULL);
+}
+
+PyDoc_STRVAR(is_finalizing_doc,
+"is_finalizing()\n\
+Return True if Python is exiting.");
+
 
 static PyMethodDef sys_methods[] = {
     /* Might as well keep this in alphabetic order */
@@ -1167,6 +1287,7 @@ static PyMethodDef sys_methods[] = {
      getwindowsversion_doc},
 #endif /* MS_WINDOWS */
     {"intern",          sys_intern,     METH_VARARGS, intern_doc},
+    {"is_finalizing",   sys_is_finalizing, METH_NOARGS, is_finalizing_doc},
 #ifdef USE_MALLOPT
     {"mdebug",          sys_mdebug, METH_VARARGS},
 #endif
@@ -1196,6 +1317,10 @@ static PyMethodDef sys_methods[] = {
     {"call_tracing", sys_call_tracing, METH_VARARGS, call_tracing_doc},
     {"_debugmallocstats", sys_debugmallocstats, METH_NOARGS,
      debugmallocstats_doc},
+    {"set_coroutine_wrapper", sys_set_coroutine_wrapper, METH_O,
+     set_coroutine_wrapper_doc},
+    {"get_coroutine_wrapper", sys_get_coroutine_wrapper, METH_NOARGS,
+     get_coroutine_wrapper_doc},
     {NULL,              NULL}           /* sentinel */
 };
 
@@ -1309,7 +1434,7 @@ error:
     Py_XDECREF(name);
     Py_XDECREF(value);
     /* No return value, therefore clear error state if possible */
-    if (_Py_atomic_load_relaxed(&_PyThreadState_Current))
+    if (_PyThreadState_UncheckedGet())
         PyErr_Clear();
 }
 
@@ -1494,7 +1619,7 @@ static PyStructSequence_Field version_info_fields[] = {
     {"major", "Major release number"},
     {"minor", "Minor release number"},
     {"micro", "Patch release number"},
-    {"releaselevel", "'alpha', 'beta', 'candidate', or 'release'"},
+    {"releaselevel", "'alpha', 'beta', 'candidate', or 'final'"},
     {"serial", "Serial release number"},
     {0}
 };
@@ -1670,8 +1795,8 @@ _PySys_Init(void)
     the shell already prevents that. */
 #if !defined(MS_WINDOWS)
     {
-        struct stat sb;
-        if (fstat(fileno(stdin), &sb) == 0 &&
+        struct _Py_stat_struct sb;
+        if (_Py_fstat_noraise(fileno(stdin), &sb) == 0 &&
             S_ISDIR(sb.st_mode)) {
             /* There's nothing more we can do. */
             /* Py_FatalError() will core dump, so just exit. */
@@ -1681,7 +1806,7 @@ _PySys_Init(void)
     }
 #endif
 
-    /* stdin/stdout/stderr are now set by pythonrun.c */
+    /* stdin/stdout/stderr are set in pylifecycle.c */
 
     SET_SYS_FROM_STRING_BORROW("__displayhook__",
                                PyDict_GetItemString(sysdict, "displayhook"));
@@ -1691,9 +1816,9 @@ _PySys_Init(void)
                          PyUnicode_FromString(Py_GetVersion()));
     SET_SYS_FROM_STRING("hexversion",
                          PyLong_FromLong(PY_VERSION_HEX));
-    SET_SYS_FROM_STRING("_mercurial",
-                        Py_BuildValue("(szz)", "CPython", _Py_hgidentifier(),
-                                      _Py_hgversion()));
+    SET_SYS_FROM_STRING("_git",
+                        Py_BuildValue("(szz)", "CPython", _Py_gitidentifier(),
+                                      _Py_gitversion()));
     SET_SYS_FROM_STRING("dont_write_bytecode",
                          PyBool_FromLong(Py_DontWriteBytecodeFlag));
     SET_SYS_FROM_STRING("api_version",

@@ -141,6 +141,9 @@ From ast_for_call():
 >>> f(x for x in L, 1)
 Traceback (most recent call last):
 SyntaxError: Generator expression must be parenthesized if not sole argument
+>>> f(x for x in L, y for y in L)
+Traceback (most recent call last):
+SyntaxError: Generator expression must be parenthesized if not sole argument
 >>> f((x for x in L), 1)
 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -339,7 +342,9 @@ isn't, there should be a syntax error.
      ...
    SyntaxError: 'break' outside loop
 
-This should probably raise a better error than a SystemError (or none at all).
+This raises a SyntaxError, it used to raise a SystemError.
+Context for this change can be found on issue #27514
+
 In 2.5 there was a missing exception and an assert was triggered in a debug
 build.  The number of blocks must be greater than CO_MAXBLOCKS.  SF #1565514
 
@@ -367,7 +372,7 @@ build.  The number of blocks must be greater than CO_MAXBLOCKS.  SF #1565514
    ...                      break
    Traceback (most recent call last):
      ...
-   SystemError: too many statically nested blocks
+   SyntaxError: too many statically nested blocks
 
 Misuse of the nonlocal statement can lead to a few unique syntax errors.
 
@@ -412,6 +417,14 @@ TODO(jhylton): Figure out how to test SyntaxWarning with doctest.
 ##   Traceback (most recent call last):
 ##     ...
 ##   SyntaxWarning: name 'x' is assigned to before nonlocal declaration
+
+ From https://bugs.python.org/issue25973
+   >>> class A:
+   ...     def f(self):
+   ...         nonlocal __x
+   Traceback (most recent call last):
+     ...
+   SyntaxError: no binding for nonlocal '_A__x' found
 
 
 This tests assignment-context; there was a bug in Python 2.5 where compiling
@@ -527,7 +540,7 @@ from test import support
 class SyntaxTestCase(unittest.TestCase):
 
     def _check_error(self, code, errtext,
-                     filename="<testcase>", mode="exec", subclass=None):
+                     filename="<testcase>", mode="exec", subclass=None, lineno=None, offset=None):
         """Check that compiling code raises SyntaxError with errtext.
 
         errtest is a regular expression that must be present in the
@@ -542,6 +555,11 @@ class SyntaxTestCase(unittest.TestCase):
             mo = re.search(errtext, str(err))
             if mo is None:
                 self.fail("SyntaxError did not contain '%r'" % (errtext,))
+            self.assertEqual(err.filename, filename)
+            if lineno is not None:
+                self.assertEqual(err.lineno, lineno)
+            if offset is not None:
+                self.assertEqual(err.offset, offset)
         else:
             self.fail("compile() did not raise SyntaxError")
 
@@ -552,7 +570,7 @@ class SyntaxTestCase(unittest.TestCase):
         self._check_error("del f()", "delete")
 
     def test_global_err_then_warn(self):
-        # Bug tickler:  The SyntaxError raised for one global statement
+        # Bug #763201:  The SyntaxError raised for one global statement
         # shouldn't be clobbered by a SyntaxWarning issued for a later one.
         source = """if 1:
             def error(a):
@@ -562,7 +580,7 @@ class SyntaxTestCase(unittest.TestCase):
                 global b  # SyntaxWarning
             """
         warnings.filterwarnings(action='ignore', category=SyntaxWarning)
-        self._check_error(source, "global")
+        self._check_error(source, "global", lineno=3, offset=16)
         warnings.filters.pop(0)
 
     def test_break_outside_loop(self):
@@ -582,7 +600,18 @@ class SyntaxTestCase(unittest.TestCase):
                           subclass=IndentationError)
 
     def test_kwargs_last(self):
-        self._check_error("int(base=10, '2')", "non-keyword arg")
+        self._check_error("int(base=10, '2')",
+                          "positional argument follows keyword argument")
+
+    def test_kwargs_last2(self):
+        self._check_error("int(**{base: 10}, '2')",
+                          "positional argument follows "
+                          "keyword argument unpacking")
+
+    def test_kwargs_last3(self):
+        self._check_error("int(**{base: 10}, *['2'])",
+                          "iterable argument unpacking follows "
+                          "keyword argument unpacking")
 
 def test_main():
     support.run_unittest(SyntaxTestCase)

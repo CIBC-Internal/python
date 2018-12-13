@@ -634,14 +634,17 @@ list_ass_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v)
     item = a->ob_item;
     /* recycle the items that we are about to remove */
     s = norig * sizeof(PyObject *);
-    if (s > sizeof(recycle_on_stack)) {
-        recycle = (PyObject **)PyMem_MALLOC(s);
-        if (recycle == NULL) {
-            PyErr_NoMemory();
-            goto Error;
+    /* If norig == 0, item might be NULL, in which case we may not memcpy from it. */
+    if (s) {
+        if (s > sizeof(recycle_on_stack)) {
+            recycle = (PyObject **)PyMem_MALLOC(s);
+            if (recycle == NULL) {
+                PyErr_NoMemory();
+                goto Error;
+            }
         }
+        memcpy(recycle, &item[ilow], s);
     }
-    memcpy(recycle, &item[ilow], s);
 
     if (d < 0) { /* Delete -d items */
         Py_ssize_t tail;
@@ -1832,7 +1835,8 @@ merge_collapse(MergeState *ms)
     assert(ms);
     while (ms->n > 1) {
         Py_ssize_t n = ms->n - 2;
-        if (n > 0 && p[n-1].len <= p[n].len + p[n+1].len) {
+        if ((n > 0 && p[n-1].len <= p[n].len + p[n+1].len) ||
+            (n > 1 && p[n-2].len <= p[n-1].len + p[n].len)) {
             if (p[n-1].len < p[n+1].len)
                 --n;
             if (merge_at(ms, n) < 0)
@@ -1960,8 +1964,10 @@ listsort(PyListObject *self, PyObject *args, PyObject *kwds)
             keys = &ms.temparray[saved_ob_size+1];
         else {
             keys = PyMem_MALLOC(sizeof(PyObject *) * saved_ob_size);
-            if (keys == NULL)
-                return NULL;
+            if (keys == NULL) {
+                PyErr_NoMemory();
+                goto keyfunc_fail;
+            }
         }
 
         for (i = 0; i < saved_ob_size ; i++) {
@@ -2148,8 +2154,8 @@ listindex(PyListObject *self, PyObject *args)
     PyObject *v;
 
     if (!PyArg_ParseTuple(args, "O|O&O&:index", &v,
-                                _PyEval_SliceIndex, &start,
-                                _PyEval_SliceIndex, &stop))
+                                _PyEval_SliceIndexNotNone, &start,
+                                _PyEval_SliceIndexNotNone, &stop))
         return NULL;
     if (start < 0) {
         start += Py_SIZE(self);
@@ -2321,7 +2327,7 @@ list_sizeof(PyListObject *self)
 {
     Py_ssize_t res;
 
-    res = sizeof(PyListObject) + self->allocated * sizeof(void*);
+    res = _PyObject_SIZE(Py_TYPE(self)) + self->allocated * sizeof(void*);
     return PyLong_FromSsize_t(res);
 }
 
@@ -2415,10 +2421,11 @@ list_subscript(PyListObject* self, PyObject* item)
         PyObject* it;
         PyObject **src, **dest;
 
-        if (PySlice_GetIndicesEx(item, Py_SIZE(self),
-                         &start, &stop, &step, &slicelength) < 0) {
+        if (PySlice_Unpack(item, &start, &stop, &step) < 0) {
             return NULL;
         }
+        slicelength = PySlice_AdjustIndices(Py_SIZE(self), &start, &stop,
+                                            step);
 
         if (slicelength <= 0) {
             return PyList_New(0);
@@ -2444,7 +2451,7 @@ list_subscript(PyListObject* self, PyObject* item)
     }
     else {
         PyErr_Format(PyExc_TypeError,
-                     "list indices must be integers, not %.200s",
+                     "list indices must be integers or slices, not %.200s",
                      item->ob_type->tp_name);
         return NULL;
     }
@@ -2464,10 +2471,11 @@ list_ass_subscript(PyListObject* self, PyObject* item, PyObject* value)
     else if (PySlice_Check(item)) {
         Py_ssize_t start, stop, step, slicelength;
 
-        if (PySlice_GetIndicesEx(item, Py_SIZE(self),
-                         &start, &stop, &step, &slicelength) < 0) {
+        if (PySlice_Unpack(item, &start, &stop, &step) < 0) {
             return -1;
         }
+        slicelength = PySlice_AdjustIndices(Py_SIZE(self), &start, &stop,
+                                            step);
 
         if (step == 1)
             return list_ass_slice(self, start, stop, value);
@@ -2608,7 +2616,7 @@ list_ass_subscript(PyListObject* self, PyObject* item, PyObject* value)
     }
     else {
         PyErr_Format(PyExc_TypeError,
-                     "list indices must be integers, not %.200s",
+                     "list indices must be integers or slices, not %.200s",
                      item->ob_type->tp_name);
         return -1;
     }
@@ -2779,8 +2787,8 @@ listiter_next(listiterobject *it)
         return item;
     }
 
-    Py_DECREF(seq);
     it->it_seq = NULL;
+    Py_DECREF(seq);
     return NULL;
 }
 
@@ -2909,9 +2917,17 @@ static PyObject *
 listreviter_next(listreviterobject *it)
 {
     PyObject *item;
-    Py_ssize_t index = it->it_index;
-    PyListObject *seq = it->it_seq;
+    Py_ssize_t index;
+    PyListObject *seq;
 
+    assert(it != NULL);
+    seq = it->it_seq;
+    if (seq == NULL) {
+        return NULL;
+    }
+    assert(PyList_Check(seq));
+
+    index = it->it_index;
     if (index>=0 && index < PyList_GET_SIZE(seq)) {
         item = PyList_GET_ITEM(seq, index);
         it->it_index--;
@@ -2919,10 +2935,8 @@ listreviter_next(listreviterobject *it)
         return item;
     }
     it->it_index = -1;
-    if (seq != NULL) {
-        it->it_seq = NULL;
-        Py_DECREF(seq);
-    }
+    it->it_seq = NULL;
+    Py_DECREF(seq);
     return NULL;
 }
 

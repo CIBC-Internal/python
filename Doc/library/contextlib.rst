@@ -142,7 +142,7 @@ Functions and classes provided:
    is hardwired to stdout.
 
    For example, the output of :func:`help` normally is sent to *sys.stdout*.
-   You can capture that output in a string by redirecting the output to a
+   You can capture that output in a string by redirecting the output to an
    :class:`io.StringIO` object::
 
         f = io.StringIO()
@@ -170,6 +170,16 @@ Functions and classes provided:
    This context manager is :ref:`reentrant <reentrant-cms>`.
 
    .. versionadded:: 3.4
+
+
+.. function:: redirect_stderr(new_target)
+
+   Similar to :func:`~contextlib.redirect_stdout` but redirecting
+   :data:`sys.stderr` to another file or file-like object.
+
+   This context manager is :ref:`reentrant <reentrant-cms>`.
+
+   .. versionadded:: 3.5
 
 
 .. class:: ContextDecorator()
@@ -543,7 +553,7 @@ advance::
 
 Due to the way the decorator protocol works, a callback function
 declared this way cannot take any parameters. Instead, any resources to
-be released must be accessed as closure variables
+be released must be accessed as closure variables.
 
 
 Using a context manager as a function decorator
@@ -593,7 +603,7 @@ an explicit ``with`` statement.
 
 .. seealso::
 
-   :pep:`0343` - The "with" statement
+   :pep:`343` - The "with" statement
       The specification, background, and examples for the Python :keyword:`with`
       statement.
 
@@ -634,7 +644,7 @@ to yield if an attempt is made to use them a second time::
     Before
     After
     >>> with cm:
-    ...    pass
+    ...     pass
     ...
     Traceback (most recent call last):
         ...

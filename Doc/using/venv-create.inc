@@ -14,23 +14,24 @@ subdirectory (on Windows, this is ``Lib\site-packages``).
 .. seealso::
 
    `Python Packaging User Guide: Creating and using virtual environments
-   <https://packaging.python.org/en/latest/installing.html#virtual-environments>`__
+   <https://packaging.python.org/en/latest/installing/#creating-virtual-environments>`__
 
 .. highlight:: none
 
 On Windows, you may have to invoke the ``pyvenv`` script as follows, if you
 don't have the relevant PATH and PATHEXT settings::
 
-    c:\Temp>c:\Python34\python c:\Python34\Tools\Scripts\pyvenv.py myenv
+    c:\Temp>c:\Python35\python c:\Python35\Tools\Scripts\pyvenv.py myenv
 
 or equivalently::
 
-    c:\Temp>c:\Python34\python -m venv myenv
+    c:\Temp>c:\Python35\python -m venv myenv
 
 The command, if run with ``-h``, will show the available options::
 
-    usage: venv [-h] [--system-site-packages] [--symlinks] [--clear]
-                [--upgrade] [--without-pip] ENV_DIR [ENV_DIR ...]
+    usage: venv [-h] [--system-site-packages] [--symlinks | --copies] [--clear]
+                [--upgrade] [--without-pip]
+                ENV_DIR [ENV_DIR ...]
 
     Creates virtual Python environments in one or more target directories.
 
@@ -39,15 +40,14 @@ The command, if run with ``-h``, will show the available options::
 
     optional arguments:
       -h, --help             show this help message and exit
-      --system-site-packages Give access to the global site-packages dir to the
-                             virtual environment.
+      --system-site-packages Give the virtual environment access to the system
+                             site-packages dir.
       --symlinks             Try to use symlinks rather than copies, when symlinks
                              are not the default for the platform.
       --copies               Try to use copies rather than symlinks, even when
                              symlinks are the default for the platform.
-      --clear                Delete the environment directory if it already exists.
-                             If not specified and the directory exists, an error is
-                             raised.
+      --clear                Delete the contents of the environment directory if it
+                             already exists, before environment creation.
       --upgrade              Upgrade the environment directory to use this version
                              of Python, assuming Python has been upgraded in-place.
       --without-pip          Skips installing or upgrading pip in the virtual
@@ -89,9 +89,9 @@ venv's binary directory. The invocation of the script is platform-specific:
 +-------------+-----------------+-----------------------------------------+
 |             | csh/tcsh        | $ source <venv>/bin/activate.csh        |
 +-------------+-----------------+-----------------------------------------+
-| Windows     | cmd.exe         | C:\> <venv>/Scripts/activate.bat        |
+| Windows     | cmd.exe         | C:\\> <venv>\\Scripts\\activate.bat     |
 +-------------+-----------------+-----------------------------------------+
-|             | PowerShell      | PS C:\> <venv>/Scripts/Activate.ps1     |
+|             | PowerShell      | PS C:\\> <venv>\\Scripts\\Activate.ps1  |
 +-------------+-----------------+-----------------------------------------+
 
 You don't specifically *need* to activate an environment; activation just

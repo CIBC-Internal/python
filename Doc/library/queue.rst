@@ -22,6 +22,8 @@ the first retrieved (operating like a stack).  With a priority queue,
 the entries are kept sorted (using the :mod:`heapq` module) and the
 lowest valued entry is retrieved first.
 
+Internally, the module uses locks to temporarily block competing threads;
+however, it is not designed to handle reentrancy within a thread.
 
 The :mod:`queue` module defines the following classes and exceptions:
 
@@ -101,7 +103,7 @@ provide the public methods described below.
 .. method:: Queue.put(item, block=True, timeout=None)
 
    Put *item* into the queue. If optional args *block* is true and *timeout* is
-   None (the default), block if necessary until a free slot is available. If
+   ``None`` (the default), block if necessary until a free slot is available. If
    *timeout* is a positive number, it blocks at most *timeout* seconds and raises
    the :exc:`Full` exception if no free slot was available within that time.
    Otherwise (*block* is false), put an item on the queue if a free slot is
@@ -117,7 +119,7 @@ provide the public methods described below.
 .. method:: Queue.get(block=True, timeout=None)
 
    Remove and return an item from the queue. If optional args *block* is true and
-   *timeout* is None (the default), block if necessary until an item is available.
+   *timeout* is ``None`` (the default), block if necessary until an item is available.
    If *timeout* is a positive number, it blocks at most *timeout* seconds and
    raises the :exc:`Empty` exception if no item was available within that time.
    Otherwise (*block* is false), return an item if one is immediately available,
@@ -158,22 +160,32 @@ fully processed by daemon consumer threads.
 
 Example of how to wait for enqueued tasks to be completed::
 
-   def worker():
-       while True:
-           item = q.get()
-           do_work(item)
-           q.task_done()
+    def worker():
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            do_work(item)
+            q.task_done()
 
-   q = Queue()
-   for i in range(num_worker_threads):
-        t = Thread(target=worker)
-        t.daemon = True
+    q = queue.Queue()
+    threads = []
+    for i in range(num_worker_threads):
+        t = threading.Thread(target=worker)
         t.start()
+        threads.append(t)
 
-   for item in source():
-       q.put(item)
+    for item in source():
+        q.put(item)
 
-   q.join()       # block until all tasks are done
+    # block until all tasks are done
+    q.join()
+
+    # stop workers
+    for i in range(num_worker_threads):
+        q.put(None)
+    for t in threads:
+        t.join()
 
 
 .. seealso::

@@ -44,6 +44,13 @@ class Test_MultibyteCodec(unittest.TestCase):
         self.assertRaises(IndexError, dec,
                           b'apple\x92ham\x93spam', 'test.cjktest')
 
+    def test_errorcallback_custom_ignore(self):
+        # Issue #23215: MemoryError with custom error handlers and multibyte codecs
+        data = 100 * "\udc00"
+        codecs.register_error("test.ignore", codecs.ignore_errors)
+        for enc in ALL_CJKENCODINGS:
+            self.assertEqual(data.encode(enc, "test.ignore"), b'')
+
     def test_codingspec(self):
         try:
             for enc in ALL_CJKENCODINGS:
@@ -60,7 +67,7 @@ class Test_MultibyteCodec(unittest.TestCase):
                           _multibytecodec.MultibyteStreamWriter, None)
 
     def test_decode_unicode(self):
-        # Trying to decode an unicode string should raise a TypeError
+        # Trying to decode a unicode string should raise a TypeError
         for enc in ALL_CJKENCODINGS:
             self.assertRaises(TypeError, codecs.getdecoder(enc), "")
 
@@ -153,7 +160,7 @@ class Test_IncrementalDecoder(unittest.TestCase):
         self.assertEqual(decoder.decode(b'B@$'), '\u4e16')
 
     def test_decode_unicode(self):
-        # Trying to decode an unicode string should raise a TypeError
+        # Trying to decode a unicode string should raise a TypeError
         for enc in ALL_CJKENCODINGS:
             decoder = codecs.getincrementaldecoder(enc)()
             self.assertRaises(TypeError, decoder.decode, "")

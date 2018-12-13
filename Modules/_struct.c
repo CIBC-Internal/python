@@ -85,8 +85,6 @@ typedef struct { char c; _Bool x; } s_bool;
 #define BOOL_ALIGN 0
 #endif
 
-#define STRINGIFY(x)    #x
-
 #ifdef __powerc
 #pragma options align=reset
 #endif
@@ -521,7 +519,7 @@ np_ubyte(char *p, PyObject *v, const formatdef *f)
                         "ubyte format requires 0 <= number <= 255");
         return -1;
     }
-    *p = (char)x;
+    *(unsigned char *)p = (unsigned char)x;
     return 0;
 }
 
@@ -546,8 +544,8 @@ np_short(char *p, PyObject *v, const formatdef *f)
         return -1;
     if (x < SHRT_MIN || x > SHRT_MAX){
         PyErr_SetString(StructError,
-                        "short format requires " STRINGIFY(SHRT_MIN)
-                        " <= number <= " STRINGIFY(SHRT_MAX));
+                        "short format requires " Py_STRINGIFY(SHRT_MIN)
+                        " <= number <= " Py_STRINGIFY(SHRT_MAX));
         return -1;
     }
     y = (short)x;
@@ -564,7 +562,8 @@ np_ushort(char *p, PyObject *v, const formatdef *f)
         return -1;
     if (x < 0 || x > USHRT_MAX){
         PyErr_SetString(StructError,
-                        "ushort format requires 0 <= number <= " STRINGIFY(USHRT_MAX));
+                        "ushort format requires 0 <= number <= "
+                        Py_STRINGIFY(USHRT_MAX));
         return -1;
     }
     y = (unsigned short)x;
@@ -851,6 +850,7 @@ bp_int(char *p, PyObject *v, const formatdef *f)
 {
     long x;
     Py_ssize_t i;
+    unsigned char *q = (unsigned char *)p;
     if (get_long(v, &x) < 0)
         return -1;
     i = f->size;
@@ -863,7 +863,7 @@ bp_int(char *p, PyObject *v, const formatdef *f)
 #endif
     }
     do {
-        p[--i] = (char)x;
+        q[--i] = (unsigned char)(x & 0xffL);
         x >>= 8;
     } while (i > 0);
     return 0;
@@ -874,6 +874,7 @@ bp_uint(char *p, PyObject *v, const formatdef *f)
 {
     unsigned long x;
     Py_ssize_t i;
+    unsigned char *q = (unsigned char *)p;
     if (get_ulong(v, &x) < 0)
         return -1;
     i = f->size;
@@ -884,7 +885,7 @@ bp_uint(char *p, PyObject *v, const formatdef *f)
             RANGE_ERROR(x, f, 1, maxint - 1);
     }
     do {
-        p[--i] = (char)x;
+        q[--i] = (unsigned char)(x & 0xffUL);
         x >>= 8;
     } while (i > 0);
     return 0;
@@ -1071,6 +1072,7 @@ lp_int(char *p, PyObject *v, const formatdef *f)
 {
     long x;
     Py_ssize_t i;
+    unsigned char *q = (unsigned char *)p;
     if (get_long(v, &x) < 0)
         return -1;
     i = f->size;
@@ -1083,7 +1085,7 @@ lp_int(char *p, PyObject *v, const formatdef *f)
 #endif
     }
     do {
-        *p++ = (char)x;
+        *q++ = (unsigned char)(x & 0xffL);
         x >>= 8;
     } while (--i > 0);
     return 0;
@@ -1094,6 +1096,7 @@ lp_uint(char *p, PyObject *v, const formatdef *f)
 {
     unsigned long x;
     Py_ssize_t i;
+    unsigned char *q = (unsigned char *)p;
     if (get_ulong(v, &x) < 0)
         return -1;
     i = f->size;
@@ -1104,7 +1107,7 @@ lp_uint(char *p, PyObject *v, const formatdef *f)
             RANGE_ERROR(x, f, 1, maxint - 1);
     }
     do {
-        *p++ = (char)x;
+        *q++ = (unsigned char)(x & 0xffUL);
         x >>= 8;
     } while (--i > 0);
     return 0;
@@ -1264,7 +1267,8 @@ prepare_s(PyStructObject *self)
     const char *s;
     const char *fmt;
     char c;
-    Py_ssize_t size, len, ncodes, num, itemsize;
+    Py_ssize_t size, len, num, itemsize;
+    size_t ncodes;
 
     fmt = PyBytes_AS_STRING(self->s_format);
 
@@ -1320,7 +1324,7 @@ prepare_s(PyStructObject *self)
     }
 
     /* check for overflow */
-    if ((ncodes + 1) > (PY_SSIZE_T_MAX / sizeof(formatcode))) {
+    if ((ncodes + 1) > ((size_t)PY_SSIZE_T_MAX / sizeof(formatcode))) {
         PyErr_NoMemory();
         return -1;
     }
@@ -1437,8 +1441,7 @@ s_init(PyObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    Py_CLEAR(soself->s_format);
-    soself->s_format = o_format;
+    Py_XSETREF(soself->s_format, o_format);
 
     ret = prepare_s(soself);
     return ret;
@@ -1498,8 +1501,8 @@ PyDoc_STRVAR(s_unpack__doc__,
 "S.unpack(buffer) -> (v1, v2, ...)\n\
 \n\
 Return a tuple containing values unpacked according to the format\n\
-string S.format.  Requires len(buffer) == S.size.  See help(struct)\n\
-for more on format strings.");
+string S.format.  The buffer's size in bytes must be S.size.  See\n\
+help(struct) for more on format strings.");
 
 static PyObject *
 s_unpack(PyObject *self, PyObject *input)
@@ -1528,8 +1531,8 @@ PyDoc_STRVAR(s_unpack_from__doc__,
 "S.unpack_from(buffer, offset=0) -> (v1, v2, ...)\n\
 \n\
 Return a tuple containing values unpacked according to the format\n\
-string S.format.  Requires len(buffer[offset:]) >= S.size.  See\n\
-help(struct) for more on format strings.");
+string S.format.  The buffer's size in bytes, minus offset, must be at\n\
+least S.size.  See help(struct) for more on format strings.");
 
 static PyObject *
 s_unpack_from(PyObject *self, PyObject *args, PyObject *kwds)
@@ -1578,6 +1581,8 @@ typedef struct {
 static void
 unpackiter_dealloc(unpackiterobject *self)
 {
+    /* bpo-31095: UnTrack is needed before calling any callbacks */
+    PyObject_GC_UnTrack(self);
     Py_XDECREF(self->so);
     PyBuffer_Release(&self->buf);
     PyObject_GC_Del(self);
@@ -1924,7 +1929,7 @@ s_sizeof(PyStructObject *self, void *unused)
     Py_ssize_t size;
     formatcode *code;
 
-    size = sizeof(PyStructObject) + sizeof(formatcode);
+    size = _PyObject_SIZE(Py_TYPE(self)) + sizeof(formatcode);
     for (code = self->s_codes; code->fmtdef != NULL; code++)
         size += sizeof(formatcode);
     return PyLong_FromSsize_t(size);
@@ -2131,8 +2136,8 @@ PyDoc_STRVAR(unpack_doc,
 "unpack(fmt, buffer) -> (v1, v2, ...)\n\
 \n\
 Return a tuple containing values unpacked according to the format string\n\
-fmt.  Requires len(buffer) == calcsize(fmt). See help(struct) for more\n\
-on format strings.");
+fmt.  The buffer's size in bytes must be calcsize(fmt). See help(struct)\n\
+for more on format strings.");
 
 static PyObject *
 unpack(PyObject *self, PyObject *args)
@@ -2154,8 +2159,8 @@ PyDoc_STRVAR(unpack_from_doc,
 "unpack_from(fmt, buffer, offset=0) -> (v1, v2, ...)\n\
 \n\
 Return a tuple containing values unpacked according to the format string\n\
-fmt.  Requires len(buffer[offset:]) >= calcsize(fmt).  See help(struct)\n\
-for more on format strings.");
+fmt.  The buffer's size, minus offset, must be at least calcsize(fmt).\n\
+See help(struct) for more on format strings.");
 
 static PyObject *
 unpack_from(PyObject *self, PyObject *args, PyObject *kwds)

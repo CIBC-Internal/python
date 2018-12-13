@@ -3,17 +3,18 @@
 
 .. module:: statistics
    :synopsis: mathematical statistics functions
+
 .. moduleauthor:: Steven D'Aprano <steve+python@pearwood.info>
 .. sectionauthor:: Steven D'Aprano <steve+python@pearwood.info>
 
 .. versionadded:: 3.4
 
+**Source code:** :source:`Lib/statistics.py`
+
 .. testsetup:: *
 
    from statistics import *
    __name__ = '<doctest>'
-
-**Source code:** :source:`Lib/statistics.py`
 
 --------------
 
@@ -190,9 +191,9 @@ However, for reading convenience, most of the examples show sorted sequences.
       52.5
 
    In the following example, the data are rounded, so that each value represents
-   the midpoint of data classes, e.g. 1 is the midpoint of the class 0.5-1.5, 2
-   is the midpoint of 1.5-2.5, 3 is the midpoint of 2.5-3.5, etc.  With the data
-   given, the middle value falls somewhere in the class 3.5-4.5, and
+   the midpoint of data classes, e.g. 1 is the midpoint of the class 0.5--1.5, 2
+   is the midpoint of 1.5--2.5, 3 is the midpoint of 2.5--3.5, etc.  With the data
+   given, the middle value falls somewhere in the class 3.5--4.5, and
    interpolation is used to estimate it:
 
    .. doctest::
@@ -223,7 +224,7 @@ However, for reading convenience, most of the examples show sorted sequences.
       * "Statistics for the Behavioral Sciences", Frederick J Gravetter and
         Larry B Wallnau (8th Edition).
 
-      * Calculating the `median <http://www.ualberta.ca/~opscan/median.html>`_.
+      * Calculating the `median <https://www.ualberta.ca/~opscan/median.html>`_.
 
       * The `SSMEDIAN
         <https://help.gnome.org/users/gnumeric/stable/gnumeric.html#gnumeric-function-SSMEDIAN>`_

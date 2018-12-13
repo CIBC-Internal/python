@@ -43,9 +43,18 @@ def _fileobj_to_fd(fileobj):
 
 
 SelectorKey = namedtuple('SelectorKey', ['fileobj', 'fd', 'events', 'data'])
-"""Object used to associate a file object to its backing file descriptor,
-selected event mask and attached data."""
 
+SelectorKey.__doc__ = """SelectorKey(fileobj, fd, events, data)
+
+    Object used to associate a file object to its backing
+    file descriptor, selected event mask, and attached data.
+"""
+if sys.version_info >= (3, 5):
+    SelectorKey.fileobj.__doc__ = 'File object registered.'
+    SelectorKey.fd.__doc__ = 'Underlying file descriptor.'
+    SelectorKey.events.__doc__ = 'Events that must be waited for on this file object.'
+    SelectorKey.data.__doc__ = ('''Optional opaque data associated to this file object.
+    For example, this could be used to store a per-client session ID.''')
 
 class _SelectorMapping(Mapping):
     """Mapping of file objects to selector keys."""
@@ -174,9 +183,9 @@ class BaseSelector(metaclass=ABCMeta):
         SelectorKey for this file object
         """
         mapping = self.get_map()
+        if mapping is None:
+            raise RuntimeError('Selector is closed')
         try:
-            if mapping is None:
-                raise KeyError
             return mapping[fileobj]
         except KeyError:
             raise KeyError("{!r} is not registered".format(fileobj)) from None
@@ -399,7 +408,11 @@ if hasattr(select, 'epoll'):
                 epoll_events |= select.EPOLLIN
             if events & EVENT_WRITE:
                 epoll_events |= select.EPOLLOUT
-            self._epoll.register(key.fd, epoll_events)
+            try:
+                self._epoll.register(key.fd, epoll_events)
+            except BaseException:
+                super().unregister(fileobj)
+                raise
             return key
 
         def unregister(self, fileobj):
@@ -449,6 +462,64 @@ if hasattr(select, 'epoll'):
             super().close()
 
 
+if hasattr(select, 'devpoll'):
+
+    class DevpollSelector(_BaseSelectorImpl):
+        """Solaris /dev/poll selector."""
+
+        def __init__(self):
+            super().__init__()
+            self._devpoll = select.devpoll()
+
+        def fileno(self):
+            return self._devpoll.fileno()
+
+        def register(self, fileobj, events, data=None):
+            key = super().register(fileobj, events, data)
+            poll_events = 0
+            if events & EVENT_READ:
+                poll_events |= select.POLLIN
+            if events & EVENT_WRITE:
+                poll_events |= select.POLLOUT
+            self._devpoll.register(key.fd, poll_events)
+            return key
+
+        def unregister(self, fileobj):
+            key = super().unregister(fileobj)
+            self._devpoll.unregister(key.fd)
+            return key
+
+        def select(self, timeout=None):
+            if timeout is None:
+                timeout = None
+            elif timeout <= 0:
+                timeout = 0
+            else:
+                # devpoll() has a resolution of 1 millisecond, round away from
+                # zero to wait *at least* timeout seconds.
+                timeout = math.ceil(timeout * 1e3)
+            ready = []
+            try:
+                fd_event_list = self._devpoll.poll(timeout)
+            except InterruptedError:
+                return ready
+            for fd, event in fd_event_list:
+                events = 0
+                if event & ~select.POLLIN:
+                    events |= EVENT_WRITE
+                if event & ~select.POLLOUT:
+                    events |= EVENT_READ
+
+                key = self._key_from_fd(fd)
+                if key:
+                    ready.append((key, events & key.events))
+            return ready
+
+        def close(self):
+            self._devpoll.close()
+            super().close()
+
+
 if hasattr(select, 'kqueue'):
 
     class KqueueSelector(_BaseSelectorImpl):
@@ -463,14 +534,18 @@ if hasattr(select, 'kqueue'):
 
         def register(self, fileobj, events, data=None):
             key = super().register(fileobj, events, data)
-            if events & EVENT_READ:
-                kev = select.kevent(key.fd, select.KQ_FILTER_READ,
-                                    select.KQ_EV_ADD)
-                self._kqueue.control([kev], 0, 0)
-            if events & EVENT_WRITE:
-                kev = select.kevent(key.fd, select.KQ_FILTER_WRITE,
-                                    select.KQ_EV_ADD)
-                self._kqueue.control([kev], 0, 0)
+            try:
+                if events & EVENT_READ:
+                    kev = select.kevent(key.fd, select.KQ_FILTER_READ,
+                                        select.KQ_EV_ADD)
+                    self._kqueue.control([kev], 0, 0)
+                if events & EVENT_WRITE:
+                    kev = select.kevent(key.fd, select.KQ_FILTER_WRITE,
+                                        select.KQ_EV_ADD)
+                    self._kqueue.control([kev], 0, 0)
+            except BaseException:
+                super().unregister(fileobj)
+                raise
             return key
 
         def unregister(self, fileobj):
@@ -521,12 +596,15 @@ if hasattr(select, 'kqueue'):
             super().close()
 
 
-# Choose the best implementation: roughly, epoll|kqueue > poll > select.
+# Choose the best implementation, roughly:
+#    epoll|kqueue|devpoll > poll > select.
 # select() also can't accept a FD > FD_SETSIZE (usually around 1024)
 if 'KqueueSelector' in globals():
     DefaultSelector = KqueueSelector
 elif 'EpollSelector' in globals():
     DefaultSelector = EpollSelector
+elif 'DevpollSelector' in globals():
+    DefaultSelector = DevpollSelector
 elif 'PollSelector' in globals():
     DefaultSelector = PollSelector
 else:

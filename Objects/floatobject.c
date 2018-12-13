@@ -144,9 +144,24 @@ PyFloat_FromString(PyObject *v)
             return NULL;
         }
     }
+    else if (PyBytes_Check(v)) {
+        s = PyBytes_AS_STRING(v);
+        len = PyBytes_GET_SIZE(v);
+    }
+    else if (PyByteArray_Check(v)) {
+        s = PyByteArray_AS_STRING(v);
+        len = PyByteArray_GET_SIZE(v);
+    }
     else if (PyObject_GetBuffer(v, &view, PyBUF_SIMPLE) == 0) {
         s = (const char *)view.buf;
         len = view.len;
+        /* Copy to NUL-terminated buffer. */
+        s_buffer = PyBytes_FromStringAndSize(s, len);
+        if (s_buffer == NULL) {
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+        s = PyBytes_AS_STRING(s_buffer);
     }
     else {
         PyErr_Format(PyExc_TypeError,
@@ -220,6 +235,7 @@ PyFloat_AsDouble(PyObject *op)
     if (fo == NULL)
         return -1;
     if (!PyFloat_Check(fo)) {
+        Py_DECREF(fo);
         PyErr_SetString(PyExc_TypeError,
                         "nb_float should return float object");
         return -1;
@@ -985,8 +1001,9 @@ float_round(PyObject *v, PyObject *args)
     x = PyFloat_AsDouble(v);
     if (!PyArg_ParseTuple(args, "|O", &o_ndigits))
         return NULL;
-    if (o_ndigits == NULL) {
-        /* single-argument round: round to nearest integer */
+    if (o_ndigits == NULL || o_ndigits == Py_None) {
+        /* single-argument round or with None ndigits:
+         * round to nearest integer */
         rounded = round(x);
         if (fabs(x-rounded) == 0.5)
             /* halfway case: round to even */
@@ -1551,7 +1568,7 @@ float_subtype_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     tmp = float_new(&PyFloat_Type, args, kwds);
     if (tmp == NULL)
         return NULL;
-    assert(PyFloat_CheckExact(tmp));
+    assert(PyFloat_Check(tmp));
     newobj = type->tp_alloc(type, 0);
     if (newobj == NULL) {
         Py_DECREF(tmp);
@@ -2032,7 +2049,7 @@ _PyFloat_Pack4(double x, unsigned char *p, int le)
     }
     else {
         float y = (float)x;
-        const char *s = (char*)&y;
+        const unsigned char *s = (unsigned char*)&y;
         int i, incr = 1;
 
         if (Py_IS_INFINITY(y) && !Py_IS_INFINITY(x))
@@ -2168,7 +2185,7 @@ _PyFloat_Pack8(double x, unsigned char *p, int le)
         return -1;
     }
     else {
-        const char *s = (char*)&x;
+        const unsigned char *s = (unsigned char*)&x;
         int i, incr = 1;
 
         if ((double_format == ieee_little_endian_format && !le)

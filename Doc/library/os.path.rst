@@ -4,7 +4,13 @@
 .. module:: os.path
    :synopsis: Operations on pathnames.
 
+**Source code:** :source:`Lib/posixpath.py` (for POSIX),
+:source:`Lib/ntpath.py` (for Windows NT),
+and :source:`Lib/macpath.py` (for Macintosh)
+
 .. index:: single: path; operations
+
+--------------
 
 This module implements some useful functions on pathnames. To read or
 write files see :func:`open`, and for accessing the filesystem see the
@@ -66,11 +72,37 @@ the :mod:`glob` module.)
    empty string (``''``).
 
 
+.. function:: commonpath(paths)
+
+   Return the longest common sub-path of each pathname in the sequence
+   *paths*.  Raise ValueError if *paths* contains both absolute and relative
+   pathnames, or if *paths* is empty.  Unlike :func:`commonprefix`, this
+   returns a valid path.
+
+   Availability: Unix, Windows
+
+   .. versionadded:: 3.5
+
+
 .. function:: commonprefix(list)
 
-   Return the longest path prefix (taken character-by-character) that is a prefix
-   of all paths in  *list*.  If *list* is empty, return the empty string (``''``).
-   Note that this may return invalid paths because it works a character at a time.
+   Return the longest path prefix (taken character-by-character) that is a
+   prefix of all paths in  *list*.  If *list* is empty, return the empty string
+   (``''``).
+
+   .. note::
+
+      This function may return invalid paths because it works a
+      character at a time.  To obtain a valid path, see
+      :func:`commonpath`.
+
+      ::
+
+        >>> os.path.commonprefix(['/usr/lib', '/usr/local/lib'])
+        '/usr/l'
+
+        >>> os.path.commonpath(['/usr/lib', '/usr/local/lib'])
+        '/usr'
 
 
 .. function:: dirname(path)
@@ -188,7 +220,7 @@ the :mod:`glob` module.)
 .. function:: islink(path)
 
    Return ``True`` if *path* refers to a directory entry that is a symbolic link.
-   Always ``False`` if symbolic links are not supported by the python runtime.
+   Always ``False`` if symbolic links are not supported by the Python runtime.
 
 
 .. function:: ismount(path)
@@ -263,7 +295,7 @@ the :mod:`glob` module.)
 
    Return ``True`` if both pathname arguments refer to the same file or directory.
    This is determined by the device number and i-node number and raises an
-   exception if a :func:`os.stat` call on either pathname fails.
+   exception if an :func:`os.stat` call on either pathname fails.
 
    Availability: Unix, Windows.
 

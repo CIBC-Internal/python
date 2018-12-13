@@ -37,7 +37,10 @@ def read_code(stream):
     import marshal
 
     magic = stream.read(4)
-    if magic != importlib.util.MAGIC_NUMBER:
+    if (magic != importlib.util.MAGIC_NUMBER
+            # Issue #29537: handle issue27286 bytecode incompatibility
+            #   See Lib/importlib/_bootstrap_external.py
+            and magic != importlib.util._BACKCOMPAT_MAGIC_NUMBER):
         return None
 
     stream.read(8) # Skip timestamp and size
@@ -45,7 +48,7 @@ def read_code(stream):
 
 
 def walk_packages(path=None, prefix='', onerror=None):
-    """Yields (module_loader, name, ispkg) for all modules recursively
+    """Yields (module_finder, name, ispkg) for all modules recursively
     on path, or, if path is None, all accessible modules.
 
     'path' should be either None or a list of paths to look for
@@ -102,7 +105,7 @@ def walk_packages(path=None, prefix='', onerror=None):
 
 
 def iter_modules(path=None, prefix=''):
-    """Yields (module_loader, name, ispkg) for all submodules on path,
+    """Yields (module_finder, name, ispkg) for all submodules on path,
     or, if path is None, all top-level modules on sys.path.
 
     'path' should be either None or a list of paths to look for
@@ -184,10 +187,10 @@ def _import_imp():
         imp = importlib.import_module('imp')
 
 class ImpImporter:
-    """PEP 302 Importer that wraps Python's "classic" import algorithm
+    """PEP 302 Finder that wraps Python's "classic" import algorithm
 
-    ImpImporter(dirname) produces a PEP 302 importer that searches that
-    directory.  ImpImporter(None) produces a PEP 302 importer that searches
+    ImpImporter(dirname) produces a PEP 302 finder that searches that
+    directory.  ImpImporter(None) produces a PEP 302 finder that searches
     the current sys.path, plus any modules that are frozen or built-in.
 
     Note that ImpImporter does not currently support being used by placement
@@ -375,7 +378,7 @@ try:
             if len(fn)==2 and fn[1].startswith('__init__.py'):
                 if fn[0] not in yielded:
                     yielded[fn[0]] = 1
-                    yield fn[0], True
+                    yield prefix + fn[0], True
 
             if len(fn)!=1:
                 continue
@@ -395,9 +398,9 @@ except ImportError:
 
 
 def get_importer(path_item):
-    """Retrieve a PEP 302 importer for the given path item
+    """Retrieve a finder for the given path item
 
-    The returned importer is cached in sys.path_importer_cache
+    The returned finder is cached in sys.path_importer_cache
     if it was newly created by a path hook.
 
     The cache (or part of it) can be cleared manually if a
@@ -419,16 +422,16 @@ def get_importer(path_item):
 
 
 def iter_importers(fullname=""):
-    """Yield PEP 302 importers for the given module name
+    """Yield finders for the given module name
 
-    If fullname contains a '.', the importers will be for the package
+    If fullname contains a '.', the finders will be for the package
     containing fullname, otherwise they will be all registered top level
-    importers (i.e. those on both sys.meta_path and sys.path_hooks).
+    finders (i.e. those on both sys.meta_path and sys.path_hooks).
 
     If the named module is in a package, that package is imported as a side
     effect of invoking this function.
 
-    If no module name is specified, all top level importers are produced.
+    If no module name is specified, all top level finders are produced.
     """
     if fullname.startswith('.'):
         msg = "Relative module name {!r} not supported".format(fullname)
@@ -448,7 +451,7 @@ def iter_importers(fullname=""):
 
 
 def get_loader(module_or_name):
-    """Get a PEP 302 "loader" object for module_or_name
+    """Get a "loader" object for module_or_name
 
     Returns None if the module cannot be found or imported.
     If the named module is not already imported, its containing package
@@ -472,7 +475,7 @@ def get_loader(module_or_name):
 
 
 def find_loader(fullname):
-    """Find a PEP 302 "loader" object for fullname
+    """Find a "loader" object for fullname
 
     This is a backwards compatibility wrapper around
     importlib.util.find_spec that converts most failures to ImportError
@@ -616,7 +619,7 @@ def get_data(package, resource):
         return None
     # XXX needs test
     mod = (sys.modules.get(package) or
-           importlib._bootstrap._SpecMethods(spec).load())
+           importlib._bootstrap._load(spec))
     if mod is None or not hasattr(mod, '__file__'):
         return None
 

@@ -8,9 +8,23 @@ set this=%~n0
 if "%SPHINXBUILD%" EQU "" set SPHINXBUILD=sphinx-build
 if "%PYTHON%" EQU "" set PYTHON=py
 
-if DEFINED ProgramFiles(x86) set _PRGMFLS=%ProgramFiles(x86)%
-if NOT DEFINED ProgramFiles(x86) set _PRGMFLS=%ProgramFiles%
-if "%HTMLHELP%" EQU "" set HTMLHELP=%_PRGMFLS%\HTML Help Workshop\hhc.exe
+if "%1" NEQ "htmlhelp" goto :skiphhcsearch
+if exist "%HTMLHELP%" goto :skiphhcsearch
+
+rem Search for HHC in likely places
+set HTMLHELP=
+where hhc /q && set HTMLHELP=hhc && goto :skiphhcsearch
+where /R ..\externals hhc > "%TEMP%\hhc.loc" 2> nul && set /P HTMLHELP= < "%TEMP%\hhc.loc" & del "%TEMP%\hhc.loc"
+if not exist "%HTMLHELP%" where /R "%ProgramFiles(x86)%" hhc > "%TEMP%\hhc.loc" 2> nul && set /P HTMLHELP= < "%TEMP%\hhc.loc" & del "%TEMP%\hhc.loc"
+if not exist "%HTMLHELP%" where /R "%ProgramFiles%" hhc > "%TEMP%\hhc.loc" 2> nul && set /P HTMLHELP= < "%TEMP%\hhc.loc" & del "%TEMP%\hhc.loc"
+if not exist "%HTMLHELP%" (
+    echo.
+    echo.The HTML Help Workshop was not found.  Set the HTMLHELP variable
+    echo.to the path to hhc.exe or download and install it from
+    echo.http://msdn.microsoft.com/en-us/library/ms669985
+    exit /B 1
+)
+:skiphhcsearch
 
 if "%DISTVERSION%" EQU "" for /f "usebackq" %%v in (`%PYTHON% tools/extensions/patchlevel.py`) do set DISTVERSION=%%v
 
@@ -36,7 +50,8 @@ if errorlevel 9009 (
     echo.
     echo.If you don't have Sphinx installed, grab it from
     echo.http://sphinx-doc.org/
-    goto end
+    popd
+    exit /B 1
 )
 
 rem Targets that do require sphinx-build and have their own label
@@ -71,20 +86,11 @@ goto end
 
 :build
 if NOT "%PAPER%" == "" (
-    set SPHINXOPTS=-D latex_paper_size=%PAPER% %SPHINXOPTS%
+    set SPHINXOPTS=-D latex_elements.papersize=%PAPER% %SPHINXOPTS%
 )
 cmd /C %SPHINXBUILD% %SPHINXOPTS% -b%1 -dbuild\doctrees . %BUILDDIR%\%*
 
 if "%1" EQU "htmlhelp" (
-    if  not exist "%HTMLHELP%" (
-        echo.
-        echo.The HTML Help Workshop was not found.  Set the HTMLHELP variable
-        echo.to the path to hhc.exe or download and install it from
-        echo.http://msdn.microsoft.com/en-us/library/ms669985
-        rem Set errorlevel to 1 and exit
-        cmd /C exit /b 1
-        goto end
-    )
     cmd /C "%HTMLHELP%" build\htmlhelp\python%DISTVERSION:.=%.hhp
     rem hhc.exe seems to always exit with code 1, reset to 0 for less than 2
     if not errorlevel 2 cmd /C exit /b 0

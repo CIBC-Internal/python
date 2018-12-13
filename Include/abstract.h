@@ -95,7 +95,7 @@ Proposal
   numeric, sequence, and mapping.  Each protocol consists of a
   collection of related operations.  If an operation that is not
   provided by a particular type is invoked, then a standard exception,
-  NotImplementedError is raised with a operation name as an argument.
+  NotImplementedError is raised with an operation name as an argument.
   In addition, for convenience this interface defines a set of
   constructors for building objects of built-in types.  This is needed
   so new objects can be returned from C functions that otherwise treat
@@ -192,8 +192,8 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v);
 
      Set the value of the attribute named attr_name, for object o,
-     to the value, v. Returns -1 on failure.  This is
-     the equivalent of the Python statement: o.attr_name=v.
+     to the value v. Raise an exception and return -1 on failure; return 0 on
+     success.  This is the equivalent of the Python statement o.attr_name=v.
 
        */
 
@@ -202,8 +202,8 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      int PyObject_SetAttr(PyObject *o, PyObject *attr_name, PyObject *v);
 
      Set the value of the attribute named attr_name, for object o,
-     to the value, v. Returns -1 on failure.  This is
-     the equivalent of the Python statement: o.attr_name=v.
+     to the value v. Raise an exception and return -1 on failure; return 0 on
+     success.  This is the equivalent of the Python statement o.attr_name=v.
 
        */
 
@@ -271,6 +271,12 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      arguments and keywords arguments.  The 'args' argument can not be
      NULL, but the 'kw' argument can be NULL.
        */
+
+#ifndef Py_LIMITED_API
+     PyAPI_FUNC(PyObject *) _Py_CheckFunctionResult(PyObject *func,
+                                                    PyObject *result,
+                                                    const char *where);
+#endif
 
      PyAPI_FUNC(PyObject *) PyObject_CallObject(PyObject *callable_object,
                                                 PyObject *args);
@@ -429,9 +435,9 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      PyAPI_FUNC(int) PyObject_SetItem(PyObject *o, PyObject *key, PyObject *v);
 
        /*
-     Map the object, key, to the value, v.  Returns
-     -1 on failure.  This is the equivalent of the Python
-     statement: o[key]=v.
+     Map the object key to the value v.  Raise an exception and return -1
+     on failure; return 0 on success.  This is the equivalent of the Python
+     statement o[key]=v.
        */
 
      PyAPI_FUNC(int) PyObject_DelItemString(PyObject *o, const char *key);
@@ -452,7 +458,7 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
     /* old buffer API
        FIXME:  usage of these should all be replaced in Python itself
        but for backwards compatibility we will implement them.
-       Their usage without a corresponding "unlock" mechansim
+       Their usage without a corresponding "unlock" mechanism
        may create issues (but they would already be there). */
 
      PyAPI_FUNC(int) PyObject_AsCharBuffer(PyObject *obj,
@@ -658,6 +664,12 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      o1*o2.
        */
 
+     PyAPI_FUNC(PyObject *) PyNumber_MatrixMultiply(PyObject *o1, PyObject *o2);
+
+       /*
+     This is the equivalent of the Python expression: o1 @ o2.
+       */
+
      PyAPI_FUNC(PyObject *) PyNumber_FloorDivide(PyObject *o1, PyObject *o2);
 
        /*
@@ -832,6 +844,12 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      o1 *= o2.
        */
 
+     PyAPI_FUNC(PyObject *) PyNumber_InPlaceMatrixMultiply(PyObject *o1, PyObject *o2);
+
+       /*
+     This is the equivalent of the Python expression: o1 @= o2.
+       */
+
      PyAPI_FUNC(PyObject *) PyNumber_InPlaceFloorDivide(PyObject *o1,
                                                         PyObject *o2);
 
@@ -975,9 +993,9 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
      PyAPI_FUNC(int) PySequence_SetItem(PyObject *o, Py_ssize_t i, PyObject *v);
 
        /*
-     Assign object v to the ith element of o.  Returns
-     -1 on failure.  This is the equivalent of the Python
-     statement: o[i]=v.
+     Assign object v to the ith element of o.  Raise an exception and return
+     -1 on failure; return 0 on success.  This is the equivalent of the
+     Python statement o[i]=v.
        */
 
      PyAPI_FUNC(int) PySequence_DelItem(PyObject *o, Py_ssize_t i);

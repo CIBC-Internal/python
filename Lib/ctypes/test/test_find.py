@@ -1,5 +1,5 @@
 import unittest
-import os
+import os.path
 import sys
 import test.support
 from ctypes import *
@@ -30,14 +30,24 @@ class Test_OpenGL_libs(unittest.TestCase):
 
         cls.gl = cls.glu = cls.gle = None
         if lib_gl:
-            cls.gl = CDLL(lib_gl, mode=RTLD_GLOBAL)
+            try:
+                cls.gl = CDLL(lib_gl, mode=RTLD_GLOBAL)
+            except OSError:
+                pass
         if lib_glu:
-            cls.glu = CDLL(lib_glu, RTLD_GLOBAL)
+            try:
+                cls.glu = CDLL(lib_glu, RTLD_GLOBAL)
+            except OSError:
+                pass
         if lib_gle:
             try:
                 cls.gle = CDLL(lib_gle)
             except OSError:
                 pass
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.gl = cls.glu = cls.gle = None
 
     def test_gl(self):
         if self.gl is None:
@@ -54,28 +64,10 @@ class Test_OpenGL_libs(unittest.TestCase):
             self.skipTest('lib_gle not available')
         self.gle.gleGetJoinStyle
 
-# On platforms where the default shared library suffix is '.so',
-# at least some libraries can be loaded as attributes of the cdll
-# object, since ctypes now tries loading the lib again
-# with '.so' appended of the first try fails.
-#
-# Won't work for libc, unfortunately.  OTOH, it isn't
-# needed for libc since this is already mapped into the current
-# process (?)
-#
-# On MAC OSX, it won't work either, because dlopen() needs a full path,
-# and the default suffix is either none or '.dylib'.
-@unittest.skip('test disabled')
-@unittest.skipUnless(os.name=="posix" and sys.platform != "darwin",
-                     'test not suitable for this platform')
-class LoadLibs(unittest.TestCase):
-    def test_libm(self):
-        import math
-        libm = cdll.libm
-        sqrt = libm.sqrt
-        sqrt.argtypes = (c_double,)
-        sqrt.restype = c_double
-        self.assertEqual(sqrt(2), math.sqrt(2))
+    def test_shell_injection(self):
+        result = find_library('; echo Hello shell > ' + test.support.TESTFN)
+        self.assertFalse(os.path.lexists(test.support.TESTFN))
+        self.assertIsNone(result)
 
 if __name__ == "__main__":
     unittest.main()

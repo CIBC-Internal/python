@@ -9,7 +9,6 @@
 #include <windows.h>
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
-#define PATH_MAX MAXPATHLEN
 #endif
 #endif
 
@@ -51,7 +50,7 @@ static char *usage_1 = "\
 Options and arguments (and corresponding environment variables):\n\
 -b     : issue warnings about str(bytes_instance), str(bytearray_instance)\n\
          and comparing bytes/bytearray with str. (-bb: issue errors)\n\
--B     : don't write .py[co] files on import; also PYTHONDONTWRITEBYTECODE=x\n\
+-B     : don't write .pyc files on import; also PYTHONDONTWRITEBYTECODE=x\n\
 -c cmd : program passed in as string (terminates option list)\n\
 -d     : debug output from parser; also PYTHONDEBUG=x\n\
 -E     : ignore PYTHON* environment variables (such as PYTHONPATH)\n\
@@ -86,11 +85,11 @@ file   : program read from script file\n\
 arg ...: arguments passed to program in sys.argv[1:]\n\n\
 Other environment variables:\n\
 PYTHONSTARTUP: file executed on interactive startup (no default)\n\
-PYTHONPATH   : '%c'-separated list of directories prefixed to the\n\
+PYTHONPATH   : '%lc'-separated list of directories prefixed to the\n\
                default module search path.  The result is sys.path.\n\
 ";
 static char *usage_5 =
-"PYTHONHOME   : alternate <prefix> directory (or <prefix>%c<exec_prefix>).\n"
+"PYTHONHOME   : alternate <prefix> directory (or <prefix>%lc<exec_prefix>).\n"
 "               The default module search path uses %s.\n"
 "PYTHONCASEOK : ignore case in 'import' statements (Windows).\n"
 "PYTHONIOENCODING: Encoding[:errors] used for stdin/stdout/stderr.\n"
@@ -115,8 +114,8 @@ usage(int exitcode, wchar_t* program)
         fputs(usage_1, f);
         fputs(usage_2, f);
         fputs(usage_3, f);
-        fprintf(f, usage_4, DELIM);
-        fprintf(f, usage_5, DELIM, PYTHONHOMEHELP);
+        fprintf(f, usage_4, (wint_t)DELIM);
+        fprintf(f, usage_5, (wint_t)DELIM, PYTHONHOMEHELP);
         fputs(usage_6, f);
     }
     return exitcode;
@@ -221,45 +220,60 @@ static int RunModule(wchar_t *modname, int set_argv0)
     return 0;
 }
 
-static int
-RunMainFromImporter(wchar_t *filename)
+static PyObject *
+AsImportPathEntry(wchar_t *filename)
 {
-    PyObject *argv0 = NULL, *importer, *sys_path;
-    int sts;
+    PyObject *sys_path0 = NULL, *importer;
 
-    argv0 = PyUnicode_FromWideChar(filename, wcslen(filename));
-    if (argv0 == NULL)
+    sys_path0 = PyUnicode_FromWideChar(filename, wcslen(filename));
+    if (sys_path0 == NULL)
         goto error;
 
-    importer = PyImport_GetImporter(argv0);
+    importer = PyImport_GetImporter(sys_path0);
     if (importer == NULL)
         goto error;
 
     if (importer == Py_None) {
-        Py_DECREF(argv0);
+        Py_DECREF(sys_path0);
         Py_DECREF(importer);
-        return -1;
+        return NULL;
     }
     Py_DECREF(importer);
+    return sys_path0;
 
-    /* argv0 is usable as an import source, so put it in sys.path[0]
-       and import __main__ */
+error:
+    Py_XDECREF(sys_path0);
+    PySys_WriteStderr("Failed checking if argv[0] is an import path entry\n");
+    PyErr_Print();
+    PyErr_Clear();
+    return NULL;
+}
+
+
+static int
+RunMainFromImporter(PyObject *sys_path0)
+{
+    PyObject *sys_path;
+    int sts;
+
+    /* Assume sys_path0 has already been checked by AsImportPathEntry,
+     * so put it in sys.path[0] and import __main__ */
     sys_path = PySys_GetObject("path");
     if (sys_path == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "unable to get sys.path");
         goto error;
     }
-    if (PyList_SetItem(sys_path, 0, argv0)) {
-        argv0 = NULL;
+    sts = PyList_Insert(sys_path, 0, sys_path0);
+    if (sts) {
+        sys_path0 = NULL;
         goto error;
     }
-    Py_INCREF(argv0);
 
     sts = RunModule(L"__main__", 0);
     return sts != 0;
 
 error:
-    Py_XDECREF(argv0);
+    Py_XDECREF(sys_path0);
     PyErr_Print();
     return 1;
 }
@@ -343,6 +357,9 @@ Py_Main(int argc, wchar_t **argv)
     int version = 0;
     int saw_unbuffered_flag = 0;
     PyCompilerFlags cf;
+    PyObject *main_importer_path = NULL;
+    PyObject *warning_option = NULL;
+    PyObject *warning_options = NULL;
 
     cf.cf_flags = 0;
 
@@ -465,7 +482,15 @@ Py_Main(int argc, wchar_t **argv)
             break;
 
         case 'W':
-            PySys_AddWarnOption(_PyOS_optarg);
+            if (warning_options == NULL)
+                warning_options = PyList_New(0);
+            if (warning_options == NULL)
+                Py_FatalError("failure in handling of -W argument");
+            warning_option = PyUnicode_FromWideChar(_PyOS_optarg, -1);
+            if (warning_option == NULL)
+                Py_FatalError("failure in handling of -W argument");
+            PyList_Append(warning_options, warning_option);
+            Py_DECREF(warning_option);
             break;
 
         case 'X':
@@ -511,16 +536,16 @@ Py_Main(int argc, wchar_t **argv)
 #ifdef MS_WINDOWS
     if (!Py_IgnoreEnvironmentFlag && (wp = _wgetenv(L"PYTHONWARNINGS")) &&
         *wp != L'\0') {
-        wchar_t *buf, *warning;
+        wchar_t *buf, *warning, *context = NULL;
 
         buf = (wchar_t *)PyMem_RawMalloc((wcslen(wp) + 1) * sizeof(wchar_t));
         if (buf == NULL)
             Py_FatalError(
                "not enough memory to copy PYTHONWARNINGS");
         wcscpy(buf, wp);
-        for (warning = wcstok(buf, L",");
+        for (warning = wcstok_s(buf, L",", &context);
              warning != NULL;
-             warning = wcstok(NULL, L",")) {
+             warning = wcstok_s(NULL, L",", &context)) {
             PySys_AddWarnOption(warning);
         }
         PyMem_RawFree(buf);
@@ -559,6 +584,12 @@ Py_Main(int argc, wchar_t **argv)
         PyMem_RawFree(buf);
     }
 #endif
+    if (warning_options != NULL) {
+        Py_ssize_t i;
+        for (i = 0; i < PyList_GET_SIZE(warning_options); i++) {
+            PySys_AddWarnOptionUnicode(PyList_GET_ITEM(warning_options, i));
+        }
+    }
 
     if (command == NULL && module == NULL && _PyOS_optind < argc &&
         wcscmp(argv[_PyOS_optind], L"-") != 0)
@@ -631,7 +662,7 @@ Py_Main(int argc, wchar_t **argv)
             /* Used by Mac/Tools/pythonw.c to forward
              * the argv0 of the stub executable
              */
-            wchar_t* wbuf = _Py_char2wchar(pyvenv_launcher, NULL);
+            wchar_t* wbuf = Py_DecodeLocale(pyvenv_launcher, NULL);
 
             if (wbuf == NULL) {
                 Py_FatalError("Cannot decode __PYVENV_LAUNCHER__");
@@ -652,6 +683,7 @@ Py_Main(int argc, wchar_t **argv)
     Py_SetProgramName(argv[0]);
 #endif
     Py_Initialize();
+    Py_XDECREF(warning_options);
 
     if (!Py_QuietFlag && (Py_VerboseFlag ||
                         (command == NULL && filename == NULL &&
@@ -674,7 +706,17 @@ Py_Main(int argc, wchar_t **argv)
         argv[_PyOS_optind] = L"-m";
     }
 
-    PySys_SetArgv(argc-_PyOS_optind, argv+_PyOS_optind);
+    if (filename != NULL) {
+        main_importer_path = AsImportPathEntry(filename);
+    }
+
+    if (main_importer_path != NULL) {
+        /* Let RunMainFromImporter adjust sys.path[0] later */
+        PySys_SetArgvEx(argc-_PyOS_optind, argv+_PyOS_optind, 0);
+    } else {
+        /* Use config settings to decide whether or not to update sys.path[0] */
+        PySys_SetArgv(argc-_PyOS_optind, argv+_PyOS_optind);
+    }
 
     if ((Py_InspectFlag || (command == NULL && filename == NULL && module == NULL)) &&
         isatty(fileno(stdin))) {
@@ -703,17 +745,17 @@ Py_Main(int argc, wchar_t **argv)
 
         sts = -1;               /* keep track of whether we've already run __main__ */
 
-        if (filename != NULL) {
-            sts = RunMainFromImporter(filename);
+        if (main_importer_path != NULL) {
+            sts = RunMainFromImporter(main_importer_path);
         }
 
-        if (sts==-1 && filename!=NULL) {
+        if (sts==-1 && filename != NULL) {
             fp = _Py_wfopen(filename, L"r");
             if (fp == NULL) {
                 char *cfilename_buffer;
                 const char *cfilename;
                 int err = errno;
-                cfilename_buffer = _Py_wchar2char(filename, NULL);
+                cfilename_buffer = Py_EncodeLocale(filename, NULL);
                 if (cfilename_buffer != NULL)
                     cfilename = cfilename_buffer;
                 else
@@ -736,11 +778,12 @@ Py_Main(int argc, wchar_t **argv)
                 }
             }
             {
-                /* XXX: does this work on Win/Win64? (see posix_fstat) */
-                struct stat sb;
-                if (fstat(fileno(fp), &sb) == 0 &&
+                struct _Py_stat_struct sb;
+                if (_Py_fstat_noraise(fileno(fp), &sb) == 0 &&
                     S_ISDIR(sb.st_mode)) {
-                    fprintf(stderr, "%ls: '%ls' is a directory, cannot continue\n", argv[0], filename);
+                    fprintf(stderr,
+                            "%ls: '%ls' is a directory, cannot continue\n",
+                            argv[0], filename);
                     fclose(fp);
                     return 1;
                 }

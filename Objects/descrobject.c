@@ -1268,11 +1268,11 @@ PyWrapper_New(PyObject *d, PyObject *self)
 /* A built-in 'property' type */
 
 /*
-    class property(object):
+class property(object):
 
     def __init__(self, fget=None, fset=None, fdel=None, doc=None):
         if doc is None and fget is not None and hasattr(fget, "__doc__"):
-        doc = fget.__doc__
+            doc = fget.__doc__
         self.__get = fget
         self.__set = fset
         self.__del = fdel
@@ -1280,19 +1280,19 @@ PyWrapper_New(PyObject *d, PyObject *self)
 
     def __get__(self, inst, type=None):
         if inst is None:
-        return self
+            return self
         if self.__get is None:
-        raise AttributeError, "unreadable attribute"
+            raise AttributeError, "unreadable attribute"
         return self.__get(inst)
 
     def __set__(self, inst, value):
         if self.__set is None:
-        raise AttributeError, "can't set attribute"
+            raise AttributeError, "can't set attribute"
         return self.__set(inst, value)
 
     def __delete__(self, inst):
         if self.__del is None:
-        raise AttributeError, "can't delete attribute"
+            raise AttributeError, "can't delete attribute"
         return self.__del(inst)
 
 */
@@ -1313,7 +1313,7 @@ static PyMemberDef property_members[] = {
     {"fget", T_OBJECT, offsetof(propertyobject, prop_get), READONLY},
     {"fset", T_OBJECT, offsetof(propertyobject, prop_set), READONLY},
     {"fdel", T_OBJECT, offsetof(propertyobject, prop_del), READONLY},
-    {"__doc__",  T_OBJECT, offsetof(propertyobject, prop_doc), READONLY},
+    {"__doc__",  T_OBJECT, offsetof(propertyobject, prop_doc), 0},
     {0}
 };
 
@@ -1372,6 +1372,9 @@ property_dealloc(PyObject *self)
 static PyObject *
 property_descr_get(PyObject *self, PyObject *obj, PyObject *type)
 {
+    static PyObject * volatile cached_args = NULL;
+    PyObject *args;
+    PyObject *ret;
     propertyobject *gs = (propertyobject *)self;
 
     if (obj == NULL || obj == Py_None) {
@@ -1382,7 +1385,29 @@ property_descr_get(PyObject *self, PyObject *obj, PyObject *type)
         PyErr_SetString(PyExc_AttributeError, "unreadable attribute");
         return NULL;
     }
-    return PyObject_CallFunctionObjArgs(gs->prop_get, obj, NULL);
+    args = cached_args;
+    cached_args = NULL;
+    if (!args) {
+        args = PyTuple_New(1);
+        if (!args)
+            return NULL;
+        _PyObject_GC_UNTRACK(args);
+    }
+    Py_INCREF(obj);
+    PyTuple_SET_ITEM(args, 0, obj);
+    ret = PyObject_Call(gs->prop_get, args, NULL);
+    if (cached_args == NULL && Py_REFCNT(args) == 1) {
+        assert(Py_SIZE(args) == 1);
+        assert(PyTuple_GET_ITEM(args, 0) == obj);
+        cached_args = args;
+        Py_DECREF(obj);
+    }
+    else {
+        assert(Py_REFCNT(args) >= 1);
+        _PyObject_GC_TRACK(args);
+        Py_DECREF(args);
+    }
+    return ret;
 }
 
 static int
@@ -1484,8 +1509,7 @@ property_init(PyObject *self, PyObject *args, PyObject *kwds)
         PyObject *get_doc = _PyObject_GetAttrId(get, &PyId___doc__);
         if (get_doc) {
             if (Py_TYPE(self) == &PyProperty_Type) {
-                Py_XDECREF(prop->prop_doc);
-                prop->prop_doc = get_doc;
+                Py_XSETREF(prop->prop_doc, get_doc);
             }
             else {
                 /* If this is a property subclass, put __doc__
@@ -1584,6 +1608,14 @@ property_traverse(PyObject *self, visitproc visit, void *arg)
     return 0;
 }
 
+static int
+property_clear(PyObject *self)
+{
+    propertyobject *pp = (propertyobject *)self;
+    Py_CLEAR(pp->prop_doc);
+    return 0;
+}
+
 PyTypeObject PyProperty_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "property",                                 /* tp_name */
@@ -1609,7 +1641,7 @@ PyTypeObject PyProperty_Type = {
         Py_TPFLAGS_BASETYPE,                    /* tp_flags */
     property_doc,                               /* tp_doc */
     property_traverse,                          /* tp_traverse */
-    0,                                          /* tp_clear */
+    (inquiry)property_clear,                    /* tp_clear */
     0,                                          /* tp_richcompare */
     0,                                          /* tp_weaklistoffset */
     0,                                          /* tp_iter */

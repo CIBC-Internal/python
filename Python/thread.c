@@ -31,7 +31,7 @@
    threads.
 
    This is valid for HP-UX 11.23 running on an ia64 system. If needed, add
-   a check of __ia64 to verify that we're running on a ia64 system instead
+   a check of __ia64 to verify that we're running on an ia64 system instead
    of a pa-risc system.
 */
 #ifdef __hpux
@@ -431,7 +431,7 @@ PyThread_GetInfo(void)
      && defined(_CS_GNU_LIBPTHREAD_VERSION))
     value = NULL;
     len = confstr(_CS_GNU_LIBPTHREAD_VERSION, buffer, sizeof(buffer));
-    if (1 < len && len < sizeof(buffer)) {
+    if (1 < len && (size_t)len < sizeof(buffer)) {
         value = PyUnicode_DecodeFSDefaultAndSize(buffer, len-1);
         if (value == NULL)
             PyErr_Clear();

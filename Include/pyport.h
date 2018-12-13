@@ -270,7 +270,7 @@ typedef int Py_ssize_clean_t;
  * for platforms that support that.
  *
  * If PY_LOCAL_AGGRESSIVE is defined before python.h is included, more
- * "aggressive" inlining/optimizaion is enabled for the entire module.  This
+ * "aggressive" inlining/optimization is enabled for the entire module.  This
  * may lead to code bloat, and may slow things down for those reasons.  It may
  * also lead to errors, if the code relies on pointer aliasing.  Use with
  * care.
@@ -356,28 +356,6 @@ typedef int Py_ssize_clean_t;
 /*******************************
  * stat() and fstat() fiddling *
  *******************************/
-
-/* We expect that stat and fstat exist on most systems.
- *  It's confirmed on Unix, Mac and Windows.
- *  If you don't have them, add
- *      #define DONT_HAVE_STAT
- * and/or
- *      #define DONT_HAVE_FSTAT
- * to your pyconfig.h. Python code beyond this should check HAVE_STAT and
- * HAVE_FSTAT instead.
- * Also
- *      #define HAVE_SYS_STAT_H
- * if <sys/stat.h> exists on your platform, and
- *      #define HAVE_STAT_H
- * if <stat.h> does.
- */
-#ifndef DONT_HAVE_STAT
-#define HAVE_STAT
-#endif
-
-#ifndef DONT_HAVE_FSTAT
-#define HAVE_FSTAT
-#endif
 
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
@@ -588,6 +566,25 @@ extern "C" {
     } while (0)
 #endif
 
+#ifdef HAVE_GCC_ASM_FOR_MC68881
+#define HAVE_PY_SET_53BIT_PRECISION 1
+#define _Py_SET_53BIT_PRECISION_HEADER \
+  unsigned int old_fpcr, new_fpcr
+#define _Py_SET_53BIT_PRECISION_START					\
+  do {									\
+    __asm__ ("fmove.l %%fpcr,%0" : "=g" (old_fpcr));			\
+    /* Set double precision / round to nearest.  */			\
+    new_fpcr = (old_fpcr & ~0xf0) | 0x80;				\
+    if (new_fpcr != old_fpcr)						\
+      __asm__ volatile ("fmove.l %0,%%fpcr" : : "g" (new_fpcr));	\
+  } while (0)
+#define _Py_SET_53BIT_PRECISION_END					\
+  do {									\
+    if (new_fpcr != old_fpcr)						\
+      __asm__ volatile ("fmove.l %0,%%fpcr" : : "g" (old_fpcr));	\
+  } while (0)
+#endif
+
 /* default definitions are empty */
 #ifndef HAVE_PY_SET_53BIT_PRECISION
 #define _Py_SET_53BIT_PRECISION_HEADER
@@ -680,7 +677,9 @@ extern pid_t forkpty(int *, char *, struct termios *, struct winsize *);
 
 #ifdef __FreeBSD__
 #include <osreldate.h>
-#if __FreeBSD_version > 500039
+#if (__FreeBSD_version >= 500040 && __FreeBSD_version < 602113) || \
+    (__FreeBSD_version >= 700000 && __FreeBSD_version < 700054) || \
+    (__FreeBSD_version >= 800000 && __FreeBSD_version < 800001)
 # define _PY_PORT_CTYPE_UTF8_ISSUE
 #endif
 #endif
@@ -691,6 +690,12 @@ extern pid_t forkpty(int *, char *, struct termios *, struct winsize *);
 #endif
 
 #ifdef _PY_PORT_CTYPE_UTF8_ISSUE
+#ifndef __cplusplus
+   /* The workaround below is unsafe in C++ because
+    * the <locale> defines these symbols as real functions,
+    * with a slightly different signature.
+    * See issue #10910
+    */
 #include <ctype.h>
 #include <wctype.h>
 #undef isalnum
@@ -707,6 +712,7 @@ extern pid_t forkpty(int *, char *, struct termios *, struct winsize *);
 #define tolower(c) towlower(btowc(c))
 #undef toupper
 #define toupper(c) towupper(btowc(c))
+#endif
 #endif
 
 
@@ -879,5 +885,25 @@ extern pid_t forkpty(int *, char *, struct termios *, struct winsize *);
 #define PY_BIG_ENDIAN 0
 #define PY_LITTLE_ENDIAN 1
 #endif
+
+#ifdef Py_BUILD_CORE
+/*
+ * Macros to protect CRT calls against instant termination when passed an
+ * invalid parameter (issue23524).
+ */
+#if defined _MSC_VER && _MSC_VER >= 1900
+
+extern _invalid_parameter_handler _Py_silent_invalid_parameter_handler;
+#define _Py_BEGIN_SUPPRESS_IPH { _invalid_parameter_handler _Py_old_handler = \
+    _set_thread_local_invalid_parameter_handler(_Py_silent_invalid_parameter_handler);
+#define _Py_END_SUPPRESS_IPH _set_thread_local_invalid_parameter_handler(_Py_old_handler); }
+
+#else
+
+#define _Py_BEGIN_SUPPRESS_IPH
+#define _Py_END_SUPPRESS_IPH
+
+#endif /* _MSC_VER >= 1900 */
+#endif /* Py_BUILD_CORE */
 
 #endif /* Py_PYPORT_H */

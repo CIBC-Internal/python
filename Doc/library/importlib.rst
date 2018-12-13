@@ -1,5 +1,5 @@
-:mod:`importlib` -- The implementation of :keyword:`import`
-===========================================================
+:mod:`importlib` --- The implementation of :keyword:`import`
+============================================================
 
 .. module:: importlib
    :synopsis: The implementation of the import machinery.
@@ -9,6 +9,9 @@
 
 .. versionadded:: 3.1
 
+**Source code:** :source:`Lib/importlib/__init__.py`
+
+--------------
 
 Introduction
 ------------
@@ -52,8 +55,17 @@ generically as an :term:`importer`) to participate in the import process.
     :pep:`366`
         Main module explicit relative imports
 
+    :pep:`420`
+        Implicit namespace packages
+
     :pep:`451`
         A ModuleSpec Type for the Import System
+
+    :pep:`488`
+        Elimination of PYO files
+
+    :pep:`489`
+        Multi-phase extension module initialization
 
     :pep:`3120`
         Using UTF-8 as the Default Source Encoding
@@ -69,6 +81,10 @@ Functions
 
     An implementation of the built-in :func:`__import__` function.
 
+    .. note::
+       Programmatic importing of modules should use :func:`import_module`
+       instead of this function.
+
 .. function:: import_module(name, package=None)
 
     Import a module. The *name* argument specifies what module to
@@ -81,12 +97,15 @@ Functions
 
     The :func:`import_module` function acts as a simplifying wrapper around
     :func:`importlib.__import__`. This means all semantics of the function are
-    derived from :func:`importlib.__import__`, including requiring the package
-    from which an import is occurring to have been previously imported
-    (i.e., *package* must already be imported). The most important difference
-    is that :func:`import_module` returns the specified package or module
-    (e.g. ``pkg.mod``), while :func:`__import__` returns the
-    top-level package or module (e.g. ``pkg``).
+    derived from :func:`importlib.__import__`. The most important difference
+    between these two functions is that :func:`import_module` returns the
+    specified package or module (e.g. ``pkg.mod``), while :func:`__import__`
+    returns the top-level package or module (e.g. ``pkg``).
+
+    If you are dynamically importing a module that was created since the
+    interpreter began execution (e.g., created a Python source file), you may
+    need to call :func:`invalidate_caches` in order for the new module to be
+    noticed by the import system.
 
     .. versionchanged:: 3.3
        Parent packages are automatically imported.
@@ -99,7 +118,7 @@ Functions
    :exc:`ValueError` is raised). Otherwise a search using :attr:`sys.meta_path`
    is done. ``None`` is returned if no loader is found.
 
-   A dotted name does not have its parent's implicitly imported as that requires
+   A dotted name does not have its parents implicitly imported as that requires
    loading them and that may not be desired. To properly import a submodule you
    will need to import all parent packages of the submodule and use the correct
    argument to *path*.
@@ -152,12 +171,6 @@ Functions
 
    There are a number of other caveats:
 
-   If a module is syntactically correct but its initialization fails, the first
-   :keyword:`import` statement for it does not bind its name locally, but does
-   store a (partially initialized) module object in ``sys.modules``.  To reload
-   the module you must first :keyword:`import` it again (this will bind the name
-   to the partially initialized module object) before you can :func:`reload` it.
-
    When a module is reloaded, its dictionary (containing the module's global
    variables) is retained.  Redefinitions of names will override the old
    definitions, so this is generally not a problem.  If the new version of a
@@ -172,11 +185,11 @@ Functions
       except NameError:
           cache = {}
 
-   It is legal though generally not very useful to reload built-in or
-   dynamically loaded modules (this is not true for e.g. :mod:`sys`,
-   :mod:`__main__`, :mod:`builtins` and other key modules where reloading is
-   frowned upon). In many cases, however, extension modules are not designed to
-   be initialized more than once, and may fail in arbitrary ways when reloaded.
+   It is generally not very useful to reload built-in or dynamically loaded
+   modules.  Reloading :mod:`sys`, :mod:`__main__`, :mod:`builtins` and other
+   key modules is not recommended.  In many cases extension modules are not
+   designed to be initialized more than once, and may fail in arbitrary ways
+   when reloaded.
 
    If a module imports objects from another module using :keyword:`from` ...
    :keyword:`import` ..., calling :func:`reload` for the other module does not
@@ -197,6 +210,11 @@ Functions
 
 .. module:: importlib.abc
     :synopsis: Abstract base classes related to import
+
+**Source code:** :source:`Lib/importlib/abc.py`
+
+--------------
+
 
 The :mod:`importlib.abc` module contains all of the core abstract base classes
 used by :keyword:`import`. Some subclasses of the core abstract base classes
@@ -223,7 +241,7 @@ ABC hierarchy::
    .. deprecated:: 3.3
       Use :class:`MetaPathFinder` or :class:`PathEntryFinder` instead.
 
-   .. method:: find_module(fullname, path=None)
+   .. abstractmethod:: find_module(fullname, path=None)
 
       An abstact method for finding a :term:`loader` for the specified
       module.  Originally specified in :pep:`302`, this method was meant
@@ -347,12 +365,15 @@ ABC hierarchy::
 
     .. method:: create_module(spec)
 
-       An optional method that returns the module object to use when
-       importing a module.  create_module() may also return ``None``,
-       indicating that the default module creation should take place
-       instead.
+       A method that returns the module object to use when
+       importing a module.  This method may return ``None``,
+       indicating that default module creation semantics should take place.
 
        .. versionadded:: 3.4
+
+       .. versionchanged:: 3.5
+          Starting in Python 3.6, this method will not be optional when
+          :meth:`exec_module` is defined.
 
     .. method:: exec_module(module)
 
@@ -417,7 +438,7 @@ ABC hierarchy::
 
         .. deprecated:: 3.4
            The recommended API for loading a module is :meth:`exec_module`
-           (and optionally :meth:`create_module`).  Loaders should implement
+           (and :meth:`create_module`).  Loaders should implement
            it instead of load_module().  The import machinery takes care of
            all the other responsibilities of load_module() when exec_module()
            is implemented.
@@ -443,7 +464,7 @@ ABC hierarchy::
     :pep:`302` protocol for loading arbitrary resources from the storage
     back-end.
 
-    .. method:: get_data(path)
+    .. abstractmethod:: get_data(path)
 
         An abstract method to return the bytes for the data located at *path*.
         Loaders that have a file-like storage back-end
@@ -479,7 +500,7 @@ ABC hierarchy::
         .. versionchanged:: 3.4
            No longer abstract and a concrete implementation is provided.
 
-    .. method:: get_source(fullname)
+    .. abstractmethod:: get_source(fullname)
 
         An abstract method to return the source of a module. It is returned as
         a text string using :term:`universal newlines`, translating all
@@ -499,7 +520,7 @@ ABC hierarchy::
         .. versionchanged:: 3.4
            Raises :exc:`ImportError` instead of :exc:`NotImplementedError`.
 
-    .. method:: source_to_code(data, path='<string>')
+    .. staticmethod:: source_to_code(data, path='<string>')
 
         Create a code object from Python source.
 
@@ -508,7 +529,13 @@ ABC hierarchy::
         the "path" to where the source code originated from, which can be an
         abstract concept (e.g. location in a zip file).
 
+        With the subsequent code object one can execute it in a module by
+        running ``exec(code, module.__dict__)``.
+
         .. versionadded:: 3.4
+
+        .. versionchanged:: 3.5
+           Made the method static.
 
     .. method:: exec_module(module)
 
@@ -530,7 +557,7 @@ ABC hierarchy::
     when implemented, helps a module to be executed as a script. The ABC
     represents an optional :pep:`302` protocol.
 
-    .. method:: get_filename(fullname)
+    .. abstractmethod:: get_filename(fullname)
 
         An abstract method that is to return the value of :attr:`__file__` for
         the specified module. If no path is available, :exc:`ImportError` is
@@ -570,11 +597,11 @@ ABC hierarchy::
       .. deprecated:: 3.4
          Use :meth:`Loader.exec_module` instead.
 
-   .. method:: get_filename(fullname)
+   .. abstractmethod:: get_filename(fullname)
 
       Returns :attr:`path`.
 
-   .. method:: get_data(path)
+   .. abstractmethod:: get_data(path)
 
       Reads *path* as a binary file and returns the bytes from it.
 
@@ -602,7 +629,7 @@ ABC hierarchy::
     .. method:: path_stats(path)
 
         Optional abstract method which returns a :class:`dict` containing
-        metadata about the specifed path.  Supported dictionary keys are:
+        metadata about the specified path.  Supported dictionary keys are:
 
         - ``'mtime'`` (mandatory): an integer or floating-point number
           representing the modification time of the source code;
@@ -678,6 +705,10 @@ ABC hierarchy::
 .. module:: importlib.machinery
     :synopsis: Importers and path hooks
 
+**Source code:** :source:`Lib/importlib/machinery.py`
+
+--------------
+
 This module contains the various objects that help :keyword:`import`
 find and load modules.
 
@@ -695,6 +726,9 @@ find and load modules.
 
    .. versionadded:: 3.3
 
+   .. deprecated:: 3.5
+      Use :attr:`BYTECODE_SUFFIXES` instead.
+
 .. attribute:: OPTIMIZED_BYTECODE_SUFFIXES
 
    A list of strings representing the file suffixes for optimized bytecode
@@ -702,13 +736,18 @@ find and load modules.
 
    .. versionadded:: 3.3
 
+   .. deprecated:: 3.5
+      Use :attr:`BYTECODE_SUFFIXES` instead.
+
 .. attribute:: BYTECODE_SUFFIXES
 
    A list of strings representing the recognized file suffixes for bytecode
-   modules. Set to either :attr:`DEBUG_BYTECODE_SUFFIXES` or
-   :attr:`OPTIMIZED_BYTECODE_SUFFIXES` based on whether ``__debug__`` is true.
+   modules (including the leading dot).
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.5
+      The value is no longer dependent on ``__debug__``.
 
 .. attribute:: EXTENSION_SUFFIXES
 
@@ -723,7 +762,7 @@ find and load modules.
    modules recognized by the standard import machinery. This is a
    helper for code which simply needs to know if a filesystem path
    potentially refers to a module without needing any details on the kind
-   of module (for example, :func:`inspect.getmodulename`)
+   of module (for example, :func:`inspect.getmodulename`).
 
    .. versionadded:: 3.3
 
@@ -738,9 +777,9 @@ find and load modules.
     Only class methods are defined by this class to alleviate the need for
     instantiation.
 
-    .. note::
-       Due to limitations in the extension module C-API, for now
-       BuiltinImporter does not implement :meth:`Loader.exec_module`.
+    .. versionchanged:: 3.5
+       As part of :pep:`489`, the builtin importer now implements
+       :meth:`Loader.create_module` and :meth:`Loader.exec_module`
 
 
 .. class:: FrozenImporter
@@ -787,6 +826,11 @@ find and load modules.
       stored in the cache and returned.
 
       .. versionadded:: 3.4
+
+      .. versionchanged:: 3.5
+         If the current working directory -- represented by an empty string --
+         is no longer valid then ``None`` is returned but no value is cached
+         in :data:`sys.path_importer_cache`.
 
    .. classmethod:: find_module(fullname, path=None)
 
@@ -950,14 +994,18 @@ find and load modules.
 
       Path to the extension module.
 
-   .. method:: load_module(name=None)
+   .. method:: create_module(spec)
 
-      Loads the extension module if and only if *fullname* is the same as
-      :attr:`name` or is ``None``.
+      Creates the module object from the given specification in accordance
+      with :pep:`489`.
 
-      .. note::
-         Due to limitations in the extension module C-API, for now
-         ExtensionFileLoader does not implement :meth:`Loader.exec_module`.
+      .. versionadded:: 3.5
+
+   .. method:: exec_module(module)
+
+      Initializes the given module object in accordance with :pep:`489`.
+
+      .. versionadded:: 3.5
 
    .. method:: is_package(fullname)
 
@@ -996,7 +1044,7 @@ find and load modules.
    (``__loader__``)
 
    The loader to use for loading.  For namespace packages this should be
-   set to None.
+   set to ``None``.
 
    .. attribute:: origin
 
@@ -1004,33 +1052,33 @@ find and load modules.
 
    Name of the place from which the module is loaded, e.g. "builtin" for
    built-in modules and the filename for modules loaded from source.
-   Normally "origin" should be set, but it may be None (the default)
+   Normally "origin" should be set, but it may be ``None`` (the default)
    which indicates it is unspecified.
 
    .. attribute:: submodule_search_locations
 
    (``__path__``)
 
-   List of strings for where to find submodules, if a package (None
+   List of strings for where to find submodules, if a package (``None``
    otherwise).
 
    .. attribute:: loader_state
 
    Container of extra module-specific data for use during loading (or
-   None).
+   ``None``).
 
    .. attribute:: cached
 
    (``__cached__``)
 
-   String for where the compiled module should be stored (or None).
+   String for where the compiled module should be stored (or ``None``).
 
    .. attribute:: parent
 
    (``__package__``)
 
    (Read-only) Fully-qualified name of the package to which the module
-   belongs as a submodule (or None).
+   belongs as a submodule (or ``None``).
 
    .. attribute:: has_location
 
@@ -1043,6 +1091,11 @@ find and load modules.
 .. module:: importlib.util
     :synopsis: Utility code for importers
 
+
+**Source code:** :source:`Lib/importlib/util.py`
+
+--------------
+
 This module contains the various objects that help in the construction of
 an :term:`importer`.
 
@@ -1053,22 +1106,36 @@ an :term:`importer`.
 
    .. versionadded:: 3.4
 
-.. function:: cache_from_source(path, debug_override=None)
+.. function:: cache_from_source(path, debug_override=None, *, optimization=None)
 
-   Return the :pep:`3147` path to the byte-compiled file associated with the
-   source *path*.  For example, if *path* is ``/foo/bar/baz.py`` the return
+   Return the :pep:`3147`/:pep:`488` path to the byte-compiled file associated
+   with the source *path*.  For example, if *path* is ``/foo/bar/baz.py`` the return
    value would be ``/foo/bar/__pycache__/baz.cpython-32.pyc`` for Python 3.2.
    The ``cpython-32`` string comes from the current magic tag (see
    :func:`get_tag`; if :attr:`sys.implementation.cache_tag` is not defined then
-   :exc:`NotImplementedError` will be raised).  The returned path will end in
-   ``.pyc`` when ``__debug__`` is ``True`` or ``.pyo`` for an optimized Python
-   (i.e. ``__debug__`` is ``False``).  By passing in ``True`` or ``False`` for
-   *debug_override* you can override the system's value for ``__debug__`` for
-   extension selection.
+   :exc:`NotImplementedError` will be raised).
 
-   *path* need not exist.
+   The *optimization* parameter is used to specify the optimization level of the
+   bytecode file. An empty string represents no optimization, so
+   ``/foo/bar/baz.py`` with an *optimization* of ``''`` will result in a
+   bytecode path of ``/foo/bar/__pycache__/baz.cpython-32.pyc``. ``None`` causes
+   the interpter's optimization level to be used. Any other value's string
+   representation being used, so ``/foo/bar/baz.py`` with an *optimization* of
+   ``2`` will lead to the bytecode path of
+   ``/foo/bar/__pycache__/baz.cpython-32.opt-2.pyc``. The string representation
+   of *optimization* can only be alphanumeric, else :exc:`ValueError` is raised.
+
+   The *debug_override* parameter is deprecated and can be used to override
+   the system's value for ``__debug__``. A ``True`` value is the equivalent of
+   setting *optimization* to the empty string. A ``False`` value is the same as
+   setting *optimization* to ``1``. If both *debug_override* an *optimization*
+   are not ``None`` then :exc:`TypeError` is raised.
 
    .. versionadded:: 3.4
+
+   .. versionchanged:: 3.5
+      The *optimization* parameter was added and the *debug_override* parameter
+      was deprecated.
 
 
 .. function:: source_from_cache(path)
@@ -1077,7 +1144,7 @@ an :term:`importer`.
    file path.  For example, if *path* is
    ``/foo/bar/__pycache__/baz.cpython-32.pyc`` the returned path would be
    ``/foo/bar/baz.py``.  *path* need not exist, however if it does not conform
-   to :pep:`3147` format, a ``ValueError`` is raised. If
+   to :pep:`3147` or :pep:`488` format, a ``ValueError`` is raised. If
    :attr:`sys.implementation.cache_tag` is not defined,
    :exc:`NotImplementedError` is raised.
 
@@ -1122,6 +1189,21 @@ an :term:`importer`.
    **name** and **package** work the same as for :func:`import_module`.
 
    .. versionadded:: 3.4
+
+.. function:: module_from_spec(spec)
+
+   Create a new module based on **spec** and ``spec.loader.create_module()``.
+
+   If ``spec.loader.create_module()`` does not return ``None``, then any
+   pre-existing attributes will not be reset. Also, no :exc:`AttributeError`
+   will be raised if triggered while accessing **spec** or setting an attribute
+   on the module.
+
+   This function is preferred over using :class:`types.ModuleType` to create a
+   new module as **spec** is used to set as many import-controlled attributes on
+   the module as possible.
+
+   .. versionadded:: 3.5
 
 .. decorator:: module_for_loader
 
@@ -1201,3 +1283,40 @@ an :term:`importer`.
    module will be file-based.
 
    .. versionadded:: 3.4
+
+.. class:: LazyLoader(loader)
+
+   A class which postpones the execution of the loader of a module until the
+   module has an attribute accessed.
+
+   This class **only** works with loaders that define
+   :meth:`~importlib.abc.Loader.exec_module` as control over what module type
+   is used for the module is required. For those same reasons, the loader's
+   :meth:`~importlib.abc.Loader.create_module` method will be ignored (i.e., the
+   loader's method should only return ``None``; this excludes
+   :class:`BuiltinImporter` and :class:`ExtensionFileLoader`). Finally,
+   modules which substitute the object placed into :attr:`sys.modules` will
+   not work as there is no way to properly replace the module references
+   throughout the interpreter safely; :exc:`ValueError` is raised if such a
+   substitution is detected.
+
+   .. note::
+      For projects where startup time is critical, this class allows for
+      potentially minimizing the cost of loading a module if it is never used.
+      For projects where startup time is not essential then use of this class is
+      **heavily** discouraged due to error messages created during loading being
+      postponed and thus occurring out of context.
+
+   .. versionadded:: 3.5
+
+   .. classmethod:: factory(loader)
+
+      A static method which returns a callable that creates a lazy loader. This
+      is meant to be used in situations where the loader is passed by class
+      instead of by instance.
+      ::
+
+        suffixes = importlib.machinery.SOURCE_SUFFIXES
+        loader = importlib.machinery.SourceFileLoader
+        lazy_loader = importlib.util.LazyLoader.factory(loader)
+        finder = importlib.machinery.FileFinder(path, (lazy_loader, suffixes))

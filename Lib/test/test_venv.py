@@ -8,11 +8,12 @@ Licensed to the PSF under a contributor agreement.
 import ensurepip
 import os
 import os.path
+import re
 import struct
 import subprocess
 import sys
 import tempfile
-from test.support import (captured_stdout, captured_stderr, run_unittest,
+from test.support import (captured_stdout, captured_stderr,
                           can_symlink, EnvironmentVarGuard, rmtree)
 import textwrap
 import unittest
@@ -24,6 +25,16 @@ try:
     import ssl
 except ImportError:
     ssl = None
+
+try:
+    import threading
+except ImportError:
+    threading = None
+
+try:
+    import ctypes
+except ImportError:
+    ctypes = None
 
 skipInVenv = unittest.skipIf(sys.prefix != sys.base_prefix,
                              'Test not appropriate in a venv')
@@ -317,9 +328,7 @@ class EnsurePipTest(BaseTest):
         with open(os.devnull, "rb") as f:
             self.assertEqual(f.read(), b"")
 
-    # Requesting pip fails without SSL (http://bugs.python.org/issue19744)
-    @unittest.skipIf(ssl is None, ensurepip._MISSING_SSL_MESSAGE)
-    def test_with_pip(self):
+    def do_test_with_pip(self, system_site_packages):
         rmtree(self.env_dir)
         with EnvironmentVarGuard() as envvars:
             # pip's cross-version compatibility may trigger deprecation
@@ -353,6 +362,7 @@ class EnsurePipTest(BaseTest):
                 # config in place to ensure we ignore it
                 try:
                     self.run_with_capture(venv.create, self.env_dir,
+                                          system_site_packages=system_site_packages,
                                           with_pip=True)
                 except subprocess.CalledProcessError as exc:
                     # The output this produces can be a little hard to read,
@@ -387,19 +397,36 @@ class EnsurePipTest(BaseTest):
         # We force everything to text, so unittest gives the detailed diff
         # if we get unexpected results
         err = err.decode("latin-1") # Force to text, prevent decoding errors
-        self.assertEqual(err, "")
+        # Ignore the warning:
+        #   "The directory '$HOME/.cache/pip/http' or its parent directory
+        #    is not owned by the current user and the cache has been disabled.
+        #    Please check the permissions and owner of that directory. If
+        #    executing pip with sudo, you may want sudo's -H flag."
+        # where $HOME is replaced by the HOME environment variable.
+        err = re.sub("^The directory .* or its parent directory is not owned "
+                     "by the current user .*$", "", err, flags=re.MULTILINE)
+        self.assertEqual(err.rstrip(), "")
         # Being fairly specific regarding the expected behaviour for the
         # initial bundling phase in Python 3.4. If the output changes in
         # future pip versions, this test can likely be relaxed further.
         out = out.decode("latin-1") # Force to text, prevent decoding errors
         self.assertIn("Successfully uninstalled pip", out)
         self.assertIn("Successfully uninstalled setuptools", out)
-        # Check pip is now gone from the virtual environment
-        self.assert_pip_not_installed()
+        # Check pip is now gone from the virtual environment. This only
+        # applies in the system_site_packages=False case, because in the
+        # other case, pip may still be available in the system site-packages
+        if not system_site_packages:
+            self.assert_pip_not_installed()
 
-
-def test_main():
-    run_unittest(BasicTest, EnsurePipTest)
+    # Requesting pip fails without SSL (http://bugs.python.org/issue19744)
+    @unittest.skipIf(ssl is None, ensurepip._MISSING_SSL_MESSAGE)
+    @unittest.skipUnless(threading, 'some dependencies of pip import threading'
+                                    ' module unconditionally')
+    # Issue #26610: pip/pep425tags.py requires ctypes
+    @unittest.skipUnless(ctypes, 'pip requires ctypes')
+    def test_with_pip(self):
+        self.do_test_with_pip(False)
+        self.do_test_with_pip(True)
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

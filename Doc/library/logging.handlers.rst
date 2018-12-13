@@ -4,9 +4,10 @@
 .. module:: logging.handlers
    :synopsis: Handlers for the logging module.
 
-
 .. moduleauthor:: Vinay Sajip <vinay_sajip@red-dove.com>
 .. sectionauthor:: Vinay Sajip <vinay_sajip@red-dove.com>
+
+**Source code:** :source:`Lib/logging/handlers.py`
 
 .. sidebar:: Important
 
@@ -16,8 +17,6 @@
    * :ref:`Basic Tutorial <logging-basic-tutorial>`
    * :ref:`Advanced Tutorial <logging-advanced-tutorial>`
    * :ref:`Logging Cookbook <logging-cookbook>`
-
-**Source code:** :source:`Lib/logging/handlers.py`
 
 --------------
 
@@ -81,7 +80,7 @@ sends logging output to a disk file.  It inherits the output functionality from
 
    Returns a new instance of the :class:`FileHandler` class. The specified file is
    opened and used as the stream for logging. If *mode* is not specified,
-   :const:`'a'` is used.  If *encoding* is not *None*, it is used to open the file
+   :const:`'a'` is used.  If *encoding* is not ``None``, it is used to open the file
    with that encoding.  If *delay* is true, then file opening is deferred until the
    first call to :meth:`emit`. By default, the file grows indefinitely.
 
@@ -153,11 +152,11 @@ exclusive locks - and so there is no need for such a handler. Furthermore,
 for this value.
 
 
-.. class:: WatchedFileHandler(filename[,mode[, encoding[, delay]]])
+.. class:: WatchedFileHandler(filename, mode='a', encoding=None, delay=False)
 
    Returns a new instance of the :class:`WatchedFileHandler` class. The specified
    file is opened and used as the stream for logging. If *mode* is not specified,
-   :const:`'a'` is used.  If *encoding* is not *None*, it is used to open the file
+   :const:`'a'` is used.  If *encoding* is not ``None``, it is used to open the file
    with that encoding.  If *delay* is true, then file opening is deferred until the
    first call to :meth:`emit`.  By default, the file grows indefinitely.
 
@@ -230,7 +229,7 @@ need to override.
       renamed to the destination.
 
       :param source: The source filename. This is normally the base
-                     filename, e.g. 'test.log'
+                     filename, e.g. 'test.log'.
       :param dest:   The destination filename. This is normally
                      what the source is rotated to, e.g. 'test.log.1'.
 
@@ -258,11 +257,11 @@ The :class:`RotatingFileHandler` class, located in the :mod:`logging.handlers`
 module, supports rotation of disk log files.
 
 
-.. class:: RotatingFileHandler(filename, mode='a', maxBytes=0, backupCount=0, encoding=None, delay=0)
+.. class:: RotatingFileHandler(filename, mode='a', maxBytes=0, backupCount=0, encoding=None, delay=False)
 
    Returns a new instance of the :class:`RotatingFileHandler` class. The specified
    file is opened and used as the stream for logging. If *mode* is not specified,
-   ``'a'`` is used.  If *encoding* is not *None*, it is used to open the file
+   ``'a'`` is used.  If *encoding* is not ``None``, it is used to open the file
    with that encoding.  If *delay* is true, then file opening is deferred until the
    first call to :meth:`emit`.  By default, the file grows indefinitely.
 
@@ -436,7 +435,7 @@ sends logging output to a network socket. The base class uses a TCP socket.
    .. method:: createSocket()
 
       Tries to create a socket; on failure, uses an exponential back-off
-      algorithm.  On intial failure, the handler will drop the message it was
+      algorithm.  On initial failure, the handler will drop the message it was
       trying to send.  When subsequent messages are handled by the same
       instance, it will not try connecting until some time has passed.  The
       default parameters are such that the initial delay is one second, and if
@@ -544,7 +543,7 @@ supports sending logging messages to a remote or local Unix syslog.
          (See: :issue:`12168`.) In earlier versions, the message sent to the
          syslog daemons was always terminated with a NUL byte, because early
          versions of these daemons expected a NUL terminated message - even
-         though it's not in the relevant specification (RF 5424). More recent
+         though it's not in the relevant specification (RFC 5424). More recent
          versions of these daemons don't expect the NUL byte but strip it off
          if it's there, and even more recent daemons (which adhere more closely
          to RFC 5424) pass the NUL byte on as part of the message.
@@ -853,7 +852,7 @@ supports sending logging messages to a Web server, using either ``GET`` or
    credentials, you should also specify secure=True so that your userid and
    password are not passed in cleartext across the wire.
 
-   .. versionchanged:: 3.4.3
+   .. versionchanged:: 3.5
       The *context* parameter was added.
 
    .. method:: mapLogRecord(record)
@@ -866,7 +865,7 @@ supports sending logging messages to a Web server, using either ``GET`` or
 
    .. method:: emit(record)
 
-      Sends the record to the Web server as an URL-encoded dictionary. The
+      Sends the record to the Web server as a URL-encoded dictionary. The
       :meth:`mapLogRecord` method is used to convert the record to the
       dictionary to be sent.
 
@@ -901,8 +900,8 @@ possible, while any potentially slow operations (such as sending an email via
 .. class:: QueueHandler(queue)
 
    Returns a new instance of the :class:`QueueHandler` class. The instance is
-   initialized with the queue to send messages to. The queue can be any queue-
-   like object; it's used as-is by the :meth:`enqueue` method, which needs
+   initialized with the queue to send messages to. The queue can be any
+   queue-like object; it's used as-is by the :meth:`enqueue` method, which needs
    to know how to send messages to it.
 
 
@@ -953,13 +952,20 @@ applications where threads servicing clients need to respond as quickly as
 possible, while any potentially slow operations (such as sending an email via
 :class:`SMTPHandler`) are done on a separate thread.
 
-.. class:: QueueListener(queue, *handlers)
+.. class:: QueueListener(queue, *handlers, respect_handler_level=False)
 
    Returns a new instance of the :class:`QueueListener` class. The instance is
    initialized with the queue to send messages to and a list of handlers which
-   will handle entries placed on the queue. The queue can be any queue-
-   like object; it's passed as-is to the :meth:`dequeue` method, which needs
-   to know how to get messages from it.
+   will handle entries placed on the queue. The queue can be any queue-like
+   object; it's passed as-is to the :meth:`dequeue` method, which needs
+   to know how to get messages from it. If ``respect_handler_level`` is ``True``,
+   a handler's level is respected (compared with the level for the message) when
+   deciding whether to pass messages to that handler; otherwise, the behaviour
+   is as in previous Python versions - to always pass each message to each
+   handler.
+
+   .. versionchanged:: 3.5
+      The ``respect_handler_levels`` argument was added.
 
    .. method:: dequeue(block)
 

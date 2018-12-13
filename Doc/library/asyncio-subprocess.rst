@@ -12,9 +12,9 @@ On Windows, the default event loop is :class:`SelectorEventLoop` which does not
 support subprocesses. :class:`ProactorEventLoop` should be used instead.
 Example to use it on Windows::
 
-    import asyncio, os
+    import asyncio, sys
 
-    if os.name == 'nt':
+    if sys.platform == 'win32':
         loop = asyncio.ProactorEventLoop()
         asyncio.set_event_loop(loop)
 
@@ -27,39 +27,39 @@ Example to use it on Windows::
 Create a subprocess: high-level API using Process
 -------------------------------------------------
 
-.. function:: create_subprocess_exec(\*args, stdin=None, stdout=None, stderr=None, loop=None, limit=None, \*\*kwds)
+.. coroutinefunction:: create_subprocess_exec(\*args, stdin=None, stdout=None, stderr=None, loop=None, limit=None, \*\*kwds)
 
    Create a subprocess.
 
    The *limit* parameter sets the buffer limit passed to the
-   :class:`StreamReader`. See :meth:`BaseEventLoop.subprocess_exec` for other
+   :class:`StreamReader`. See :meth:`AbstractEventLoop.subprocess_exec` for other
    parameters.
 
    Return a :class:`~asyncio.subprocess.Process` instance.
 
    This function is a :ref:`coroutine <coroutine>`.
 
-.. function:: create_subprocess_shell(cmd, stdin=None, stdout=None, stderr=None, loop=None, limit=None, \*\*kwds)
+.. coroutinefunction:: create_subprocess_shell(cmd, stdin=None, stdout=None, stderr=None, loop=None, limit=None, \*\*kwds)
 
    Run the shell command *cmd*.
 
    The *limit* parameter sets the buffer limit passed to the
-   :class:`StreamReader`. See :meth:`BaseEventLoop.subprocess_shell` for other
+   :class:`StreamReader`. See :meth:`AbstractEventLoop.subprocess_shell` for other
    parameters.
 
    Return a :class:`~asyncio.subprocess.Process` instance.
 
    It is the application's responsibility to ensure that all whitespace and
    metacharacters are quoted appropriately to avoid `shell injection
-   <http://en.wikipedia.org/wiki/Shell_injection#Shell_injection>`_
+   <https://en.wikipedia.org/wiki/Shell_injection#Shell_injection>`_
    vulnerabilities. The :func:`shlex.quote` function can be used to properly
    escape whitespace and shell metacharacters in strings that are going to be
    used to construct shell commands.
 
    This function is a :ref:`coroutine <coroutine>`.
 
-Use the :meth:`BaseEventLoop.connect_read_pipe` and
-:meth:`BaseEventLoop.connect_write_pipe` methods to connect pipes.
+Use the :meth:`AbstractEventLoop.connect_read_pipe` and
+:meth:`AbstractEventLoop.connect_write_pipe` methods to connect pipes.
 
 
 Create a subprocess: low-level API using subprocess.Popen
@@ -67,7 +67,7 @@ Create a subprocess: low-level API using subprocess.Popen
 
 Run subprocesses asynchronously using the :mod:`subprocess` module.
 
-.. method:: BaseEventLoop.subprocess_exec(protocol_factory, \*args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, \*\*kwargs)
+.. coroutinemethod:: AbstractEventLoop.subprocess_exec(protocol_factory, \*args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, \*\*kwargs)
 
    Create a subprocess from one or more string arguments (character strings or
    bytes strings encoded to the :ref:`filesystem encoding
@@ -80,26 +80,26 @@ Run subprocesses asynchronously using the :mod:`subprocess` module.
    however, where :class:`~subprocess.Popen` takes a single argument which is
    list of strings, :func:`subprocess_exec` takes multiple string arguments.
 
-   The *protocol_factory* must instanciate a subclass of the
+   The *protocol_factory* must instantiate a subclass of the
    :class:`asyncio.SubprocessProtocol` class.
 
    Other parameters:
 
    * *stdin*: Either a file-like object representing the pipe to be connected
      to the subprocess's standard input stream using
-     :meth:`~BaseEventLoop.connect_write_pipe`, or the constant
+     :meth:`~AbstractEventLoop.connect_write_pipe`, or the constant
      :const:`subprocess.PIPE` (the default). By default a new pipe will be
      created and connected.
 
    * *stdout*: Either a file-like object representing the pipe to be connected
      to the subprocess's standard output stream using
-     :meth:`~BaseEventLoop.connect_read_pipe`, or the constant
+     :meth:`~AbstractEventLoop.connect_read_pipe`, or the constant
      :const:`subprocess.PIPE` (the default). By default a new pipe will be
      created and connected.
 
    * *stderr*: Either a file-like object representing the pipe to be connected
      to the subprocess's standard error stream using
-     :meth:`~BaseEventLoop.connect_read_pipe`, or one of the constants
+     :meth:`~AbstractEventLoop.connect_read_pipe`, or one of the constants
      :const:`subprocess.PIPE` (the default) or :const:`subprocess.STDOUT`.
      By default a new pipe will be created and connected. When
      :const:`subprocess.STDOUT` is specified, the subprocess's standard error
@@ -116,17 +116,17 @@ Run subprocesses asynchronously using the :mod:`subprocess` module.
 
    See the constructor of the :class:`subprocess.Popen` class for parameters.
 
-.. method:: BaseEventLoop.subprocess_shell(protocol_factory, cmd, \*, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, \*\*kwargs)
+.. coroutinemethod:: AbstractEventLoop.subprocess_shell(protocol_factory, cmd, \*, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, \*\*kwargs)
 
    Create a subprocess from *cmd*, which is a character string or a bytes
    string encoded to the :ref:`filesystem encoding <filesystem-encoding>`,
    using the platform's "shell" syntax. This is similar to the standard library
    :class:`subprocess.Popen` class called with ``shell=True``.
 
-   The *protocol_factory* must instanciate a subclass of the
+   The *protocol_factory* must instantiate a subclass of the
    :class:`asyncio.SubprocessProtocol` class.
 
-   See :meth:`~BaseEventLoop.subprocess_exec` for more details about
+   See :meth:`~AbstractEventLoop.subprocess_exec` for more details about
    the remaining arguments.
 
    Returns a pair of ``(transport, protocol)``, where *transport* is an
@@ -134,7 +134,7 @@ Run subprocesses asynchronously using the :mod:`subprocess` module.
 
    It is the application's responsibility to ensure that all whitespace and
    metacharacters are quoted appropriately to avoid `shell injection
-   <http://en.wikipedia.org/wiki/Shell_injection#Shell_injection>`_
+   <https://en.wikipedia.org/wiki/Shell_injection#Shell_injection>`_
    vulnerabilities. The :func:`shlex.quote` function can be used to properly
    escape whitespace and shell metacharacters in strings that are going to be
    used to construct shell commands.
@@ -143,8 +143,8 @@ Run subprocesses asynchronously using the :mod:`subprocess` module.
 
 .. seealso::
 
-   The :meth:`BaseEventLoop.connect_read_pipe` and
-   :meth:`BaseEventLoop.connect_write_pipe` methods.
+   The :meth:`AbstractEventLoop.connect_read_pipe` and
+   :meth:`AbstractEventLoop.connect_write_pipe` methods.
 
 
 Constants
@@ -179,7 +179,7 @@ Process
    :func:`create_subprocess_shell` function.
 
    The API of the :class:`~asyncio.subprocess.Process` class was designed to be
-   closed the API of the :class:`subprocess.Popen` class, but they are some
+   close to the API of the :class:`subprocess.Popen` class, but there are some
    differences:
 
    * There is no explicit :meth:`~subprocess.Popen.poll` method
@@ -193,7 +193,10 @@ Process
      :meth:`~subprocess.Popen.wait` method of the :class:`~subprocess.Popen`
      class is implemented as a busy loop.
 
-   .. method:: wait()
+   This class is :ref:`not thread safe <asyncio-multithreading>`. See also the
+   :ref:`Subprocess and threads <asyncio-subprocess-threads>` section.
+
+   .. coroutinemethod:: wait()
 
       Wait for child process to terminate.  Set and return :attr:`returncode`
       attribute.
@@ -207,7 +210,7 @@ Process
          blocks waiting for the OS pipe buffer to accept more data. Use the
          :meth:`communicate` method when using pipes to avoid that.
 
-   .. method:: communicate(input=None)
+   .. coroutinemethod:: communicate(input=None)
 
       Interact with process: Send data to stdin.  Read data from stdout and
       stderr, until end-of-file is reached.  Wait for process to terminate.
@@ -300,7 +303,7 @@ Process
 .. _asyncio-subprocess-threads:
 
 Subprocess and threads
-======================
+----------------------
 
 asyncio supports running subprocesses from different threads, but there
 are limits:
@@ -310,6 +313,8 @@ are limits:
   subprocesses from other threads. Call the :func:`get_child_watcher`
   function in the main thread to instantiate the child watcher.
 
+The :class:`asyncio.subprocess.Process` class is not thread safe.
+
 .. seealso::
 
    The :ref:`Concurrency and multithreading in asyncio
@@ -317,14 +322,14 @@ are limits:
 
 
 Subprocess examples
-===================
+-------------------
 
 Subprocess using transport and protocol
----------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Example of a subprocess protocol using to get the output of a subprocess and to
 wait for the subprocess exit. The subprocess is created by the
-:meth:`BaseEventLoop.subprocess_exec` method::
+:meth:`AbstractEventLoop.subprocess_exec` method::
 
     import asyncio
     import sys
@@ -376,7 +381,7 @@ wait for the subprocess exit. The subprocess is created by the
 
 
 Subprocess using streams
-------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Example using the :class:`~asyncio.subprocess.Process` class to control the
 subprocess and the :class:`StreamReader` class to read from the standard

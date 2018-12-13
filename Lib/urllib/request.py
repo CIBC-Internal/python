@@ -91,6 +91,7 @@ import os
 import posixpath
 import re
 import socket
+import string
 import sys
 import time
 import collections
@@ -120,9 +121,10 @@ __all__ = [
     'Request', 'OpenerDirector', 'BaseHandler', 'HTTPDefaultErrorHandler',
     'HTTPRedirectHandler', 'HTTPCookieProcessor', 'ProxyHandler',
     'HTTPPasswordMgr', 'HTTPPasswordMgrWithDefaultRealm',
-    'AbstractBasicAuthHandler', 'HTTPBasicAuthHandler', 'ProxyBasicAuthHandler',
-    'AbstractDigestAuthHandler', 'HTTPDigestAuthHandler', 'ProxyDigestAuthHandler',
-    'HTTPHandler', 'FileHandler', 'FTPHandler', 'CacheFTPHandler', 'DataHandler',
+    'HTTPPasswordMgrWithPriorAuth', 'AbstractBasicAuthHandler',
+    'HTTPBasicAuthHandler', 'ProxyBasicAuthHandler', 'AbstractDigestAuthHandler',
+    'HTTPDigestAuthHandler', 'ProxyDigestAuthHandler', 'HTTPHandler',
+    'FileHandler', 'FTPHandler', 'CacheFTPHandler', 'DataHandler',
     'UnknownHandler', 'HTTPErrorProcessor',
     # Functions
     'urlopen', 'install_opener', 'build_opener',
@@ -229,6 +231,7 @@ def urlretrieve(url, filename=None, reporthook=None, data=None):
     return result
 
 def urlcleanup():
+    """Clean up temporary files from urlretrieve calls."""
     for temp_file in _url_tempfiles:
         try:
             os.unlink(temp_file)
@@ -614,8 +617,12 @@ class HTTPRedirectHandler(BaseHandler):
         # from the user (of urllib.request, in this case).  In practice,
         # essentially all clients do redirect in this case, so we do
         # the same.
-        # be conciliant with URIs containing a space
+
+        # Be conciliant with URIs containing a space.  This is mainly
+        # redundant with the more complete encoding done in http_error_302(),
+        # but it is kept for compatibility with other callers.
         newurl = newurl.replace(' ', '%20')
+
         CONTENT_HEADERS = ("content-length", "content-type")
         newheaders = dict((k, v) for k, v in req.headers.items()
                           if k.lower() not in CONTENT_HEADERS)
@@ -650,11 +657,16 @@ class HTTPRedirectHandler(BaseHandler):
                 "%s - Redirection to url '%s' is not allowed" % (msg, newurl),
                 headers, fp)
 
-        if not urlparts.path:
+        if not urlparts.path and urlparts.netloc:
             urlparts = list(urlparts)
             urlparts[2] = "/"
         newurl = urlunparse(urlparts)
 
+        # http.client.parse_headers() decodes as ISO-8859-1.  Recover the
+        # original bytes and percent-encode non-ASCII bytes, and any special
+        # characters such as the space.
+        newurl = quote(
+            newurl, encoding="iso-8859-1", safe=string.punctuation)
         newurl = urljoin(req.full_url, newurl)
 
         # XXX Probably want to forget about the state of the current
@@ -835,6 +847,37 @@ class HTTPPasswordMgrWithDefaultRealm(HTTPPasswordMgr):
         return HTTPPasswordMgr.find_user_password(self, None, authuri)
 
 
+class HTTPPasswordMgrWithPriorAuth(HTTPPasswordMgrWithDefaultRealm):
+
+    def __init__(self, *args, **kwargs):
+        self.authenticated = {}
+        super().__init__(*args, **kwargs)
+
+    def add_password(self, realm, uri, user, passwd, is_authenticated=False):
+        self.update_authenticated(uri, is_authenticated)
+        # Add a default for prior auth requests
+        if realm is not None:
+            super().add_password(None, uri, user, passwd)
+        super().add_password(realm, uri, user, passwd)
+
+    def update_authenticated(self, uri, is_authenticated=False):
+        # uri could be a single URI or a sequence
+        if isinstance(uri, str):
+            uri = [uri]
+
+        for default_port in True, False:
+            for u in uri:
+                reduced_uri = self.reduce_uri(u, default_port)
+                self.authenticated[reduced_uri] = is_authenticated
+
+    def is_authenticated(self, authuri):
+        for default_port in True, False:
+            reduced_authuri = self.reduce_uri(authuri, default_port)
+            for uri in self.authenticated:
+                if self.is_suburi(uri, reduced_authuri):
+                    return self.authenticated[uri]
+
+
 class AbstractBasicAuthHandler:
 
     # XXX this allows for multiple auth-schemes, but will stupidly pick
@@ -888,6 +931,31 @@ class AbstractBasicAuthHandler:
             return self.parent.open(req, timeout=req.timeout)
         else:
             return None
+
+    def http_request(self, req):
+        if (not hasattr(self.passwd, 'is_authenticated') or
+           not self.passwd.is_authenticated(req.full_url)):
+            return req
+
+        if not req.has_header('Authorization'):
+            user, passwd = self.passwd.find_user_password(None, req.full_url)
+            credentials = '{0}:{1}'.format(user, passwd).encode()
+            auth_str = base64.standard_b64encode(credentials).decode()
+            req.add_unredirected_header('Authorization',
+                                        'Basic {}'.format(auth_str.strip()))
+        return req
+
+    def http_response(self, req, response):
+        if hasattr(self.passwd, 'is_authenticated'):
+            if 200 <= response.code < 300:
+                self.passwd.update_authenticated(req.full_url, True)
+            else:
+                self.passwd.update_authenticated(req.full_url, False)
+        return response
+
+    https_request = http_request
+    https_response = http_response
+
 
 
 class HTTPBasicAuthHandler(AbstractBasicAuthHandler, BaseHandler):
@@ -1053,6 +1121,9 @@ class AbstractDigestAuthHandler:
         elif algorithm == 'SHA':
             H = lambda x: hashlib.sha1(x.encode("ascii")).hexdigest()
         # XXX MD5-sess
+        else:
+            raise ValueError("Unsupported digest authentication "
+                             "algorithm %r" % algorithm)
         KD = lambda s, d: H("%s:%s" % (s, d))
         return H, KD
 
@@ -1150,6 +1221,7 @@ class AbstractHTTPHandler(BaseHandler):
 
         # will parse host:port
         h = http_class(host, timeout=req.timeout, **http_conn_args)
+        h.set_debuglevel(self._debuglevel)
 
         headers = dict(req.unredirected_hdrs)
         headers.update(dict((k, v) for k, v in req.headers.items()
@@ -1352,7 +1424,6 @@ class FileHandler(BaseHandler):
                     origurl = 'file://' + filename
                 return addinfourl(open(localfile, 'rb'), headers, origurl)
         except OSError as exp:
-            # users shouldn't expect OSErrors coming from urlopen()
             raise URLError(exp)
         raise URLError('file not on local host')
 
@@ -1522,14 +1593,10 @@ else:
         of the 'file' scheme; not recommended for general use."""
         return quote(pathname)
 
-# This really consists of two pieces:
-# (1) a class which handles opening of all sorts of URLs
-#     (plus assorted utilities etc.)
-# (2) a set of functions for parsing URLs
-# XXX Should these be separated out into different modules?
-
 
 ftpcache = {}
+
+
 class URLopener:
     """Class to open URLs.
     This is a class rather than just a subroutine because we may need
@@ -1553,7 +1620,7 @@ class URLopener:
         self.proxies = proxies
         self.key_file = x509.get('key_file')
         self.cert_file = x509.get('cert_file')
-        self.addheaders = [('User-Agent', self.version)]
+        self.addheaders = [('User-Agent', self.version), ('Accept', '*/*')]
         self.__tempfiles = []
         self.__unlink = os.unlink # See cleanup()
         self.tempcache = None
@@ -1992,18 +2059,20 @@ class FancyURLopener(URLopener):
     def http_error_302(self, url, fp, errcode, errmsg, headers, data=None):
         """Error 302 -- relocated (temporarily)."""
         self.tries += 1
-        if self.maxtries and self.tries >= self.maxtries:
-            if hasattr(self, "http_error_500"):
-                meth = self.http_error_500
-            else:
-                meth = self.http_error_default
+        try:
+            if self.maxtries and self.tries >= self.maxtries:
+                if hasattr(self, "http_error_500"):
+                    meth = self.http_error_500
+                else:
+                    meth = self.http_error_default
+                return meth(url, fp, 500,
+                            "Internal Server Error: Redirect Recursion",
+                            headers)
+            result = self.redirect_internal(url, fp, errcode, errmsg,
+                                            headers, data)
+            return result
+        finally:
             self.tries = 0
-            return meth(url, fp, 500,
-                        "Internal Server Error: Redirect Recursion", headers)
-        result = self.redirect_internal(url, fp, errcode, errmsg, headers,
-                                        data)
-        self.tries = 0
-        return result
 
     def redirect_internal(self, url, fp, errcode, errmsg, headers, data):
         if 'location' in headers:
@@ -2240,7 +2309,11 @@ class ftpwrapper:
         self.timeout = timeout
         self.refcount = 0
         self.keepalive = persistent
-        self.init()
+        try:
+            self.init()
+        except:
+            self.close()
+            raise
 
     def init(self):
         import ftplib
@@ -2328,19 +2401,41 @@ def getproxies_environment():
 
     """
     proxies = {}
+    # in order to prefer lowercase variables, process environment in
+    # two passes: first matches any, second pass matches lowercase only
     for name, value in os.environ.items():
         name = name.lower()
         if value and name[-6:] == '_proxy':
             proxies[name[:-6]] = value
+    # CVE-2016-1000110 - If we are running as CGI script, forget HTTP_PROXY
+    # (non-all-lowercase) as it may be set from the web server by a "Proxy:"
+    # header from the client
+    # If "proxy" is lowercase, it will still be used thanks to the next block
+    if 'REQUEST_METHOD' in os.environ:
+        proxies.pop('http', None)
+    for name, value in os.environ.items():
+        if name[-6:] == '_proxy':
+            name = name.lower()
+            if value:
+                proxies[name[:-6]] = value
+            else:
+                proxies.pop(name[:-6], None)
     return proxies
 
-def proxy_bypass_environment(host):
+def proxy_bypass_environment(host, proxies=None):
     """Test if proxies should not be used for a particular host.
 
-    Checks the environment for a variable named no_proxy, which should
-    be a list of DNS suffixes separated by commas, or '*' for all hosts.
+    Checks the proxy dict for the value of no_proxy, which should
+    be a list of comma separated DNS suffixes, or '*' for all hosts.
+
     """
-    no_proxy = os.environ.get('no_proxy', '') or os.environ.get('NO_PROXY', '')
+    if proxies is None:
+        proxies = getproxies_environment()
+    # don't bypass, if no_proxy isn't specified
+    try:
+        no_proxy = proxies['no']
+    except KeyError:
+        return 0
     # '*' is special case for always bypass
     if no_proxy == '*':
         return 1
@@ -2349,8 +2444,13 @@ def proxy_bypass_environment(host):
     # check if the host ends with any of the DNS suffixes
     no_proxy_list = [proxy.strip() for proxy in no_proxy.split(',')]
     for name in no_proxy_list:
-        if name and (hostonly.endswith(name) or host.endswith(name)):
-            return 1
+        if name:
+            name = name.lstrip('.')  # ignore leading dots
+            name = re.escape(name)
+            pattern = r'(.+\.)?%s$' % name
+            if (re.match(pattern, hostonly, re.I)
+                    or re.match(pattern, host, re.I)):
+                return 1
     # otherwise, don't bypass
     return 0
 
@@ -2435,8 +2535,15 @@ if sys.platform == 'darwin':
 
 
     def proxy_bypass(host):
-        if getproxies_environment():
-            return proxy_bypass_environment(host)
+        """Return True, if host should be bypassed.
+
+        Checks proxy settings gathered from the environment, if specified,
+        or from the MacOSX framework SystemConfiguration.
+
+        """
+        proxies = getproxies_environment()
+        if proxies:
+            return proxy_bypass_environment(host, proxies)
         else:
             return proxy_bypass_macosx_sysconf(host)
 
@@ -2550,14 +2657,15 @@ elif os.name == 'nt':
         return 0
 
     def proxy_bypass(host):
-        """Return a dictionary of scheme -> proxy server URL mappings.
+        """Return True, if host should be bypassed.
 
-        Returns settings gathered from the environment, if specified,
+        Checks proxy settings gathered from the environment, if specified,
         or the registry.
 
         """
-        if getproxies_environment():
-            return proxy_bypass_environment(host)
+        proxies = getproxies_environment()
+        if proxies:
+            return proxy_bypass_environment(host, proxies)
         else:
             return proxy_bypass_registry(host)
 

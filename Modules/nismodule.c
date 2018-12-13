@@ -173,6 +173,7 @@ nis_match (PyObject *self, PyObject *args, PyObject *kwdict)
         return NULL;
     if ((bkey = PyUnicode_EncodeFSDefault(ukey)) == NULL)
         return NULL;
+    /* check for embedded null bytes */
     if (PyBytes_AsStringAndSize(bkey, &key, &keylen) == -1) {
         Py_DECREF(bkey);
         return NULL;
@@ -456,8 +457,8 @@ static struct PyModuleDef nismodule = {
     NULL
 };
 
-PyObject*
-PyInit_nis (void)
+PyMODINIT_FUNC
+PyInit_nis(void)
 {
     PyObject *m, *d;
     m = PyModule_Create(&nismodule);

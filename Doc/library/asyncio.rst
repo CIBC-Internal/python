@@ -1,8 +1,12 @@
-:mod:`asyncio` -- Asynchronous I/O, event loop, coroutines and tasks
-====================================================================
+:mod:`asyncio` --- Asynchronous I/O, event loop, coroutines and tasks
+=====================================================================
 
 .. module:: asyncio
    :synopsis: Asynchronous I/O, event loop, coroutines and tasks.
+
+.. versionadded:: 3.4
+
+**Source code:** :source:`Lib/asyncio/`
 
 .. note::
 
@@ -10,10 +14,6 @@
    :term:`provisional basis <provisional package>`. Backwards incompatible
    changes (up to and including removal of the module) may occur if deemed
    necessary by the core developers.
-
-.. versionadded:: 3.4
-
-**Source code:** :source:`Lib/asyncio/`
 
 --------------
 
@@ -46,6 +46,11 @@ Here is a more detailed list of the package contents:
   you absolutely, positively have to use a library that makes blocking
   I/O calls.
 
+Asynchronous programming is more complex than classical "sequential"
+programming: see the :ref:`Develop with asyncio <asyncio-dev>` page which lists
+common traps and explains how to avoid them. :ref:`Enable the debug mode
+<asyncio-debug-mode>` during development to detect common issues.
+
 Table of contents:
 
 .. toctree::
@@ -58,6 +63,7 @@ Table of contents:
    asyncio-stream.rst
    asyncio-subprocess.rst
    asyncio-sync.rst
+   asyncio-queue.rst
    asyncio-dev.rst
 
 .. seealso::

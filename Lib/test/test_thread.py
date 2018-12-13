@@ -20,6 +20,7 @@ def verbose_print(arg):
         with _print_mutex:
             print(arg)
 
+
 class BasicThreadTest(unittest.TestCase):
 
     def setUp(self):
@@ -30,6 +31,9 @@ class BasicThreadTest(unittest.TestCase):
         self.created = 0
         self.running = 0
         self.next_ident = 0
+
+        key = support.threading_setup()
+        self.addCleanup(support.threading_cleanup, *key)
 
 
 class ThreadRunningTests(BasicThreadTest):
@@ -252,9 +256,5 @@ class TestForkInThread(unittest.TestCase):
             pass
 
 
-def test_main():
-    support.run_unittest(ThreadRunningTests, BarrierTest, LockTests,
-                         TestForkInThread)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

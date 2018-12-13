@@ -20,7 +20,7 @@ On the real line, there are functions to compute uniform, normal (Gaussian),
 lognormal, negative exponential, gamma, and beta distributions. For generating
 distributions of angles, the von Mises distribution is available.
 
-Almost all module functions depend on the basic function :func:`random`, which
+Almost all module functions depend on the basic function :func:`.random`, which
 generates a random float uniformly in the semi-open range [0.0, 1.0).  Python
 uses the Mersenne Twister as the core generator.  It produces 53-bit precision
 floats and has a period of 2\*\*19937-1.  The underlying implementation in C is
@@ -34,9 +34,9 @@ instance of the :class:`random.Random` class.  You can instantiate your own
 instances of :class:`Random` to get generators that don't share state.
 
 Class :class:`Random` can also be subclassed if you want to use a different
-basic generator of your own devising: in that case, override the :meth:`random`,
-:meth:`seed`, :meth:`getstate`, and :meth:`setstate` methods.
-Optionally, a new generator can supply a :meth:`getrandbits` method --- this
+basic generator of your own devising: in that case, override the :meth:`~Random.random`,
+:meth:`~Random.seed`, :meth:`~Random.getstate`, and :meth:`~Random.setstate` methods.
+Optionally, a new generator can supply a :meth:`~Random.getrandbits` method --- this
 allows :meth:`randrange` to produce selections over an arbitrarily large range.
 
 The :mod:`random` module also provides the :class:`SystemRandom` class which
@@ -46,8 +46,7 @@ from sources provided by the operating system.
 .. warning::
 
    The pseudo-random generators of this module should not be used for
-   security purposes.  Use :func:`os.urandom` or :class:`SystemRandom` if
-   you require a cryptographically secure pseudo-random number generator.
+   security purposes.
 
 
 Bookkeeping functions:
@@ -64,8 +63,11 @@ Bookkeeping functions:
    If *a* is an int, it is used directly.
 
    With version 2 (the default), a :class:`str`, :class:`bytes`, or :class:`bytearray`
-   object gets converted to an :class:`int` and all of its bits are used.  With version 1,
-   the :func:`hash` of *a* is used instead.
+   object gets converted to an :class:`int` and all of its bits are used.
+
+   With version 1 (provided for reproducing random sequences from older versions
+   of Python), the algorithm for :class:`str` and :class:`bytes` generates a
+   narrower range of seeds.
 
    .. versionchanged:: 3.2
       Moved to the version 2 scheme which uses all of the bits in a string seed.
@@ -126,7 +128,7 @@ Functions for sequences:
 
    Shuffle the sequence *x* in place. The optional argument *random* is a
    0-argument function returning a random float in [0.0, 1.0); by default, this is
-   the function :func:`random`.
+   the function :func:`.random`.
 
    Note that for even rather small ``len(x)``, the total number of permutations of
    *x* is larger than the period of most random number generators; this implies
@@ -264,11 +266,11 @@ Alternative Generator:
 
    M. Matsumoto and T. Nishimura, "Mersenne Twister: A 623-dimensionally
    equidistributed uniform pseudorandom number generator", ACM Transactions on
-   Modeling and Computer Simulation Vol. 8, No. 1, January pp.3-30 1998.
+   Modeling and Computer Simulation Vol. 8, No. 1, January pp.3--30 1998.
 
 
    `Complementary-Multiply-with-Carry recipe
-   <http://code.activestate.com/recipes/576707/>`_ for a compatible alternative
+   <https://code.activestate.com/recipes/576707/>`_ for a compatible alternative
    random number generator with a long period and comparatively simple update
    operations.
 
@@ -286,7 +288,7 @@ change across Python versions, but two aspects are guaranteed not to change:
 * If a new seeding method is added, then a backward compatible seeder will be
   offered.
 
-* The generator's :meth:`random` method will continue to produce the same
+* The generator's :meth:`~Random.random` method will continue to produce the same
   sequence when the compatible seeder is given the same seed.
 
 .. _random-examples:
@@ -326,6 +328,9 @@ population with repeats::
 
     >>> weighted_choices = [('Red', 3), ('Blue', 2), ('Yellow', 1), ('Green', 4)]
     >>> population = [val for val, cnt in weighted_choices for i in range(cnt)]
+    >>> population
+    ['Red', 'Red', 'Red', 'Blue', 'Blue', 'Yellow', 'Green', 'Green', 'Green', 'Green']
+
     >>> random.choice(population)
     'Green'
 
@@ -335,6 +340,9 @@ with :func:`itertools.accumulate`, and then locate the random value with
 
     >>> choices, weights = zip(*weighted_choices)
     >>> cumdist = list(itertools.accumulate(weights))
+    >>> cumdist            # [3, 3+2, 3+2+1, 3+2+1+4]
+    [3, 5, 6, 10]
+
     >>> x = random.random() * cumdist[-1]
     >>> choices[bisect.bisect(cumdist, x)]
     'Blue'

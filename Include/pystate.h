@@ -134,6 +134,9 @@ typedef struct _ts {
     void (*on_delete)(void *);
     void *on_delete_data;
 
+    PyObject *coroutine_wrapper;
+    int in_coroutine_wrapper;
+
     /* XXX signal handlers should also be here */
 
 } PyThreadState;
@@ -165,7 +168,15 @@ PyAPI_FUNC(void) PyThreadState_DeleteCurrent(void);
 PyAPI_FUNC(void) _PyGILState_Reinit(void);
 #endif
 
+/* Return the current thread state. The global interpreter lock must be held.
+ * When the current thread state is NULL, this issues a fatal error (so that
+ * the caller needn't check for NULL). */
 PyAPI_FUNC(PyThreadState *) PyThreadState_Get(void);
+
+/* Similar to PyThreadState_Get(), but don't issue a fatal error
+ * if it is NULL. */
+PyAPI_FUNC(PyThreadState *) _PyThreadState_UncheckedGet(void);
+
 PyAPI_FUNC(PyThreadState *) PyThreadState_Swap(PyThreadState *);
 PyAPI_FUNC(PyObject *) PyThreadState_GetDict(void);
 PyAPI_FUNC(int) PyThreadState_SetAsyncExc(long, PyObject *);
@@ -175,15 +186,12 @@ PyAPI_FUNC(int) PyThreadState_SetAsyncExc(long, PyObject *);
 
 /* Assuming the current thread holds the GIL, this is the
    PyThreadState for the current thread. */
-#ifndef Py_LIMITED_API
+#ifdef Py_BUILD_CORE
 PyAPI_DATA(_Py_atomic_address) _PyThreadState_Current;
-#endif
-
-#if defined(Py_DEBUG) || defined(Py_LIMITED_API)
-#define PyThreadState_GET() PyThreadState_Get()
+#  define PyThreadState_GET() \
+             ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
 #else
-#define PyThreadState_GET() \
-    ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
+#  define PyThreadState_GET() PyThreadState_Get()
 #endif
 
 typedef

@@ -258,24 +258,20 @@ class _Unframer:
 
 # Tools used for pickling.
 
-def _getattribute(obj, name, allow_qualname=False):
-    dotted_path = name.split(".")
-    if not allow_qualname and len(dotted_path) > 1:
-        raise AttributeError("Can't get qualified attribute {!r} on {!r}; " +
-                             "use protocols >= 4 to enable support"
-                             .format(name, obj))
-    for subpath in dotted_path:
+def _getattribute(obj, name):
+    for subpath in name.split('.'):
         if subpath == '<locals>':
             raise AttributeError("Can't get local attribute {!r} on {!r}"
                                  .format(name, obj))
         try:
+            parent = obj
             obj = getattr(obj, subpath)
         except AttributeError:
             raise AttributeError("Can't get attribute {!r} on {!r}"
                                  .format(name, obj))
-    return obj
+    return obj, parent
 
-def whichmodule(obj, name, allow_qualname=False):
+def whichmodule(obj, name):
     """Find the module an object belong to."""
     module_name = getattr(obj, '__module__', None)
     if module_name is not None:
@@ -286,7 +282,7 @@ def whichmodule(obj, name, allow_qualname=False):
         if module_name == '__main__' or module is None:
             continue
         try:
-            if _getattribute(module, name, allow_qualname) is obj:
+            if _getattribute(module, name)[0] is obj:
                 return module_name
         except AttributeError:
             pass
@@ -362,7 +358,7 @@ class _Pickler:
 
         The *file* argument must have a write() method that accepts a
         single bytes argument. It can thus be a file object opened for
-        binary writing, a io.BytesIO instance, or any other custom
+        binary writing, an io.BytesIO instance, or any other custom
         object that meets this interface.
 
         If *fix_imports* is True and *protocol* is less than 3, pickle
@@ -533,7 +529,11 @@ class _Pickler:
             self.save(pid, save_persistent_id=False)
             self.write(BINPERSID)
         else:
-            self.write(PERSID + str(pid).encode("ascii") + b'\n')
+            try:
+                self.write(PERSID + str(pid).encode("ascii") + b'\n')
+            except UnicodeEncodeError:
+                raise PicklingError(
+                    "persistent IDs in protocol 0 must be ASCII strings")
 
     def save_reduce(self, func, args, state=None, listitems=None,
                     dictitems=None, obj=None):
@@ -899,16 +899,16 @@ class _Pickler:
         write = self.write
         memo = self.memo
 
-        if name is None and self.proto >= 4:
+        if name is None:
             name = getattr(obj, '__qualname__', None)
         if name is None:
             name = obj.__name__
 
-        module_name = whichmodule(obj, name, allow_qualname=self.proto >= 4)
+        module_name = whichmodule(obj, name)
         try:
             __import__(module_name, level=0)
             module = sys.modules[module_name]
-            obj2 = _getattribute(module, name, allow_qualname=self.proto >= 4)
+            obj2, parent = _getattribute(module, name)
         except (ImportError, KeyError, AttributeError):
             raise PicklingError(
                 "Can't pickle %r: it's not found as %s.%s" %
@@ -930,11 +930,16 @@ class _Pickler:
                 else:
                     write(EXT4 + pack("<i", code))
                 return
+        lastname = name.rpartition('.')[2]
+        if parent is module:
+            name = lastname
         # Non-ASCII identifiers are supported only with protocols >= 3.
         if self.proto >= 4:
             self.save(module_name)
             self.save(name)
             write(STACK_GLOBAL)
+        elif parent is not module:
+            self.save_reduce(getattr, (parent, lastname))
         elif self.proto >= 3:
             write(GLOBAL + bytes(module_name, "utf-8") + b'\n' +
                   bytes(name, "utf-8") + b'\n')
@@ -944,7 +949,7 @@ class _Pickler:
                 r_import_mapping = _compat_pickle.REVERSE_IMPORT_MAPPING
                 if (module_name, name) in r_name_mapping:
                     module_name, name = r_name_mapping[(module_name, name)]
-                if module_name in r_import_mapping:
+                elif module_name in r_import_mapping:
                     module_name = r_import_mapping[module_name]
             try:
                 write(GLOBAL + bytes(module_name, "ascii") + b'\n' +
@@ -983,7 +988,7 @@ class _Unpickler:
         The argument *file* must have two methods, a read() method that
         takes an integer argument, and a readline() method that requires
         no arguments.  Both methods should return bytes.  Thus *file*
-        can be a binary file object opened for reading, a io.BytesIO
+        can be a binary file object opened for reading, an io.BytesIO
         object, or any other custom object that meets this interface.
 
         The file-like object must have two methods, a read() method
@@ -994,7 +999,7 @@ class _Unpickler:
         meets this interface.
 
         Optional keyword arguments are *fix_imports*, *encoding* and
-        *errors*, which are used to control compatiblity support for
+        *errors*, which are used to control compatibility support for
         pickle stream generated by Python 2.  If *fix_imports* is True,
         pickle will try to map the old Python 2 names to the new names
         used in Python 3.  The *encoding* and *errors* tell pickle how
@@ -1074,7 +1079,11 @@ class _Unpickler:
     dispatch[FRAME[0]] = load_frame
 
     def load_persid(self):
-        pid = self.readline()[:-1].decode("ascii")
+        try:
+            pid = self.readline()[:-1].decode("ascii")
+        except UnicodeDecodeError:
+            raise UnpicklingError(
+                "persistent IDs in protocol 0 must be ASCII strings")
         self.append(self.persistent_load(pid))
     dispatch[PERSID[0]] = load_persid
 
@@ -1203,6 +1212,14 @@ class _Unpickler:
                                   "of %d bytes" % maxsize)
         self.append(str(self.read(len), 'utf-8', 'surrogatepass'))
     dispatch[BINUNICODE8[0]] = load_binunicode8
+
+    def load_binbytes8(self):
+        len, = unpack('<Q', self.read(8))
+        if len > maxsize:
+            raise UnpicklingError("BINBYTES8 exceeds system's maximum size "
+                                  "of %d bytes" % maxsize)
+        self.append(self.read(len))
+    dispatch[BINBYTES8[0]] = load_binbytes8
 
     def load_short_binstring(self):
         len = self.read(1)[0]
@@ -1370,23 +1387,19 @@ class _Unpickler:
         if self.proto < 3 and self.fix_imports:
             if (module, name) in _compat_pickle.NAME_MAPPING:
                 module, name = _compat_pickle.NAME_MAPPING[(module, name)]
-            if module in _compat_pickle.IMPORT_MAPPING:
+            elif module in _compat_pickle.IMPORT_MAPPING:
                 module = _compat_pickle.IMPORT_MAPPING[module]
         __import__(module, level=0)
-        return _getattribute(sys.modules[module], name,
-                             allow_qualname=self.proto >= 4)
+        if self.proto >= 4:
+            return _getattribute(sys.modules[module], name)[0]
+        else:
+            return getattr(sys.modules[module], name)
 
     def load_reduce(self):
         stack = self.stack
         args = stack.pop()
         func = stack[-1]
-        try:
-            value = func(*args)
-        except:
-            print(sys.exc_info())
-            print(func, args)
-            raise
-        stack[-1] = value
+        stack[-1] = func(*args)
     dispatch[REDUCE[0]] = load_reduce
 
     def load_pop(self):

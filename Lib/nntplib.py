@@ -165,7 +165,7 @@ ArticleInfo = collections.namedtuple('ArticleInfo',
 
 # Helper function(s)
 def decode_header(header_str):
-    """Takes an unicode string representing a munged header value
+    """Takes a unicode string representing a munged header value
     and decodes it as a (possibly non-ASCII) readable value."""
     parts = []
     for v, enc in _email_decode_header(header_str):
@@ -201,7 +201,7 @@ def _parse_overview_fmt(lines):
     return fmt
 
 def _parse_overview(lines, fmt, data_process_func=None):
-    """Parse the response to a OVER or XOVER command according to the
+    """Parse the response to an OVER or XOVER command according to the
     overview format `fmt`."""
     n_defaults = len(_DEFAULT_OVERVIEW_FMT)
     overview = []
@@ -420,7 +420,7 @@ class _NNTPBase:
 
     def _putcmd(self, line):
         """Internal: send one command to the server (through _putline()).
-        The `line` must be an unicode string."""
+        The `line` must be a unicode string."""
         if self.debugging: print('*cmd*', repr(line))
         line = line.encode(self.encoding, self.errors)
         self._putline(line)
@@ -445,7 +445,7 @@ class _NNTPBase:
     def _getresp(self):
         """Internal: get a response from the server.
         Raise various errors if the response indicates an error.
-        Returns an unicode string."""
+        Returns a unicode string."""
         resp = self._getline()
         if self.debugging: print('*resp*', repr(resp))
         resp = resp.decode(self.encoding, self.errors)
@@ -462,7 +462,7 @@ class _NNTPBase:
         """Internal: get a response plus following text from the server.
         Raise various errors if the response indicates an error.
 
-        Returns a (response, lines) tuple where `response` is an unicode
+        Returns a (response, lines) tuple where `response` is a unicode
         string and `lines` is a list of bytes objects.
         If `file` is a file-like object, it must be open in binary mode.
         """
@@ -1041,11 +1041,18 @@ class NNTP(_NNTPBase):
         self.host = host
         self.port = port
         self.sock = socket.create_connection((host, port), timeout)
-        file = self.sock.makefile("rwb")
-        _NNTPBase.__init__(self, file, host,
-                           readermode, timeout)
-        if user or usenetrc:
-            self.login(user, password, usenetrc)
+        file = None
+        try:
+            file = self.sock.makefile("rwb")
+            _NNTPBase.__init__(self, file, host,
+                               readermode, timeout)
+            if user or usenetrc:
+                self.login(user, password, usenetrc)
+        except:
+            if file:
+                file.close()
+            self.sock.close()
+            raise
 
     def _close(self):
         try:
@@ -1065,12 +1072,19 @@ if _have_ssl:
             in default port and the `ssl_context` argument for SSL connections.
             """
             self.sock = socket.create_connection((host, port), timeout)
-            self.sock = _encrypt_on(self.sock, ssl_context, host)
-            file = self.sock.makefile("rwb")
-            _NNTPBase.__init__(self, file, host,
-                               readermode=readermode, timeout=timeout)
-            if user or usenetrc:
-                self.login(user, password, usenetrc)
+            file = None
+            try:
+                self.sock = _encrypt_on(self.sock, ssl_context, host)
+                file = self.sock.makefile("rwb")
+                _NNTPBase.__init__(self, file, host,
+                                   readermode=readermode, timeout=timeout)
+                if user or usenetrc:
+                    self.login(user, password, usenetrc)
+            except:
+                if file:
+                    file.close()
+                self.sock.close()
+                raise
 
         def _close(self):
             try:

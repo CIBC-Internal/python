@@ -23,6 +23,11 @@
  *  that lint detects are gone, but there are still warnings with
  *  Py_[X]DECREF() and Py_[X]INCREF() macros.  The lint annotations
  *  look like "NOTE(...)".
+ *
+ *  To debug parser errors like
+ *      "parser.ParserError: Expected node type 12, got 333."
+ *  decode symbol numbers using the automatically-generated files
+ *  Lib/symbol.h and Include/token.h.
  */
 
 #include "Python.h"                     /* general Python API             */
@@ -392,7 +397,7 @@ parser_sizeof(PyST_Object *st, void *unused)
 {
     Py_ssize_t res;
 
-    res = sizeof(PyST_Object) + _PyNode_SizeOf(st->st_node);
+    res = _PyObject_SIZE(Py_TYPE(st)) + _PyNode_SizeOf(st->st_node);
     return PyLong_FromSsize_t(res);
 }
 
@@ -758,6 +763,9 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
     Py_ssize_t i;
     int  err;
 
+    if (len < 0) {
+        return NULL;
+    }
     for (i = 1; i < len; ++i) {
         /* elem must always be a sequence, however simple */
         PyObject* elem = PySequence_GetItem(tuple, i);
@@ -778,7 +786,7 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
                     if (type == -1 && PyErr_Occurred()) {
                         Py_DECREF(temp);
                         Py_DECREF(elem);
-                        return 0;
+                        return NULL;
                     }
                 }
                 Py_DECREF(temp);
@@ -790,7 +798,7 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
             PyErr_SetObject(parser_error, err);
             Py_XDECREF(err);
             Py_XDECREF(elem);
-            return (0);
+            return NULL;
         }
         if (ISTERMINAL(type)) {
             Py_ssize_t len = PyObject_Size(elem);
@@ -799,11 +807,14 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
 
             if ((len != 2) && (len != 3)) {
                 err_string("terminal nodes must have 2 or 3 entries");
-                return 0;
+                Py_DECREF(elem);
+                return NULL;
             }
             temp = PySequence_GetItem(elem, 1);
-            if (temp == NULL)
-                return 0;
+            if (temp == NULL) {
+                Py_DECREF(elem);
+                return NULL;
+            }
             if (!PyUnicode_Check(temp)) {
                 PyErr_Format(parser_error,
                              "second item in terminal node must be a string,"
@@ -811,46 +822,49 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
                              Py_TYPE(temp)->tp_name);
                 Py_DECREF(temp);
                 Py_DECREF(elem);
-                return 0;
+                return NULL;
             }
             if (len == 3) {
                 PyObject *o = PySequence_GetItem(elem, 2);
-                if (o != NULL) {
-                    if (PyLong_Check(o)) {
-                        int num = _PyLong_AsInt(o);
-                        if (num == -1 && PyErr_Occurred()) {
-                            Py_DECREF(o);
-                            Py_DECREF(temp);
-                            Py_DECREF(elem);
-                            return 0;
-                        }
-                        *line_num = num;
-                    }
-                    else {
-                        PyErr_Format(parser_error,
-                                     "third item in terminal node must be an"
-                                     " integer, found %s",
-                                     Py_TYPE(temp)->tp_name);
+                if (o == NULL) {
+                    Py_DECREF(temp);
+                    Py_DECREF(elem);
+                    return NULL;
+                }
+                if (PyLong_Check(o)) {
+                    int num = _PyLong_AsInt(o);
+                    if (num == -1 && PyErr_Occurred()) {
                         Py_DECREF(o);
                         Py_DECREF(temp);
                         Py_DECREF(elem);
-                        return 0;
+                        return NULL;
                     }
-                    Py_DECREF(o);
+                    *line_num = num;
                 }
+                else {
+                    PyErr_Format(parser_error,
+                                 "third item in terminal node must be an"
+                                 " integer, found %s",
+                                 Py_TYPE(temp)->tp_name);
+                    Py_DECREF(o);
+                    Py_DECREF(temp);
+                    Py_DECREF(elem);
+                    return NULL;
+                }
+                Py_DECREF(o);
             }
             temp_str = _PyUnicode_AsStringAndSize(temp, &len);
             if (temp_str == NULL) {
                 Py_DECREF(temp);
-                Py_XDECREF(elem);
-                return 0;
+                Py_DECREF(elem);
+                return NULL;
             }
             strn = (char *)PyObject_MALLOC(len + 1);
             if (strn == NULL) {
                 Py_DECREF(temp);
-                Py_XDECREF(elem);
+                Py_DECREF(elem);
                 PyErr_NoMemory();
-                return 0;
+                return NULL;
             }
             (void) memcpy(strn, temp_str, len + 1);
             Py_DECREF(temp);
@@ -860,20 +874,21 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
              *  It has to be one or the other; this is an error.
              *  Raise an exception.
              */
-            PyObject *err = Py_BuildValue("os", elem, "unknown node type.");
+            PyObject *err = Py_BuildValue("Os", elem, "unknown node type.");
             PyErr_SetObject(parser_error, err);
             Py_XDECREF(err);
-            Py_XDECREF(elem);
-            return (0);
+            Py_DECREF(elem);
+            return NULL;
         }
         err = PyNode_AddChild(root, type, strn, *line_num, 0);
         if (err == E_NOMEM) {
-            Py_XDECREF(elem);
+            Py_DECREF(elem);
             PyObject_FREE(strn);
-            return (node *) PyErr_NoMemory();
+            PyErr_NoMemory();
+            return NULL;
         }
         if (err == E_OVERFLOW) {
-            Py_XDECREF(elem);
+            Py_DECREF(elem);
             PyObject_FREE(strn);
             PyErr_SetString(PyExc_ValueError,
                             "unsupported number of child nodes");
@@ -884,14 +899,14 @@ build_node_children(PyObject *tuple, node *root, int *line_num)
             node* new_child = CHILD(root, i - 1);
 
             if (new_child != build_node_children(elem, new_child, line_num)) {
-                Py_XDECREF(elem);
-                return (0);
+                Py_DECREF(elem);
+                return NULL;
             }
         }
         else if (type == NEWLINE) {     /* It's true:  we increment the     */
             ++(*line_num);              /* line number *after* the newline! */
         }
-        Py_XDECREF(elem);
+        Py_DECREF(elem);
     }
     return root;
 }
@@ -926,10 +941,23 @@ build_node_tree(PyObject *tuple)
 
         if (num == encoding_decl) {
             encoding = PySequence_GetItem(tuple, 2);
+            if (encoding == NULL) {
+                PyErr_SetString(parser_error, "missed encoding");
+                return NULL;
+            }
+            if (!PyUnicode_Check(encoding)) {
+                PyErr_Format(parser_error,
+                             "encoding must be a string, found %.200s",
+                             Py_TYPE(encoding)->tp_name);
+                Py_DECREF(encoding);
+                return NULL;
+            }
             /* tuple isn't borrowed anymore here, need to DECREF */
             tuple = PySequence_GetSlice(tuple, 0, 2);
-            if (tuple == NULL)
+            if (tuple == NULL) {
+                Py_DECREF(encoding);
                 return NULL;
+            }
         }
         res = PyNode_New(num);
         if (res != NULL) {
@@ -942,23 +970,25 @@ build_node_tree(PyObject *tuple)
                 const char *temp;
                 temp = _PyUnicode_AsStringAndSize(encoding, &len);
                 if (temp == NULL) {
-                    Py_DECREF(res);
+                    PyNode_Free(res);
                     Py_DECREF(encoding);
                     Py_DECREF(tuple);
                     return NULL;
                 }
                 res->n_str = (char *)PyObject_MALLOC(len + 1);
                 if (res->n_str == NULL) {
-                    Py_DECREF(res);
+                    PyNode_Free(res);
                     Py_DECREF(encoding);
                     Py_DECREF(tuple);
                     PyErr_NoMemory();
                     return NULL;
                 }
                 (void) memcpy(res->n_str, temp, len + 1);
-                Py_DECREF(encoding);
-                Py_DECREF(tuple);
             }
+        }
+        if (encoding != NULL) {
+            Py_DECREF(encoding);
+            Py_DECREF(tuple);
         }
     }
     else {
@@ -966,7 +996,7 @@ build_node_tree(PyObject *tuple)
          *  NONTERMINAL, we can't use it.  Not sure the implementation
          *  allows this condition, but the API doesn't preclude it.
          */
-        PyObject *err = Py_BuildValue("os", tuple,
+        PyObject *err = Py_BuildValue("Os", tuple,
                                       "Illegal component tuple.");
         PyErr_SetObject(parser_error, err);
         Py_XDECREF(err);
@@ -1036,6 +1066,8 @@ VALIDATER(testlist_comp);       VALIDATER(yield_expr);
 VALIDATER(or_test);
 VALIDATER(test_nocond);         VALIDATER(lambdef_nocond);
 VALIDATER(yield_arg);
+VALIDATER(async_funcdef);       VALIDATER(async_stmt);
+VALIDATER(atom_expr);
 
 #undef VALIDATER
 
@@ -1087,30 +1119,56 @@ validate_terminal(node *terminal, int type, char *string)
     return (res);
 }
 
-
-/*  X (',' X) [',']
- */
+/*  X (',' X) [','] */
 static int
-validate_repeating_list(node *tree, int ntype, int (*vfunc)(node *),
-                        const char *const name)
+validate_repeating_list_variable(node *tree,
+                                 int list_node_type,
+                                 int (*validate_child_func_inc)(node *, int *),
+                                 int *pos,
+                                 const char *const list_node_type_name)
 {
     int nch = NCH(tree);
-    int res = (nch && validate_ntype(tree, ntype)
-               && vfunc(CHILD(tree, 0)));
+    int res = (nch && validate_ntype(tree, list_node_type));
 
-    if (!res && !PyErr_Occurred())
-        (void) validate_numnodes(tree, 1, name);
+    if (!res && !PyErr_Occurred()) {
+        /* Unconditionally raise. */
+        (void) validate_numnodes(tree, 1, list_node_type_name);
+    }
     else {
-        if (is_even(nch))
-            res = validate_comma(CHILD(tree, --nch));
-        if (res && nch > 1) {
-            int pos = 1;
-            for ( ; res && pos < nch; pos += 2)
-                res = (validate_comma(CHILD(tree, pos))
-                       && vfunc(CHILD(tree, pos + 1)));
+        for ( ; res && *pos < nch; ) {
+            res = validate_child_func_inc(tree, pos);
+            if (!res || *pos >= nch)
+                break;
+            res = validate_comma(CHILD(tree, (*pos)++));
         }
     }
-    return (res);
+    return res;
+}
+
+/*  X (',' X) [','] */
+static int
+validate_repeating_list(node *tree,
+                        int list_node_type,
+                        int (*validate_child_func)(node *),
+                        const char *const list_node_type_name)
+{
+    int nch = NCH(tree);
+    int res = (nch && validate_ntype(tree, list_node_type));
+    int pos = 0;
+
+    if (!res && !PyErr_Occurred()) {
+        /* Unconditionally raise. */
+        (void) validate_numnodes(tree, 1, list_node_type_name);
+    }
+    else {
+        for ( ; res && pos < nch; ) {
+            res = validate_child_func(CHILD(tree, pos++));
+            if (!res || pos >= nch)
+                break;
+            res = validate_comma(CHILD(tree, pos++));
+        }
+    }
+    return res;
 }
 
 
@@ -1577,6 +1635,7 @@ validate_compound_stmt(node *tree)
           || (ntype == try_stmt)
           || (ntype == with_stmt)
           || (ntype == funcdef)
+          || (ntype == async_stmt)
           || (ntype == classdef)
           || (ntype == decorated))
         res = validate_node(tree);
@@ -2409,27 +2468,60 @@ validate_factor(node *tree)
 
 /*  power:
  *
- *  power: atom trailer* ('**' factor)*
+ *  power: atom_expr trailer* ['**' factor]
  */
 static int
 validate_power(node *tree)
 {
-    int pos = 1;
     int nch = NCH(tree);
     int res = (validate_ntype(tree, power) && (nch >= 1)
-               && validate_atom(CHILD(tree, 0)));
+               && validate_atom_expr(CHILD(tree, 0)));
 
-    while (res && (pos < nch) && (TYPE(CHILD(tree, pos)) == trailer))
-        res = validate_trailer(CHILD(tree, pos++));
-    if (res && (pos < nch)) {
-        if (!is_even(nch - pos)) {
+    if (nch > 1) {
+        if (nch != 3) {
             err_string("illegal number of nodes for 'power'");
             return (0);
         }
-        for ( ; res && (pos < (nch - 1)); pos += 2)
-            res = (validate_doublestar(CHILD(tree, pos))
-                   && validate_factor(CHILD(tree, pos + 1)));
+        res = (validate_doublestar(CHILD(tree, 1))
+               && validate_factor(CHILD(tree, 2)));
     }
+
+    return (res);
+}
+
+
+/*  atom_expr:
+ *
+ *  atom_expr: [AWAIT] atom trailer*
+ */
+static int
+validate_atom_expr(node *tree)
+{
+    int start = 0;
+    int nch = NCH(tree);
+    int res;
+    int pos;
+
+    res = validate_ntype(tree, atom_expr) && (nch >= 1);
+    if (!res) {
+        return (res);
+    }
+
+    if (TYPE(CHILD(tree, 0)) == AWAIT) {
+        start = 1;
+        if (nch < 2) {
+            err_string("illegal number of nodes for 'atom_expr'");
+            return (0);
+        }
+    }
+
+    res = validate_atom(CHILD(tree, start));
+    if (res) {
+        pos = start + 1;
+        while (res && (pos < nch) && (TYPE(CHILD(tree, pos)) == trailer))
+            res = validate_trailer(CHILD(tree, pos++));
+    }
+
     return (res);
 }
 
@@ -2493,39 +2585,28 @@ validate_atom(node *tree)
 
 
 /*  testlist_comp:
- *    test ( comp_for | (',' test)* [','] )
+ *    (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
  */
 static int
 validate_testlist_comp(node *tree)
 {
     int nch = NCH(tree);
-    int ok = nch;
+    int ok;
 
-    if (nch == 0)
+    if (nch == 0) {
         err_string("missing child nodes of testlist_comp");
-    else {
-        ok = validate_test_or_star_expr(CHILD(tree, 0));
+        return 0;
     }
 
-    /*
-     *  comp_for | (',' test)* [',']
-     */
-    if (nch == 2 && TYPE(CHILD(tree, 1)) == comp_for)
-        ok = validate_comp_for(CHILD(tree, 1));
+    if (nch == 2 && TYPE(CHILD(tree, 1)) == comp_for) {
+        ok = (validate_test(CHILD(tree, 0))
+                && validate_comp_for(CHILD(tree, 1)));
+    }
     else {
-        /*  (',' test)* [',']  */
-        int i = 1;
-        while (ok && nch - i >= 2) {
-            ok = (validate_comma(CHILD(tree, i))
-                  && validate_test_or_star_expr(CHILD(tree, i+1)));
-            i += 2;
-        }
-        if (ok && i == nch-1)
-            ok = validate_comma(CHILD(tree, i));
-        else if (i != nch) {
-            ok = 0;
-            err_string("illegal trailing nodes for testlist_comp");
-        }
+        ok = validate_repeating_list(tree,
+                testlist_comp,
+                validate_test_or_star_expr,
+                "testlist_comp");
     }
     return ok;
 }
@@ -2638,6 +2719,55 @@ validate_funcdef(node *tree)
     return res;
 }
 
+/* async_funcdef: ASYNC funcdef */
+
+static int
+validate_async_funcdef(node *tree)
+{
+    int nch = NCH(tree);
+    int res = validate_ntype(tree, async_funcdef);
+    if (res) {
+        if (nch == 2) {
+            res = (validate_ntype(CHILD(tree, 0), ASYNC)
+                   && validate_funcdef(CHILD(tree, 1)));
+        }
+        else {
+            res = 0;
+            err_string("illegal number of children for async_funcdef");
+        }
+    }
+    return res;
+}
+
+
+/* async_stmt: ASYNC (funcdef | with_stmt | for_stmt) */
+
+static int
+validate_async_stmt(node *tree)
+{
+    int nch = NCH(tree);
+    int res = (validate_ntype(tree, async_stmt)
+                && validate_ntype(CHILD(tree, 0), ASYNC));
+
+    if (nch != 2) {
+        res = 0;
+        err_string("illegal number of children for async_stmt");
+    } else {
+        if (TYPE(CHILD(tree, 1)) == funcdef) {
+            res = validate_funcdef(CHILD(tree, 1));
+        }
+        else if (TYPE(CHILD(tree, 1)) == with_stmt) {
+            res = validate_with_stmt(CHILD(tree, 1));
+        }
+        else if (TYPE(CHILD(tree, 1)) == for_stmt) {
+            res = validate_for(CHILD(tree, 1));
+        }
+    }
+
+    return res;
+}
+
+
 
 /* decorated
  *   decorators (classdef | funcdef)
@@ -2732,9 +2862,6 @@ validate_arglist(node *tree)
     }
     ok = 1;
     if (nch-i > 0) {
-        /*
-         * argument | '*' test [',' '**' test] | '**' test
-         */
         int sym = TYPE(CHILD(tree, i));
 
         if (sym == argument) {
@@ -2745,30 +2872,7 @@ validate_arglist(node *tree)
                 ok = 0;
             }
         }
-        else if (sym == STAR) {
-            ok = validate_star(CHILD(tree, i));
-            if (ok && (nch-i == 2))
-                ok = validate_test(CHILD(tree, i+1));
-            else if (ok && (nch-i == 5))
-                ok = (validate_test(CHILD(tree, i+1))
-                      && validate_comma(CHILD(tree, i+2))
-                      && validate_doublestar(CHILD(tree, i+3))
-                      && validate_test(CHILD(tree, i+4)));
-            else {
-                err_string("illegal use of '*' in arglist");
-                ok = 0;
-            }
-        }
-        else if (sym == DOUBLESTAR) {
-            if (nch-i == 2)
-                ok = (validate_doublestar(CHILD(tree, i))
-                      && validate_test(CHILD(tree, i+1)));
-            else {
-                err_string("illegal use of '**' in arglist");
-                ok = 0;
-            }
-        }
-        else {
+       else {
             err_string("illegal arglist specification");
             ok = 0;
         }
@@ -2778,9 +2882,10 @@ validate_arglist(node *tree)
 
 
 
-/*  argument:
- *
- *  [test '='] test [comp_for]
+/*  argument: ( test [comp_for] |
+ *              test '=' test |
+ *              '**' test |
+ *              '*' test )
  */
 static int
 validate_argument(node *tree)
@@ -2788,14 +2893,27 @@ validate_argument(node *tree)
     int nch = NCH(tree);
     int res = (validate_ntype(tree, argument)
                && ((nch == 1) || (nch == 2) || (nch == 3)));
-    if (res) 
-        res = validate_test(CHILD(tree, 0));
-    if (res && (nch == 2))
-        res = validate_comp_for(CHILD(tree, 1));
-    else if (res && (nch == 3))
-        res = (validate_equal(CHILD(tree, 1))
-               && validate_test(CHILD(tree, 2)));
 
+    if (res) {
+        if (TYPE(CHILD(tree, 0)) == DOUBLESTAR) {
+            res = validate_test(CHILD(tree, 1));
+        }
+        else if (TYPE(CHILD(tree, 0)) == STAR) {
+            res = validate_test(CHILD(tree, 1));
+        }
+        else if (nch == 1) {
+            res = validate_test(CHILD(tree, 0));
+        }
+        else if (nch == 2) {
+            res = (validate_test(CHILD(tree, 0))
+                    && validate_comp_for(CHILD(tree, 1)));
+        }
+        else if (res && (nch == 3)) {
+            res = (validate_test(CHILD(tree, 0))
+                    && validate_equal(CHILD(tree, 1))
+                    && validate_test(CHILD(tree, 2)));
+        }
+    }
     return (res);
 }
 
@@ -2948,11 +3066,44 @@ validate_exprlist(node *tree)
                                     validate_expr_or_star_expr, "exprlist"));
 }
 
+/* Incrementing validate functions returns nonzero iff success (like other
+ * validate functions, and advance *i by the length of the matched pattern. */
+
+/* test ':' test */
+static int
+validate_test_colon_test_inc(node *tree, int *i)
+{
+    return (validate_test(CHILD(tree, (*i)++))
+            && validate_colon(CHILD(tree, (*i)++))
+            && validate_test(CHILD(tree, (*i)++)));
+}
+
+/* test ':' test | '**' expr */
+static int
+validate_dict_element_inc(node *tree, int *i)
+{
+    int nch = NCH(tree);
+    int res = 0;
+    if (nch - *i >= 2) {
+        if (TYPE(CHILD(tree, *i+1)) == COLON) {
+            /* test ':' test */
+            res = validate_test_colon_test_inc(tree, i);
+        } else {
+            /* '**' expr */
+            res = (validate_doublestar(CHILD(tree, (*i)++))
+                    && validate_expr(CHILD(tree, (*i)++)));
+        }
+    }
+    return res;
+}
+
 /*
  *  dictorsetmaker:
  *
- *  (test ':' test (comp_for | (',' test ':' test)* [','])) |
- *  (test (comp_for | (',' test)* [',']))
+ *   ( ((test ':' test | '**' expr)
+ *      (comp_for | (',' (test ':' test | '**' expr))* [','])) |
+ *     ((test | '*' test)
+ *      (comp_for | (',' (test | '*' test))* [','])) )
  */
 static int
 validate_dictorsetmaker(node *tree)
@@ -2966,65 +3117,44 @@ validate_dictorsetmaker(node *tree)
         return 0;
 
     if (nch - i < 1) {
+        /* Unconditionally raise. */
         (void) validate_numnodes(tree, 1, "dictorsetmaker");
         return 0;
     }
 
-    res = validate_test(CHILD(tree, i++));
-    if (!res)
-        return 0;
-
-    if (nch - i >= 2 && TYPE(CHILD(tree, i)) == COLON) {
+    if (nch - i >= 2
+        && ((TYPE(CHILD(tree, i+1)) == COLON) ||
+            (TYPE(CHILD(tree, i)) == DOUBLESTAR))) {
         /* Dictionary display or dictionary comprehension. */
-        res = (validate_colon(CHILD(tree, i++))
-               && validate_test(CHILD(tree, i++)));
-        if (!res)
-            return 0;
-
-        if (nch - i >= 1 && TYPE(CHILD(tree, i)) == comp_for) {
+        if (nch - i >= 4 && TYPE(CHILD(tree, i+3)) == comp_for) {
             /* Dictionary comprehension. */
-            res = validate_comp_for(CHILD(tree, i++));
+            res = (validate_test_colon_test_inc(tree, &i)
+                    && validate_comp_for(CHILD(tree, i++)));
             if (!res)
                 return 0;
-        }
-        else {
+        } else {
             /* Dictionary display. */
-            while (nch - i >= 4) {
-                res = (validate_comma(CHILD(tree, i++))
-                       && validate_test(CHILD(tree, i++))
-                       && validate_colon(CHILD(tree, i++))
-                       && validate_test(CHILD(tree, i++)));
-                if (!res)
-                    return 0;
-            }
-            if (nch - i == 1) {
-                res = validate_comma(CHILD(tree, i++));
-                if (!res)
-                    return 0;
-            }
+            return validate_repeating_list_variable(
+                    tree,
+                    dictorsetmaker,
+                    validate_dict_element_inc,
+                    &i,
+                    "dictorsetmaker");
         }
-    }
-    else {
+    } else {
         /* Set display or set comprehension. */
-        if (nch - i >= 1 && TYPE(CHILD(tree, i)) == comp_for) {
+        if (nch - i >= 2 && TYPE(CHILD(tree, i + 1)) == comp_for) {
             /* Set comprehension. */
-            res = validate_comp_for(CHILD(tree, i++));
+            res = (validate_test(CHILD(tree, i++))
+                   && validate_comp_for(CHILD(tree, i++)));
             if (!res)
                 return 0;
-        }
-        else {
+        } else {
             /* Set display. */
-            while (nch - i >= 2) {
-                res = (validate_comma(CHILD(tree, i++))
-                       && validate_test(CHILD(tree, i++)));
-                if (!res)
-                    return 0;
-            }
-            if (nch - i == 1) {
-                res = validate_comma(CHILD(tree, i++));
-                if (!res)
-                    return 0;
-            }
+           return validate_repeating_list(tree,
+                                          dictorsetmaker,
+                                          validate_test_or_star_expr,
+                                          "dictorsetmaker");
         }
     }
 
@@ -3068,6 +3198,12 @@ validate_node(node *tree)
             /*
              *  Definition nodes.
              */
+          case async_funcdef:
+            res = validate_async_funcdef(tree);
+            break;
+          case async_stmt:
+            res = validate_async_stmt(tree);
+            break;
           case funcdef:
             res = validate_funcdef(tree);
             break;
@@ -3322,7 +3458,6 @@ parser__pickler(PyObject *self, PyObject *args)
             result = Py_BuildValue("O(O)", pickle_constructor, tuple);
             Py_DECREF(tuple);
         }
-        Py_DECREF(empty_dict);
         Py_DECREF(newargs);
     }
   finally:

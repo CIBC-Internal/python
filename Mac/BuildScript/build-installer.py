@@ -13,7 +13,7 @@ sphinx-build and the current versions of Sphinx now require at least
 Python 2.6.
 
 In addition to what is supplied with OS X 10.5+ and Xcode 3+, the script
-requires an installed version of hg and a third-party version of
+requires an installed third-party version of
 Tcl/Tk 8.4 (for OS X 10.4 and 10.5 deployment targets) or Tcl/TK 8.5
 (for 10.6 or later) installed in /Library/Frameworks.  When installed,
 the Python built by this script will attempt to dynamically link first to
@@ -23,7 +23,7 @@ installing the most recent ActiveTcl 8.4 or 8.5 version.
 
 32-bit-only installer builds are still possible on OS X 10.4 with Xcode 2.5
 and the installation of additional components, such as a newer Python
-(2.5 is needed for Python parser updates), hg, and for the documentation
+(2.5 is needed for Python parser updates) and for the documentation
 build either svn (pre-3.4.1) or sphinx-build (3.4.1 and later).
 
 Usage: see USAGE variable in the script.
@@ -206,7 +206,7 @@ def library_recipes():
 
     LT_10_5 = bool(getDeptargetTuple() < (10, 5))
 
-    if getDeptargetTuple() < (10, 6):
+    if not (10, 5) < getDeptargetTuple() < (10, 10):
         # The OpenSSL libs shipped with OS X 10.5 and earlier are
         # hopelessly out-of-date and do not include Apple's tie-in to
         # the root certificates in the user and system keychains via TEA
@@ -226,7 +226,8 @@ def library_recipes():
         # now more obvious with cert checking enabled by default in the
         # standard library.
         #
-        # For builds with 10.6+ SDKs, continue to use the deprecated but
+        # For builds with 10.6 through 10.9 SDKs,
+        # continue to use the deprecated but
         # less out-of-date Apple 0.9.8 libs for now.  While they are less
         # secure than using an up-to-date 1.0.1 version, doing so
         # avoids the big problems of forcing users to have to manage
@@ -234,12 +235,16 @@ def library_recipes():
         # APIs for cert validation from keychains if validation using the
         # standard OpenSSL locations (/System/Library/OpenSSL, normally empty)
         # fails.
+        #
+        # Since Apple removed the header files for the deprecated system
+        # OpenSSL as of the Xcode 7 release (for OS X 10.10+), we do not
+        # have much choice but to build our own copy here, too.
 
         result.extend([
           dict(
-              name="OpenSSL 1.0.1l",
-              url="https://www.openssl.org/source/openssl-1.0.1l.tar.gz",
-              checksum='cdb22925fc9bc97ccbf1e007661f2aa6',
+              name="OpenSSL 1.0.2k",
+              url="https://www.openssl.org/source/openssl-1.0.2k.tar.gz",
+              checksum='f965fc0bf01bf882b31314b61391ae65',
               patches=[
                   "openssl_sdk_makedepend.patch",
                    ],
@@ -339,9 +344,9 @@ def library_recipes():
                   ),
           ),
           dict(
-              name="SQLite 3.8.3.1",
-              url="http://www.sqlite.org/2014/sqlite-autoconf-3080301.tar.gz",
-              checksum='509ff98d8dc9729b618b7e96612079c6',
+              name="SQLite 3.8.11",
+              url="https://www.sqlite.org/2015/sqlite-autoconf-3081100.tar.gz",
+              checksum='77b451925121028befbddbf45ea2bc49',
               extra_cflags=('-Os '
                             '-DSQLITE_ENABLE_FTS4 '
                             '-DSQLITE_ENABLE_FTS3_PARENTHESIS '
@@ -572,7 +577,7 @@ def getTclTkVersion(configfile, versionline):
     """
     try:
         f = open(configfile, "r")
-    except:
+    except OSError:
         fatal("Framework configuration file not found: %s" % configfile)
 
     for l in f:
@@ -658,9 +663,8 @@ def checkEnvironment():
         base_path = base_path + ':' + OLD_DEVELOPER_TOOLS
     os.environ['PATH'] = base_path
     print("Setting default PATH: %s"%(os.environ['PATH']))
-    # Ensure ws have access to hg and to sphinx-build.
-    # You may have to create links in /usr/bin for them.
-    runCommand('hg --version')
+    # Ensure we have access to sphinx-build.
+    # You may have to create a link in /usr/bin for it.
     runCommand('sphinx-build --version')
 
 def parseOptions(args=None):
@@ -814,7 +818,7 @@ def downloadURL(url, fname):
     except:
         try:
             os.unlink(fname)
-        except:
+        except OSError:
             pass
 
 def verifyThirdPartyFile(url, checksum, fname):
@@ -1110,10 +1114,10 @@ def buildPythonDocs():
     docdir = os.path.join(rootDir, 'pydocs')
     curDir = os.getcwd()
     os.chdir(buildDir)
-    # The Doc build changed for 3.4 (technically, for 3.4.1) and for 2.7.9
     runCommand('make clean')
-    # Assume sphinx-build is on our PATH, checked in checkEnvironment
-    runCommand('make html')
+    # Create virtual environment for docs builds with blurb and sphinx
+    runCommand('make venv')
+    runCommand('make html PYTHON=venv/bin/python')
     os.chdir(curDir)
     if not os.path.exists(docdir):
         os.mkdir(docdir)
@@ -1163,11 +1167,25 @@ def buildPython():
         shellQuote(WORKDIR)[1:-1],
         shellQuote(WORKDIR)[1:-1]))
 
-    print("Running make touch")
-    runCommand("make touch")
+    # Look for environment value BUILDINSTALLER_BUILDPYTHON_MAKE_EXTRAS
+    # and, if defined, append its value to the make command.  This allows
+    # us to pass in version control tags, like GITTAG, to a build from a
+    # tarball rather than from a vcs checkout, thus eliminating the need
+    # to have a working copy of the vcs program on the build machine.
+    #
+    # A typical use might be:
+    #      export BUILDINSTALLER_BUILDPYTHON_MAKE_EXTRAS=" \
+    #                         GITVERSION='echo 123456789a' \
+    #                         GITTAG='echo v3.6.0' \
+    #                         GITBRANCH='echo 3.6'"
 
-    print("Running make")
-    runCommand("make")
+    make_extras = os.getenv("BUILDINSTALLER_BUILDPYTHON_MAKE_EXTRAS")
+    if make_extras:
+        make_cmd = "make " + make_extras
+    else:
+        make_cmd = "make"
+    print("Running " + make_cmd)
+    runCommand(make_cmd)
 
     print("Running make install")
     runCommand("make install DESTDIR=%s"%(

@@ -305,7 +305,7 @@ int PyObject_AsWriteBuffer(PyObject *obj,
         pb->bf_getbuffer == NULL ||
         ((*pb->bf_getbuffer)(obj, &view, PyBUF_WRITABLE) != 0)) {
         PyErr_SetString(PyExc_TypeError,
-                        "expected an object with a writable buffer interface");
+                        "expected a writable bytes-like object");
         return -1;
     }
 
@@ -324,7 +324,7 @@ PyObject_GetBuffer(PyObject *obj, Py_buffer *view, int flags)
 
     if (pb == NULL || pb->bf_getbuffer == NULL) {
         PyErr_Format(PyExc_TypeError,
-                     "'%.100s' does not support the buffer interface",
+                     "a bytes-like object is required, not '%.100s'",
                      Py_TYPE(obj)->tp_name);
         return -1;
     }
@@ -337,16 +337,35 @@ _IsFortranContiguous(const Py_buffer *view)
     Py_ssize_t sd, dim;
     int i;
 
-    if (view->ndim == 0) return 1;
-    if (view->strides == NULL) return (view->ndim == 1);
+    /* 1) len = product(shape) * itemsize
+       2) itemsize > 0
+       3) len = 0 <==> exists i: shape[i] = 0 */
+    if (view->len == 0) return 1;
+    if (view->strides == NULL) {  /* C-contiguous by definition */
+        /* Trivially F-contiguous */
+        if (view->ndim <= 1) return 1;
+
+        /* ndim > 1 implies shape != NULL */
+        assert(view->shape != NULL);
+
+        /* Effectively 1-d */
+        sd = 0;
+        for (i=0; i<view->ndim; i++) {
+            if (view->shape[i] > 1) sd += 1;
+        }
+        return sd <= 1;
+    }
+
+    /* strides != NULL implies both of these */
+    assert(view->ndim > 0);
+    assert(view->shape != NULL);
 
     sd = view->itemsize;
-    if (view->ndim == 1) return (view->shape[0] == 1 ||
-                               sd == view->strides[0]);
     for (i=0; i<view->ndim; i++) {
         dim = view->shape[i];
-        if (dim == 0) return 1;
-        if (view->strides[i] != sd) return 0;
+        if (dim > 1 && view->strides[i] != sd) {
+            return 0;
+        }
         sd *= dim;
     }
     return 1;
@@ -358,16 +377,22 @@ _IsCContiguous(const Py_buffer *view)
     Py_ssize_t sd, dim;
     int i;
 
-    if (view->ndim == 0) return 1;
-    if (view->strides == NULL) return 1;
+    /* 1) len = product(shape) * itemsize
+       2) itemsize > 0
+       3) len = 0 <==> exists i: shape[i] = 0 */
+    if (view->len == 0) return 1;
+    if (view->strides == NULL) return 1; /* C-contiguous by definition */
+
+    /* strides != NULL implies both of these */
+    assert(view->ndim > 0);
+    assert(view->shape != NULL);
 
     sd = view->itemsize;
-    if (view->ndim == 1) return (view->shape[0] == 1 ||
-                               sd == view->strides[0]);
     for (i=view->ndim-1; i>=0; i--) {
         dim = view->shape[i];
-        if (dim == 0) return 1;
-        if (view->strides[i] != sd) return 0;
+        if (dim > 1 && view->strides[i] != sd) {
+            return 0;
+        }
         sd *= dim;
     }
     return 1;
@@ -499,8 +524,8 @@ int PyObject_CopyData(PyObject *dest, PyObject *src)
     if (!PyObject_CheckBuffer(dest) ||
         !PyObject_CheckBuffer(src)) {
         PyErr_SetString(PyExc_TypeError,
-                        "both destination and source must have the "\
-                        "buffer interface");
+                        "both destination and source must be "\
+                        "bytes-like objects");
         return -1;
     }
 
@@ -587,7 +612,12 @@ int
 PyBuffer_FillInfo(Py_buffer *view, PyObject *obj, void *buf, Py_ssize_t len,
                   int readonly, int flags)
 {
-    if (view == NULL) return 0; /* XXX why not -1? */
+    if (view == NULL) {
+        PyErr_SetString(PyExc_BufferError,
+            "PyBuffer_FillInfo: view==NULL argument is obsolete");
+        return -1;
+    }
+
     if (((flags & PyBUF_WRITABLE) == PyBUF_WRITABLE) &&
         (readonly == 1)) {
         PyErr_SetString(PyExc_BufferError,
@@ -660,8 +690,9 @@ PyObject_Format(PyObject *obj, PyObject *format_spec)
     Py_DECREF(meth);
 
     if (result && !PyUnicode_Check(result)) {
-        PyErr_SetString(PyExc_TypeError,
-                        "__format__ method did not return string");
+        PyErr_Format(PyExc_TypeError,
+             "__format__ must return a str, not %.200s",
+             Py_TYPE(result)->tp_name);
         Py_DECREF(result);
         result = NULL;
         goto done;
@@ -905,6 +936,12 @@ PyNumber_Multiply(PyObject *v, PyObject *w)
 }
 
 PyObject *
+PyNumber_MatrixMultiply(PyObject *v, PyObject *w)
+{
+    return binary_op(v, w, NB_SLOT(nb_matrix_multiply), "@");
+}
+
+PyObject *
 PyNumber_FloorDivide(PyObject *v, PyObject *w)
 {
     return binary_op(v, w, NB_SLOT(nb_floor_divide), "//");
@@ -985,6 +1022,7 @@ INPLACE_BINOP(PyNumber_InPlaceAnd, nb_inplace_and, nb_and, "&=")
 INPLACE_BINOP(PyNumber_InPlaceLshift, nb_inplace_lshift, nb_lshift, "<<=")
 INPLACE_BINOP(PyNumber_InPlaceRshift, nb_inplace_rshift, nb_rshift, ">>=")
 INPLACE_BINOP(PyNumber_InPlaceSubtract, nb_inplace_subtract, nb_subtract, "-=")
+INPLACE_BINOP(PyNumber_InMatrixMultiply, nb_inplace_matrix_multiply, nb_matrix_multiply, "@=")
 
 PyObject *
 PyNumber_InPlaceFloorDivide(PyObject *v, PyObject *w)
@@ -1048,6 +1086,13 @@ PyNumber_InPlaceMultiply(PyObject *v, PyObject *w)
         result = binop_type_error(v, w, "*=");
     }
     return result;
+}
+
+PyObject *
+PyNumber_InPlaceMatrixMultiply(PyObject *v, PyObject *w)
+{
+    return binary_iop(v, w, NB_SLOT(nb_inplace_matrix_multiply),
+                      NB_SLOT(nb_matrix_multiply), "@=");
 }
 
 PyObject *
@@ -1243,7 +1288,7 @@ PyNumber_Long(PyObject *o)
         if (truncated == NULL || PyLong_Check(truncated))
             return truncated;
         /* __trunc__ is specified to return an Integral type,
-           but int() needs to return a int. */
+           but int() needs to return an int. */
         m = truncated->ob_type->tp_as_number;
         if (m == NULL || m->nb_int == NULL) {
             PyErr_Format(
@@ -1264,12 +1309,30 @@ PyNumber_Long(PyObject *o)
         /* The below check is done in PyLong_FromUnicode(). */
         return PyLong_FromUnicodeObject(o, 10);
 
-    if (PyObject_GetBuffer(o, &view, PyBUF_SIMPLE) == 0) {
+    if (PyBytes_Check(o))
         /* need to do extra error checking that PyLong_FromString()
          * doesn't do.  In particular int('9\x005') must raise an
          * exception, not truncate at the null.
          */
-        PyObject *result = _PyLong_FromBytes(view.buf, view.len, 10);
+        return _PyLong_FromBytes(PyBytes_AS_STRING(o),
+                                 PyBytes_GET_SIZE(o), 10);
+
+    if (PyByteArray_Check(o))
+        return _PyLong_FromBytes(PyByteArray_AS_STRING(o),
+                                 PyByteArray_GET_SIZE(o), 10);
+
+    if (PyObject_GetBuffer(o, &view, PyBUF_SIMPLE) == 0) {
+        PyObject *result, *bytes;
+
+        /* Copy to NUL-terminated buffer. */
+        bytes = PyBytes_FromStringAndSize((const char *)view.buf, view.len);
+        if (bytes == NULL) {
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+        result = _PyLong_FromBytes(PyBytes_AS_STRING(bytes),
+                                   PyBytes_GET_SIZE(bytes), 10);
+        Py_DECREF(bytes);
         PyBuffer_Release(&view);
         return result;
     }
@@ -1636,7 +1699,7 @@ PySequence_Tuple(PyObject *v)
         Py_INCREF(v);
         return v;
     }
-    if (PyList_Check(v))
+    if (PyList_CheckExact(v))
         return PyList_AsTuple(v);
 
     /* Get iterator. */
@@ -1661,21 +1724,22 @@ PySequence_Tuple(PyObject *v)
             break;
         }
         if (j >= n) {
-            Py_ssize_t oldn = n;
+            size_t newn = (size_t)n;
             /* The over-allocation strategy can grow a bit faster
                than for lists because unlike lists the
                over-allocation isn't permanent -- we reclaim
                the excess before the end of this routine.
                So, grow by ten and then add 25%.
             */
-            n += 10;
-            n += n >> 2;
-            if (n < oldn) {
+            newn += 10u;
+            newn += newn >> 2;
+            if (newn > PY_SSIZE_T_MAX) {
                 /* Check for overflow */
                 PyErr_NoMemory();
                 Py_DECREF(item);
                 goto Fail;
             }
+            n = (Py_ssize_t)newn;
             if (_PyTuple_Resize(&result, n) != 0) {
                 Py_DECREF(item);
                 goto Fail;
@@ -2028,32 +2092,82 @@ PyObject_CallObject(PyObject *o, PyObject *a)
     return PyEval_CallObjectWithKeywords(o, a, NULL);
 }
 
+PyObject*
+_Py_CheckFunctionResult(PyObject *func, PyObject *result, const char *where)
+{
+    int err_occurred = (PyErr_Occurred() != NULL);
+
+    assert((func != NULL) ^ (where != NULL));
+
+    if (result == NULL) {
+        if (!err_occurred) {
+            if (func)
+                PyErr_Format(PyExc_SystemError,
+                             "%R returned NULL without setting an error",
+                             func);
+            else
+                PyErr_Format(PyExc_SystemError,
+                             "%s returned NULL without setting an error",
+                             where);
+#ifdef Py_DEBUG
+            /* Ensure that the bug is caught in debug mode */
+            Py_FatalError("a function returned NULL without setting an error");
+#endif
+            return NULL;
+        }
+    }
+    else {
+        if (err_occurred) {
+            PyObject *exc, *val, *tb;
+            PyErr_Fetch(&exc, &val, &tb);
+
+            Py_DECREF(result);
+
+            if (func)
+                PyErr_Format(PyExc_SystemError,
+                             "%R returned a result with an error set",
+                             func);
+            else
+                PyErr_Format(PyExc_SystemError,
+                             "%s returned a result with an error set",
+                             where);
+            _PyErr_ChainExceptions(exc, val, tb);
+#ifdef Py_DEBUG
+            /* Ensure that the bug is caught in debug mode */
+            Py_FatalError("a function returned a result with an error set");
+#endif
+            return NULL;
+        }
+    }
+    return result;
+}
+
 PyObject *
 PyObject_Call(PyObject *func, PyObject *arg, PyObject *kw)
 {
     ternaryfunc call;
+    PyObject *result;
 
-    if ((call = func->ob_type->tp_call) != NULL) {
-        PyObject *result;
-        if (Py_EnterRecursiveCall(" while calling a Python object"))
-            return NULL;
-        result = (*call)(func, arg, kw);
-        Py_LeaveRecursiveCall();
-#ifdef NDEBUG
-        if (result == NULL && !PyErr_Occurred()) {
-            PyErr_SetString(
-                PyExc_SystemError,
-                "NULL result without error in PyObject_Call");
-        }
-#else
-        assert((result != NULL && !PyErr_Occurred())
-                || (result == NULL && PyErr_Occurred()));
-#endif
-        return result;
+    /* PyObject_Call() must not be called with an exception set,
+       because it may clear it (directly or indirectly) and so the
+       caller loses its exception */
+    assert(!PyErr_Occurred());
+
+    call = func->ob_type->tp_call;
+    if (call == NULL) {
+        PyErr_Format(PyExc_TypeError, "'%.200s' object is not callable",
+                     func->ob_type->tp_name);
+        return NULL;
     }
-    PyErr_Format(PyExc_TypeError, "'%.200s' object is not callable",
-                 func->ob_type->tp_name);
-    return NULL;
+
+    if (Py_EnterRecursiveCall(" while calling a Python object"))
+        return NULL;
+
+    result = (*call)(func, arg, kw);
+
+    Py_LeaveRecursiveCall();
+
+    return _Py_CheckFunctionResult(func, result, NULL);
 }
 
 static PyObject*
@@ -2492,6 +2606,11 @@ PyObject_IsInstance(PyObject *inst, PyObject *cls)
     if (Py_TYPE(inst) == (PyTypeObject *)cls)
         return 1;
 
+    /* We know what type's __instancecheck__ does. */
+    if (PyType_CheckExact(cls)) {
+        return recursive_isinstance(inst, cls);
+    }
+
     if (PyTuple_Check(cls)) {
         Py_ssize_t i;
         Py_ssize_t n;
@@ -2530,6 +2649,7 @@ PyObject_IsInstance(PyObject *inst, PyObject *cls)
     }
     else if (PyErr_Occurred())
         return -1;
+    /* Probably never reached anymore. */
     return recursive_isinstance(inst, cls);
 }
 
@@ -2556,6 +2676,14 @@ PyObject_IsSubclass(PyObject *derived, PyObject *cls)
 {
     _Py_IDENTIFIER(__subclasscheck__);
     PyObject *checker;
+
+    /* We know what type's __subclasscheck__ does. */
+    if (PyType_CheckExact(cls)) {
+        /* Quick test for an exact match */
+        if (derived == cls)
+            return 1;
+        return recursive_issubclass(derived, cls);
+    }
 
     if (PyTuple_Check(cls)) {
         Py_ssize_t i;
@@ -2595,6 +2723,7 @@ PyObject_IsSubclass(PyObject *derived, PyObject *cls)
     }
     else if (PyErr_Occurred())
         return -1;
+    /* Probably never reached anymore. */
     return recursive_issubclass(derived, cls);
 }
 
@@ -2696,8 +2825,8 @@ _PySequence_BytesToCharpArray(PyObject* self)
             array[i] = NULL;
             goto fail;
         }
-        data = PyBytes_AsString(item);
-        if (data == NULL) {
+        /* check for embedded null bytes */
+        if (PyBytes_AsStringAndSize(item, &data, NULL) < 0) {
             /* NULL terminate before freeing. */
             array[i] = NULL;
             goto fail;

@@ -7,6 +7,10 @@
 .. moduleauthor:: R. David Murray <rdmurray@bitdance.com>
 .. sectionauthor:: R. David Murray <rdmurray@bitdance.com>
 
+.. versionadded:: 3.4
+   as a :term:`provisional module <provisional package>`.
+
+**Source code:** :source:`Lib/email/contentmanager.py`
 
 .. note::
 
@@ -15,8 +19,7 @@
    changes (up to and including removal of the module) may occur if deemed
    necessary by the core developers.
 
-.. versionadded:: 3.4
-   as a :term:`provisional module <provisional package>`.
+--------------
 
 The :mod:`~email.message` module provides a class that can represent an
 arbitrary email message.  That basic message model has a useful and flexible
@@ -59,7 +62,7 @@ this module.
 .. class:: EmailMessage(policy=default)
 
    If *policy* is specified (it must be an instance of a :mod:`~email.policy`
-   class) use the rules it specifies to udpate and serialize the representation
+   class) use the rules it specifies to update and serialize the representation
    of the message.  If *policy* is not set, use the
    :class:`~email.policy.default` policy, which follows the rules of the email
    RFCs except for line endings (instead of the RFC mandated ``\r\n``, it uses
@@ -105,7 +108,7 @@ this module.
       the part a candidate match if the value of the header is ``inline``.
 
       If none of the candidates matches any of the preferences in
-      *preferneclist*, return ``None``.
+      *preferencelist*, return ``None``.
 
       Notes: (1) For most applications the only *preferencelist* combinations
       that really make sense are ``('plain',)``, ``('html', 'plain')``, and the
@@ -344,7 +347,7 @@ Currently the email package provides only one concrete content manager,
 
    .. method:: get_content(msg, errors='replace')
 
-      Return the payload of the part as either a string (for ``text`` parts), a
+      Return the payload of the part as either a string (for ``text`` parts), an
       :class:`~email.message.EmailMessage` object (for ``message/rfc822``
       parts), or a ``bytes`` object (for all other non-multipart types).  Raise
       a :exc:`KeyError` if called on a ``multipart``.  If the part is a
@@ -393,7 +396,7 @@ Currently the email package provides only one concrete content manager,
        MIME charset name, use the standard charset instead.
 
        If *cte* is set, encode the payload using the specified content transfer
-       encoding, and set the :mailheader:`Content-Transfer-Endcoding` header to
+       encoding, and set the :mailheader:`Content-Transfer-Encoding` header to
        that value.  For ``str`` objects, if it is not set use heuristics to
        determine the most compact encoding.  Possible values for *cte* are
        ``quoted-printable``, ``base64``, ``7bit``, ``8bit``, and ``binary``.
@@ -425,10 +428,10 @@ Currently the email package provides only one concrete content manager,
        *cid* as its value.
 
        If *params* is specified, iterate its ``items`` method and use the
-       resulting ``(key, value)`` pairs to set additional paramters on the
+       resulting ``(key, value)`` pairs to set additional parameters on the
        :mailheader:`Content-Type` header.
 
        If *headers* is specified and is a list of strings of the form
        ``headername: headervalue`` or a list of ``header`` objects
-       (distinguised from strings by having a ``name`` attribute), add the
+       (distinguished from strings by having a ``name`` attribute), add the
        headers to *msg*.

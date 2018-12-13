@@ -81,7 +81,9 @@ Encoding declarations
 If a comment in the first or second line of the Python script matches the
 regular expression ``coding[=:]\s*([-\w.]+)``, this comment is processed as an
 encoding declaration; the first group of this expression names the encoding of
-the source code file. The recommended forms of this expression are ::
+the source code file. The encoding declaration must appear on a line of its
+own. If it is the second line, the first line must also be a comment-only line.
+The recommended forms of an encoding expression are ::
 
    # -*- coding: <encoding-name> -*-
 
@@ -98,7 +100,7 @@ among others, by Microsoft's :program:`notepad`).
 
 If an encoding is declared, the encoding name must be recognized by Python. The
 encoding is used for all lexical analysis, including string literals, comments
-and identifiers. The encoding declaration must appear on a line of its own.
+and identifiers.
 
 .. XXX there should be a list of supported encodings.
 
@@ -311,7 +313,7 @@ The Unicode category codes mentioned above stand for:
 * *Nd* - decimal numbers
 * *Pc* - connector punctuations
 * *Other_ID_Start* - explicit list of characters in `PropList.txt
-  <http://www.unicode.org/Public/6.3.0/ucd/PropList.txt>`_ to support backwards
+  <http://www.unicode.org/Public/8.0.0/ucd/PropList.txt>`_ to support backwards
   compatibility
 * *Other_ID_Continue* - likewise
 
@@ -320,7 +322,7 @@ of identifiers is based on NFKC.
 
 A non-normative HTML file listing all valid identifier characters for Unicode
 4.1 can be found at
-http://www.dcl.hpi.uni-potsdam.de/home/loewis/table-3131.html.
+https://www.dcl.hpi.uni-potsdam.de/home/loewis/table-3131.html.
 
 
 .. _keywords:
@@ -536,8 +538,7 @@ Notes:
       Support for name aliases [#]_ has been added.
 
 (5)
-   Individual code units which form parts of a surrogate pair can be encoded using
-   this escape sequence.  Exactly four hex digits are required.
+   Exactly four hex digits are required.
 
 (6)
    Any Unicode character can be encoded this way.  Exactly eight hex digits
@@ -632,8 +633,7 @@ for disambiguation with C-style octal literals, which Python used before version
 Some examples of integer literals::
 
    7     2147483647                        0o177    0b100110111
-   3     79228162514264337593543950336     0o377    0x100000000
-         79228162514264337593543950336              0xdeadbeef
+   3     79228162514264337593543950336     0o377    0xdeadbeef
 
 
 .. _floating:
@@ -689,9 +689,12 @@ Operators
 
 .. index:: single: operators
 
-The following tokens are operators::
+The following tokens are operators:
 
-   +       -       *       **      /       //      %
+.. code-block:: none
+
+
+   +       -       *       **      /       //      %      @
    <<      >>      &       |       ^       ~
    <       >       <=      >=      ==      !=
 
@@ -703,11 +706,13 @@ Delimiters
 
 .. index:: single: delimiters
 
-The following tokens serve as delimiters in the grammar::
+The following tokens serve as delimiters in the grammar:
+
+.. code-block:: none
 
    (       )       [       ]       {       }
    ,       :       .       ;       @       =       ->
-   +=      -=      *=      /=      //=     %=
+   +=      -=      *=      /=      //=     %=      @=
    &=      |=      ^=      >>=     <<=     **=
 
 The period can also occur in floating-point and imaginary literals.  A sequence
@@ -716,16 +721,20 @@ of the list, the augmented assignment operators, serve lexically as delimiters,
 but also perform an operation.
 
 The following printing ASCII characters have special meaning as part of other
-tokens or are otherwise significant to the lexical analyzer::
+tokens or are otherwise significant to the lexical analyzer:
+
+.. code-block:: none
 
    '       "       #       \
 
 The following printing ASCII characters are not used in Python.  Their
-occurrence outside string literals and comments is an unconditional error::
+occurrence outside string literals and comments is an unconditional error:
+
+.. code-block:: none
 
    $       ?       `
 
 
 .. rubric:: Footnotes
 
-.. [#] http://www.unicode.org/Public/6.3.0/ucd/NameAliases.txt
+.. [#] http://www.unicode.org/Public/8.0.0/ucd/NameAliases.txt

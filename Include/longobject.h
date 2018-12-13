@@ -159,7 +159,7 @@ PyAPI_FUNC(PyObject *) _PyLong_FromByteArray(
      example, if is_signed is 0 and there are more digits in the v than
      fit in n; or if is_signed is 1, v < 0, and n is just 1 bit shy of
      being large enough to hold a sign bit.  OverflowError is set in this
-     case, but bytes holds the least-signficant n bytes of the true value.
+     case, but bytes holds the least-significant n bytes of the true value.
 */
 PyAPI_FUNC(int) _PyLong_AsByteArray(PyLongObject* v,
     unsigned char* bytes, size_t n,
@@ -197,6 +197,9 @@ PyAPI_FUNC(int) _PyLong_FormatAdvancedWriter(
  */
 PyAPI_FUNC(unsigned long) PyOS_strtoul(const char *, char **, int);
 PyAPI_FUNC(long) PyOS_strtol(const char *, char **, int);
+
+/* For use by the gcd function in mathmodule.c */
+PyAPI_FUNC(PyObject *) _PyLong_GCD(PyObject *, PyObject *);
 
 #ifdef __cplusplus
 }

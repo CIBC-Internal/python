@@ -8,7 +8,6 @@ import importlib.util
 import sysconfig
 
 from distutils import log
-from distutils import text_file
 from distutils.errors import *
 from distutils.core import Extension, setup
 from distutils.command.build_ext import build_ext
@@ -24,6 +23,11 @@ cross_compiling = "_PYTHON_HOST_PLATFORM" in os.environ
 cflags = sysconfig.get_config_var('CFLAGS')
 py_cflags_nodist = sysconfig.get_config_var('PY_CFLAGS_NODIST')
 sysconfig.get_config_vars()['CFLAGS'] = cflags + ' ' + py_cflags_nodist
+
+class Dummy:
+    """Hack for parallel build"""
+    ProcessPoolExecutor = None
+sys.modules['concurrent.futures.process'] = Dummy
 
 def get_platform():
     # cross build
@@ -131,6 +135,22 @@ def find_library_file(compiler, libname, std_dirs, paths):
         p = p.rstrip(os.sep)
 
         if host_platform == 'darwin' and is_macosx_sdk_path(p):
+            # Note that, as of Xcode 7, Apple SDKs may contain textual stub
+            # libraries with .tbd extensions rather than the normal .dylib
+            # shared libraries installed in /.  The Apple compiler tool
+            # chain handles this transparently but it can cause problems
+            # for programs that are being built with an SDK and searching
+            # for specific libraries.  Distutils find_library_file() now
+            # knows to also search for and return .tbd files.  But callers
+            # of find_library_file need to keep in mind that the base filename
+            # of the returned SDK library file might have a different extension
+            # from that of the library file installed on the running system,
+            # for example:
+            #   /Applications/Xcode.app/Contents/Developer/Platforms/
+            #       MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/
+            #       usr/lib/libedit.tbd
+            # vs
+            #   /usr/lib/libedit.dylib
             if os.path.join(sysroot, p[1:]) == dirname:
                 return [ ]
 
@@ -173,6 +193,9 @@ class PyBuildExt(build_ext):
     def __init__(self, dist):
         build_ext.__init__(self, dist)
         self.failed = []
+        self.failed_on_import = []
+        if '-j' in os.environ.get('MAKEFLAGS', ''):
+            self.parallel = True
 
     def build_extensions(self):
 
@@ -206,7 +229,12 @@ class PyBuildExt(build_ext):
         headers = [sysconfig.get_config_h_filename()]
         headers += glob(os.path.join(sysconfig.get_path('include'), "*.h"))
 
-        for ext in self.extensions[:]:
+        # The sysconfig variable built by makesetup, listing the already
+        # built modules as configured by the Setup files.
+        modnames = sysconfig.get_config_var('MODNAMES').split()
+
+        removed_modules = []
+        for ext in self.extensions:
             ext.sources = [ find_module_file(filename, moddirlist)
                             for filename in ext.sources ]
             if ext.depends is not None:
@@ -217,26 +245,14 @@ class PyBuildExt(build_ext):
             # re-compile extensions if a header file has been changed
             ext.depends.extend(headers)
 
-            # If a module has already been built statically,
-            # don't build it here
-            if ext.name in sys.builtin_module_names:
-                self.extensions.remove(ext)
+            # If a module has already been built by the Makefile,
+            # don't build it here.
+            if ext.name in modnames:
+                removed_modules.append(ext)
 
-        # Parse Modules/Setup and Modules/Setup.local to figure out which
-        # modules are turned on in the file.
-        remove_modules = []
-        for filename in ('Modules/Setup', 'Modules/Setup.local'):
-            input = text_file.TextFile(filename, join_lines=1)
-            while 1:
-                line = input.readline()
-                if not line: break
-                line = line.split()
-                remove_modules.append(line[0])
-            input.close()
-
-        for ext in self.extensions[:]:
-            if ext.name in remove_modules:
-                self.extensions.remove(ext)
+        if removed_modules:
+            self.extensions = [x for x in self.extensions if x not in
+                               removed_modules]
 
         # When you run "make CC=altcc" or something similar, you really want
         # those environment variables passed into the setup.py phase.  Here's
@@ -252,9 +268,13 @@ class PyBuildExt(build_ext):
 
         build_ext.build_extensions(self)
 
+        for ext in self.extensions:
+            self.check_extension_import(ext)
+
         longest = max([len(e.name) for e in self.extensions], default=0)
-        if self.failed:
-            longest = max(longest, max([len(name) for name in self.failed]))
+        if self.failed or self.failed_on_import:
+            all_failed = self.failed + self.failed_on_import
+            longest = max(longest, max([len(name) for name in all_failed]))
 
         def print_three_column(lst):
             lst.sort(key=str.lower)
@@ -275,10 +295,25 @@ class PyBuildExt(build_ext):
                   " detect_modules() for the module's name.")
             print()
 
+        if removed_modules:
+            print("The following modules found by detect_modules() in"
+            " setup.py, have been")
+            print("built by the Makefile instead, as configured by the"
+            " Setup files:")
+            print_three_column([ext.name for ext in removed_modules])
+
         if self.failed:
             failed = self.failed[:]
             print()
             print("Failed to build these modules:")
+            print_three_column(failed)
+            print()
+
+        if self.failed_on_import:
+            failed = self.failed_on_import[:]
+            print()
+            print("Following modules built successfully"
+                  " but were removed because they could not be imported:")
             print_three_column(failed)
             print()
 
@@ -295,6 +330,15 @@ class PyBuildExt(build_ext):
                           (ext.name, sys.exc_info()[1]))
             self.failed.append(ext.name)
             return
+
+    def check_extension_import(self, ext):
+        # Don't try to import an extension that has failed to compile
+        if ext.name in self.failed:
+            self.announce(
+                'WARNING: skipping import check for failed build "%s"' %
+                ext.name, level=1)
+            return
+
         # Workaround for Mac OS X: The Carbon-based modules cannot be
         # reliably imported into a command-line Python
         if 'Carbon' in ext.extra_link_args:
@@ -338,9 +382,9 @@ class PyBuildExt(build_ext):
         spec = importlib.util.spec_from_file_location(ext.name, ext_filename,
                                                       loader=loader)
         try:
-            importlib._bootstrap._SpecMethods(spec).load()
+            importlib._bootstrap._load(spec)
         except ImportError as why:
-            self.failed.append(ext.name)
+            self.failed_on_import.append(ext.name)
             self.announce('*** WARNING: renaming "%s" since importing it'
                           ' failed: %s' % (ext.name, why), level=3)
             assert not self.inplace
@@ -350,17 +394,6 @@ class PyBuildExt(build_ext):
                 os.remove(newname)
             os.rename(ext_filename, newname)
 
-            # XXX -- This relies on a Vile HACK in
-            # distutils.command.build_ext.build_extension().  The
-            # _built_objects attribute is stored there strictly for
-            # use here.
-            # If there is a failure, _built_objects may not be there,
-            # so catch the AttributeError and move on.
-            try:
-                for filename in self._built_objects:
-                    os.remove(filename)
-            except AttributeError:
-                self.announce('unable to remove files (ignored)')
         except:
             exc_type, why, tb = sys.exc_info()
             self.announce('*** WARNING: importing extension "%s" '
@@ -445,6 +478,13 @@ class PyBuildExt(build_ext):
                                             line.strip())
         finally:
             os.unlink(tmpfile)
+
+    def detect_math_libs(self):
+        # Check for MacOS X, which doesn't need libm.a at all
+        if host_platform == 'darwin':
+            return []
+        else:
+            return ['m']
 
     def detect_modules(self):
         # Ensure that /usr/local is always used, but the local build
@@ -550,10 +590,7 @@ class PyBuildExt(build_ext):
                 if item.startswith('-L'):
                     lib_dirs.append(item[2:])
 
-        # Check for MacOS X, which doesn't need libm.a at all
-        math_libs = ['m']
-        if host_platform == 'darwin':
-            math_libs = []
+        math_libs = self.detect_math_libs()
 
         # XXX Omitted modules: gl, pure, dl, SGI-specific modules
 
@@ -564,13 +601,17 @@ class PyBuildExt(build_ext):
 
         # array objects
         exts.append( Extension('array', ['arraymodule.c']) )
+
+        shared_math = 'Modules/_math.o'
         # complex math library functions
-        exts.append( Extension('cmath', ['cmathmodule.c', '_math.c'],
-                               depends=['_math.h'],
+        exts.append( Extension('cmath', ['cmathmodule.c'],
+                               extra_objects=[shared_math],
+                               depends=['_math.h', shared_math],
                                libraries=math_libs) )
         # math library functions, e.g. sin()
-        exts.append( Extension('math',  ['mathmodule.c', '_math.c'],
-                               depends=['_math.h'],
+        exts.append( Extension('math',  ['mathmodule.c'],
+                               extra_objects=[shared_math],
+                               depends=['_math.h', shared_math],
                                libraries=math_libs) )
 
         # time libraries: librt may be needed for clock_gettime()
@@ -582,7 +623,10 @@ class PyBuildExt(build_ext):
         # time operations and variables
         exts.append( Extension('time', ['timemodule.c'],
                                libraries=time_libs) )
-        exts.append( Extension('_datetime', ['_datetimemodule.c']) )
+        # math_libs is needed by delta_new() that uses round() and by accum()
+        # that uses modf().
+        exts.append( Extension('_datetime', ['_datetimemodule.c'],
+                               libraries=math_libs) )
         # random number generator implemented in C
         exts.append( Extension("_random", ["_randommodule.c"]) )
         # bisect
@@ -602,6 +646,8 @@ class PyBuildExt(build_ext):
         exts.append( Extension('_testbuffer', ['_testbuffer.c']) )
         # Test loading multiple modules from one compiled file (http://bugs.python.org/issue16421)
         exts.append( Extension('_testimportmultiple', ['_testimportmultiple.c']) )
+        # Test multi-phase extension module init (PEP 489)
+        exts.append( Extension('_testmultiphase', ['_testmultiphase.c']) )
         # profiler (_lsprof is for cProfile.py)
         exts.append( Extension('_lsprof', ['_lsprof.c', 'rotatingtree.c']) )
         # static Unicode character database
@@ -651,11 +697,14 @@ class PyBuildExt(build_ext):
         # Multimedia modules
         # These don't work for 64-bit platforms!!!
         # These represent audio samples or images as strings:
-
+        #
         # Operations on audio samples
         # According to #993173, this one should actually work fine on
         # 64-bit platforms.
-        exts.append( Extension('audioop', ['audioop.c']) )
+        #
+        # audioop needs math_libs for floor() in multiple functions.
+        exts.append( Extension('audioop', ['audioop.c'],
+                               libraries=math_libs) )
 
         # readline
         do_readline = self.compiler.find_library_file(lib_dirs, 'readline')
@@ -718,7 +767,7 @@ class PyBuildExt(build_ext):
                 # In every directory on the search path search for a dynamic
                 # library and then a static library, instead of first looking
                 # for dynamic libraries on the entire path.
-                # This way a staticly linked custom readline gets picked up
+                # This way a statically linked custom readline gets picked up
                 # before the (possibly broken) dynamic library in /usr/lib.
                 readline_extra_link_args = ('-Wl,-search_paths_first',)
             else:
@@ -1423,6 +1472,9 @@ class PyBuildExt(build_ext):
             expat_inc = [os.path.join(os.getcwd(), srcdir, 'Modules', 'expat')]
             define_macros = [
                 ('HAVE_EXPAT_CONFIG_H', '1'),
+                # bpo-30947: Python uses best available entropy sources to
+                # call XML_SetHashSalt(), expat entropy sources are not needed
+                ('XML_POOR_ENTROPY', '1'),
             ]
             expat_lib = []
             expat_sources = ['expat/xmlparse.c',
@@ -1557,7 +1609,7 @@ class PyBuildExt(build_ext):
 
         if 'd' not in sys.abiflags:
             ext = Extension('xxlimited', ['xxlimited.c'],
-                            define_macros=[('Py_LIMITED_API', '0x03040000')])
+                            define_macros=[('Py_LIMITED_API', '0x03050000')])
             self.extensions.append(ext)
 
         return missing
@@ -1572,7 +1624,7 @@ class PyBuildExt(build_ext):
         #     --with-tcltk-libs="-L/path/to/tcllibs -ltclm.n \
         #                        -L/path/to/tklibs -ltkm.n"
         #
-        # These values can also be specified or overriden via make:
+        # These values can also be specified or overridden via make:
         #    make TCLTK_INCLUDES="..." TCLTK_LIBS="..."
         #
         # This can be useful for building and testing tkinter with multiple
@@ -1897,6 +1949,7 @@ class PyBuildExt(build_ext):
                    '_ctypes/stgdict.c',
                    '_ctypes/cfield.c']
         depends = ['_ctypes/ctypes.h']
+        math_libs = self.detect_math_libs()
 
         if host_platform == 'darwin':
             sources.append('_ctypes/malloc_closure.c')
@@ -1927,8 +1980,10 @@ class PyBuildExt(build_ext):
                         libraries=[],
                         sources=sources,
                         depends=depends)
+        # function my_sqrt() needs math library for sqrt()
         ext_test = Extension('_ctypes_test',
-                             sources=['_ctypes/_ctypes_test.c'])
+                     sources=['_ctypes/_ctypes_test.c'],
+                     libraries=math_libs)
         self.extensions.extend([ext, ext_test])
 
         if not '--with-system-ffi' in sysconfig.get_config_var("CONFIG_ARGS"):
@@ -1944,14 +1999,16 @@ class PyBuildExt(build_ext):
             ffi_inc = find_file('ffi.h', [], inc_dirs)
         if ffi_inc is not None:
             ffi_h = ffi_inc[0] + '/ffi.h'
-            with open(ffi_h) as fp:
-                while 1:
-                    line = fp.readline()
-                    if not line:
-                        ffi_inc = None
+            with open(ffi_h) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith(('#define LIBFFI_H',
+                                        '#define ffi_wrapper_h')):
                         break
-                    if line.startswith('#define LIBFFI_H'):
-                        break
+                else:
+                    ffi_inc = None
+                    print('Header file {} does not define LIBFFI_H or '
+                          'ffi_wrapper_h'.format(ffi_h))
         ffi_lib = None
         if ffi_inc is not None:
             for lib_name in ('ffi_convenience', 'ffi_pic', 'ffi'):

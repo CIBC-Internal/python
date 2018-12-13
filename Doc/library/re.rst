@@ -3,16 +3,20 @@
 
 .. module:: re
    :synopsis: Regular expression operations.
+
 .. moduleauthor:: Fredrik Lundh <fredrik@pythonware.com>
 .. sectionauthor:: Andrew M. Kuchling <amk@amk.ca>
 
+**Source code:** :source:`Lib/re.py`
+
+--------------
 
 This module provides regular expression matching operations similar to
 those found in Perl.
 
 Both patterns and strings to be searched can be Unicode strings as well as
 8-bit strings. However, Unicode strings and 8-bit strings cannot be mixed:
-that is, you cannot match an Unicode string with a byte pattern or
+that is, you cannot match a Unicode string with a byte pattern or
 vice-versa; similarly, when asking for a substitution, the replacement
 string must be of the same type as both the pattern and the search string.
 
@@ -37,6 +41,12 @@ module-level functions and methods on
 :ref:`compiled regular expressions <re-objects>`.  The functions are shortcuts
 that don't require you to compile a regex object first, but miss some
 fine-tuning parameters.
+
+.. seealso::
+
+   The third-party `regex <https://pypi.python.org/pypi/regex/>`_ module,
+   which has an API compatible with the standard library :mod:`re` module,
+   but offers additional functionality and a more thorough Unicode support.
 
 
 .. _re-syntax:
@@ -74,6 +84,12 @@ characters either stand for classes of ordinary characters, or affect
 how the regular expressions around them are interpreted. Regular
 expression pattern strings may not contain null bytes, but can specify
 the null byte using a ``\number`` notation such as ``'\x00'``.
+
+Repetition qualifiers (``*``, ``+``, ``?``, ``{m,n}``, etc) cannot be
+directly nested. This avoids ambiguity with the non-greedy modifier suffix
+``?``, and with other modifiers in other implementations. To apply a second
+repetition to an inner repetition, parentheses may be used. For example,
+the expression ``(?:a{6})*`` matches any multiple of six ``'a'`` characters.
 
 
 The special characters are:
@@ -113,11 +129,11 @@ The special characters are:
 ``*?``, ``+?``, ``??``
    The ``'*'``, ``'+'``, and ``'?'`` qualifiers are all :dfn:`greedy`; they match
    as much text as possible.  Sometimes this behaviour isn't desired; if the RE
-   ``<.*>`` is matched against ``'<H1>title</H1>'``, it will match the entire
-   string, and not just ``'<H1>'``.  Adding ``'?'`` after the qualifier makes it
+   ``<.*>`` is matched against ``<a> b <c>``, it will match the entire
+   string, and not just ``<a>``.  Adding ``?`` after the qualifier makes it
    perform the match in :dfn:`non-greedy` or :dfn:`minimal` fashion; as *few*
-   characters as possible will be matched.  Using ``.*?`` in the previous
-   expression will match only ``'<H1>'``.
+   characters as possible will be matched.  Using the RE ``<.*?>`` will match
+   only ``<a>``.
 
 ``{m}``
    Specifies that exactly *m* copies of the previous RE should be matched; fewer
@@ -297,6 +313,9 @@ The special characters are:
       >>> m.group(0)
       'egg'
 
+   .. versionchanged:: 3.5
+      Added support for group references of fixed length.
+
 ``(?<!...)``
    Matches if the current position in the string is not preceded by a match for
    ``...``.  This is called a :dfn:`negative lookbehind assertion`.  Similar to
@@ -435,6 +454,10 @@ three digits in length.
 .. versionchanged:: 3.3
    The ``'\u'`` and ``'\U'`` escape sequences have been added.
 
+.. deprecated-removed:: 3.5 3.6
+   Unknown escapes consisting of ``'\'`` and ASCII letter now raise a
+   deprecation warning and will be forbidden in Python 3.6.
+
 
 .. seealso::
 
@@ -521,7 +544,11 @@ form.
    current locale. The use of this flag is discouraged as the locale mechanism
    is very unreliable, and it only handles one "culture" at a time anyway;
    you should use Unicode matching instead, which is the default in Python 3
-   for Unicode (str) patterns.
+   for Unicode (str) patterns. This flag makes sense only with bytes patterns.
+
+   .. deprecated-removed:: 3.5 3.6
+      Deprecated the use of  :const:`re.LOCALE` with string patterns or
+      :const:`re.ASCII`.
 
 
 .. data:: M
@@ -545,13 +572,15 @@ form.
 .. data:: X
           VERBOSE
 
-   This flag allows you to write regular expressions that look nicer. Whitespace
-   within the pattern is ignored, except when in a character class or preceded by
-   an unescaped backslash, and, when a line contains a ``'#'`` neither in a
-   character class or preceded by an unescaped backslash, all characters from the
-   leftmost such ``'#'`` through the end of the line are ignored.
+   This flag allows you to write regular expressions that look nicer and are
+   more readable by allowing you to visually separate logical sections of the
+   pattern and add comments. Whitespace within the pattern is ignored, except
+   when in a character class or when preceded by an unescaped backslash.
+   When a line contains a ``#`` that is not in a character class and is not
+   preceded by an unescaped backslash, all characters from the leftmost such
+   ``#`` through the end of the line are ignored.
 
-   That means that the two following regular expression objects that match a
+   This means that the two following regular expression objects that match a
    decimal number are functionally equal::
 
       a = re.compile(r"""\d +  # the integral part
@@ -622,17 +651,37 @@ form.
    That way, separator components are always found at the same relative
    indices within the result list.
 
-   Note that *split* will never split a string on an empty pattern match.
-   For example:
+   .. note::
 
-      >>> re.split('x*', 'foo')
-      ['foo']
-      >>> re.split("(?m)^$", "foo\n\nbar\n")
-      ['foo\n\nbar\n']
+      :func:`split` doesn't currently split a string on an empty pattern match.
+      For example:
+
+         >>> re.split('x*', 'axbc')
+         ['a', 'bc']
+
+      Even though ``'x*'`` also matches 0 'x' before 'a', between 'b' and 'c',
+      and after 'c', currently these matches are ignored.  The correct behavior
+      (i.e. splitting on empty matches too and returning ``['', 'a', 'b', 'c',
+      '']``) will be implemented in future versions of Python, but since this
+      is a backward incompatible change, a :exc:`FutureWarning` will be raised
+      in the meanwhile.
+
+      Patterns that can only match empty strings currently never split the
+      string.  Since this doesn't match the expected behavior, a
+      :exc:`ValueError` will be raised starting from Python 3.5::
+
+         >>> re.split("^$", "foo\n\nbar\n", flags=re.M)
+         Traceback (most recent call last):
+           File "<stdin>", line 1, in <module>
+           ...
+         ValueError: split() requires a non-empty pattern match.
 
    .. versionchanged:: 3.1
       Added the optional flags argument.
 
+   .. versionchanged:: 3.5
+      Splitting on a pattern that could match an empty string now raises
+      a warning.  Patterns that can only match empty strings are now rejected.
 
 .. function:: findall(pattern, string, flags=0)
 
@@ -660,7 +709,7 @@ form.
    *string* is returned unchanged.  *repl* can be a string or a function; if it is
    a string, any backslash escapes in it are processed.  That is, ``\n`` is
    converted to a single newline character, ``\r`` is converted to a carriage return, and
-   so forth.  Unknown escapes such as ``\j`` are left alone.  Backreferences, such
+   so forth.  Unknown escapes such as ``\&`` are left alone.  Backreferences, such
    as ``\6``, are replaced with the substring matched by group 6 in the pattern.
    For example:
 
@@ -702,6 +751,13 @@ form.
    .. versionchanged:: 3.1
       Added the optional flags argument.
 
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
+
+   .. deprecated-removed:: 3.5 3.6
+      Unknown escapes consist of ``'\'`` and ASCII letter now raise a
+      deprecation warning and will be forbidden in Python 3.6.
+
 
 .. function:: subn(pattern, repl, string, count=0, flags=0)
 
@@ -711,12 +767,26 @@ form.
    .. versionchanged:: 3.1
       Added the optional flags argument.
 
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
 
-.. function:: escape(string)
 
-   Escape all the characters in pattern except ASCII letters, numbers and ``'_'``.
+.. function:: escape(pattern)
+
+   Escape all the characters in *pattern* except ASCII letters, numbers and ``'_'``.
    This is useful if you want to match an arbitrary literal string that may
-   have regular expression metacharacters in it.
+   have regular expression metacharacters in it.  For example::
+
+      >>> print(re.escape('python.exe'))
+      python\.exe
+
+      >>> legal_chars = string.ascii_lowercase + string.digits + "!#$%&'*+-.^_`|~:"
+      >>> print('[%s]+' % re.escape(legal_chars))
+      [abcdefghijklmnopqrstuvwxyz0123456789\!\#\$\%\&\'\*\+\-\.\^_\`\|\~\:]+
+
+      >>> operators = ['+', '-', '*', '/', '**']
+      >>> print('|'.join(map(re.escape, sorted(operators, reverse=True))))
+      \/|\-|\+|\*\*|\*
 
    .. versionchanged:: 3.3
       The ``'_'`` character is no longer escaped.
@@ -727,13 +797,36 @@ form.
    Clear the regular expression cache.
 
 
-.. exception:: error
+.. exception:: error(msg, pattern=None, pos=None)
 
    Exception raised when a string passed to one of the functions here is not a
    valid regular expression (for example, it might contain unmatched parentheses)
    or when some other error occurs during compilation or matching.  It is never an
-   error if a string contains no match for a pattern.
+   error if a string contains no match for a pattern.  The error instance has
+   the following additional attributes:
 
+   .. attribute:: msg
+
+      The unformatted error message.
+
+   .. attribute:: pattern
+
+      The regular expression pattern.
+
+   .. attribute:: pos
+
+      The index in *pattern* where compilation failed (may be ``None``).
+
+   .. attribute:: lineno
+
+      The line corresponding to *pos* (may be ``None``).
+
+   .. attribute:: colno
+
+      The column corresponding to *pos* (may be ``None``).
+
+   .. versionchanged:: 3.5
+      Added additional attributes.
 
 .. _re-objects:
 
@@ -745,8 +838,8 @@ attributes:
 
 .. method:: regex.search(string[, pos[, endpos]])
 
-   Scan through *string* looking for a location where this regular expression
-   produces a match, and return a corresponding :ref:`match object
+   Scan through *string* looking for the first location where this regular
+   expression produces a match, and return a corresponding :ref:`match object
    <match-objects>`.  Return ``None`` if no position in the string matches the
    pattern; note that this is different from finding a zero-length match at some
    point in the string.
@@ -886,6 +979,8 @@ Match objects support the following methods and attributes:
    (``\g<1>``, ``\g<name>``) are replaced by the contents of the
    corresponding group.
 
+   .. versionchanged:: 3.5
+      Unmatched groups are replaced with an empty string.
 
 .. method:: match.group([group1, ...])
 
@@ -1166,15 +1261,15 @@ does by default).
 
 For example::
 
-   >>> re.match("c", "abcdef")  # No match
-   >>> re.search("c", "abcdef") # Match
+   >>> re.match("c", "abcdef")    # No match
+   >>> re.search("c", "abcdef")   # Match
    <_sre.SRE_Match object; span=(2, 3), match='c'>
 
 Regular expressions beginning with ``'^'`` can be used with :func:`search` to
 restrict the match at the beginning of the string::
 
-   >>> re.match("c", "abcdef")  # No match
-   >>> re.search("^c", "abcdef") # No match
+   >>> re.match("c", "abcdef")    # No match
+   >>> re.search("^c", "abcdef")  # No match
    >>> re.search("^a", "abcdef")  # Match
    <_sre.SRE_Match object; span=(0, 1), match='a'>
 
@@ -1255,9 +1350,9 @@ a function to "munge" text, or randomize the order of all the characters
 in each word of a sentence except for the first and last characters::
 
    >>> def repl(m):
-   ...   inner_word = list(m.group(2))
-   ...   random.shuffle(inner_word)
-   ...   return m.group(1) + "".join(inner_word) + m.group(3)
+   ...     inner_word = list(m.group(2))
+   ...     random.shuffle(inner_word)
+   ...     return m.group(1) + "".join(inner_word) + m.group(3)
    >>> text = "Professor Abdolmalek, please report your absences promptly."
    >>> re.sub(r"(\w)(\w+)(\w)", repl, text)
    'Poefsrosr Aealmlobdk, pslaee reorpt your abnseces plmrptoy.'
@@ -1321,7 +1416,7 @@ functionally identical:
 Writing a Tokenizer
 ^^^^^^^^^^^^^^^^^^^
 
-A `tokenizer or scanner <http://en.wikipedia.org/wiki/Lexical_analysis>`_
+A `tokenizer or scanner <https://en.wikipedia.org/wiki/Lexical_analysis>`_
 analyzes a string to categorize groups of characters.  This is a useful first
 step in writing a compiler or interpreter.
 
@@ -1337,14 +1432,14 @@ successive matches::
     def tokenize(code):
         keywords = {'IF', 'THEN', 'ENDIF', 'FOR', 'NEXT', 'GOSUB', 'RETURN'}
         token_specification = [
-            ('NUMBER',  r'\d+(\.\d*)?'), # Integer or decimal number
-            ('ASSIGN',  r':='),          # Assignment operator
-            ('END',     r';'),           # Statement terminator
-            ('ID',      r'[A-Za-z]+'),   # Identifiers
-            ('OP',      r'[+\-*/]'),     # Arithmetic operators
-            ('NEWLINE', r'\n'),          # Line endings
-            ('SKIP',    r'[ \t]+'),      # Skip over spaces and tabs
-            ('MISMATCH',r'.'),           # Any other character
+            ('NUMBER',  r'\d+(\.\d*)?'),  # Integer or decimal number
+            ('ASSIGN',  r':='),           # Assignment operator
+            ('END',     r';'),            # Statement terminator
+            ('ID',      r'[A-Za-z]+'),    # Identifiers
+            ('OP',      r'[+\-*/]'),      # Arithmetic operators
+            ('NEWLINE', r'\n'),           # Line endings
+            ('SKIP',    r'[ \t]+'),       # Skip over spaces and tabs
+            ('MISMATCH',r'.'),            # Any other character
         ]
         tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
         line_num = 1

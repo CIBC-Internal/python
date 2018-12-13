@@ -4,6 +4,9 @@
 .. module:: email.message
    :synopsis: The base class representing email messages.
 
+**Source code:** :source:`Lib/email/message.py`
+
+--------------
 
 The central class in the :mod:`email` package is the :class:`Message` class,
 imported from the :mod:`email.message` module.  It is the base class for the
@@ -47,7 +50,7 @@ Here are the methods of the :class:`Message` class:
 
       Return the entire message flattened as a string.  When optional *unixfrom*
       is true, the envelope header is included in the returned string.
-      *unixfrom* defaults to ``False``.  For backward compabitility reasons,
+      *unixfrom* defaults to ``False``.  For backward compatibility reasons,
       *maxheaderlen* defaults to ``0``, so if you want a different value you
       must override it explicitly (the value specified for *max_line_length* in
       the policy will be ignored by this method).  The *policy* argument may be
@@ -578,6 +581,15 @@ Here are the methods of the :class:`Message` class:
       will be *failobj*.
 
 
+   .. method:: get_content_disposition()
+
+      Return the lowercased value (without parameters) of the message's
+      :mailheader:`Content-Disposition` header if it has one, or ``None``.  The
+      possible values for this method are *inline*, *attachment* or ``None``
+      if the message follows :rfc:`2183`.
+
+      .. versionadded:: 3.5
+
    .. method:: walk()
 
       The :meth:`walk` method is an all-purpose generator which can be used to
@@ -590,10 +602,10 @@ Here are the methods of the :class:`Message` class:
 
       .. testsetup::
 
-         >>> from email import message_from_binary_file
-         >>> with open('Lib/test/test_email/data/msg_16.txt', 'rb') as f:
-         ...     msg = message_from_binary_file(f)
-         >>> from email.iterators import _structure
+         from email import message_from_binary_file
+         with open('../Lib/test/test_email/data/msg_16.txt', 'rb') as f:
+             msg = message_from_binary_file(f)
+         from email.iterators import _structure
 
       .. doctest::
 
@@ -616,7 +628,7 @@ Here are the methods of the :class:`Message` class:
       .. doctest::
 
          >>> for part in msg.walk():
-         ...     print(part.get_content_maintype() == 'multipart'),
+         ...     print(part.get_content_maintype() == 'multipart',
          ...           part.is_multipart())
          True True
          False False
@@ -628,11 +640,11 @@ Here are the methods of the :class:`Message` class:
          >>> _structure(msg)
          multipart/report
              text/plain
-         message/delivery-status
-             text/plain
-             text/plain
-         message/rfc822
-             text/plain
+             message/delivery-status
+                 text/plain
+                 text/plain
+             message/rfc822
+                 text/plain
 
       Here the ``message`` parts are not ``multiparts``, but they do contain
       subparts. ``is_multipart()`` returns ``True`` and ``walk`` descends

@@ -43,6 +43,14 @@
 
 _Py_IDENTIFIER(cursor);
 
+static const char * const begin_statements[] = {
+    "BEGIN ",
+    "BEGIN DEFERRED",
+    "BEGIN IMMEDIATE",
+    "BEGIN EXCLUSIVE",
+    NULL
+};
+
 static int pysqlite_connection_set_isolation_level(pysqlite_Connection* self, PyObject* isolation_level);
 static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self);
 
@@ -164,6 +172,10 @@ int pysqlite_connection_init(pysqlite_Connection* self, PyObject* args, PyObject
 #ifdef WITH_THREAD
     self->thread_ident = PyThread_get_thread_ident();
 #endif
+    if (!check_same_thread && sqlite3_libversion_number() < 3003001) {
+        PyErr_SetString(pysqlite_NotSupportedError, "shared connections not available");
+        return -1;
+    }
     self->check_same_thread = check_same_thread;
 
     self->function_pinboard = PyDict_New();
@@ -204,8 +216,8 @@ void pysqlite_flush_statement_cache(pysqlite_Connection* self)
         node = node->next;
     }
 
-    Py_DECREF(self->statement_cache);
-    self->statement_cache = (pysqlite_Cache*)PyObject_CallFunction((PyObject*)&pysqlite_CacheType, "O", self);
+    Py_SETREF(self->statement_cache,
+              (pysqlite_Cache *)PyObject_CallFunction((PyObject *)&pysqlite_CacheType, "O", self));
     Py_DECREF(self);
     self->statement_cache->decref_factory = 0;
 }
@@ -254,9 +266,6 @@ void pysqlite_connection_dealloc(pysqlite_Connection* self)
         Py_END_ALLOW_THREADS
     }
 
-    if (self->begin_statement) {
-        PyMem_Free(self->begin_statement);
-    }
     Py_XDECREF(self->isolation_level);
     Py_XDECREF(self->function_pinboard);
     Py_XDECREF(self->row_factory);
@@ -296,7 +305,7 @@ error:
 
 PyObject* pysqlite_connection_cursor(pysqlite_Connection* self, PyObject* args, PyObject* kwargs)
 {
-    static char *kwlist[] = {"factory", NULL, NULL};
+    static char *kwlist[] = {"factory", NULL};
     PyObject* factory = NULL;
     PyObject* cursor;
 
@@ -313,14 +322,22 @@ PyObject* pysqlite_connection_cursor(pysqlite_Connection* self, PyObject* args, 
         factory = (PyObject*)&pysqlite_CursorType;
     }
 
-    cursor = PyObject_CallFunction(factory, "O", self);
+    cursor = PyObject_CallFunctionObjArgs(factory, (PyObject *)self, NULL);
+    if (cursor == NULL)
+        return NULL;
+    if (!PyObject_TypeCheck(cursor, &pysqlite_CursorType)) {
+        PyErr_Format(PyExc_TypeError,
+                     "factory must return a cursor, not %.100s",
+                     Py_TYPE(cursor)->tp_name);
+        Py_DECREF(cursor);
+        return NULL;
+    }
 
     _pysqlite_drop_unused_cursor_references(self);
 
     if (cursor && self->row_factory != Py_None) {
-        Py_XDECREF(((pysqlite_Cursor*)cursor)->row_factory);
         Py_INCREF(self->row_factory);
-        ((pysqlite_Cursor*)cursor)->row_factory = self->row_factory;
+        Py_XSETREF(((pysqlite_Cursor *)cursor)->row_factory, self->row_factory);
     }
 
     return cursor;
@@ -423,7 +440,6 @@ PyObject* pysqlite_connection_commit(pysqlite_Connection* self, PyObject* args)
     }
 
     if (self->inTransaction) {
-        pysqlite_do_all_statements(self, ACTION_RESET, 0);
 
         Py_BEGIN_ALLOW_THREADS
         rc = sqlite3_prepare(self->db, "COMMIT", -1, &statement, &tail);
@@ -795,8 +811,7 @@ static void _pysqlite_drop_unused_statement_references(pysqlite_Connection* self
         }
     }
 
-    Py_DECREF(self->statements);
-    self->statements = new_list;
+    Py_SETREF(self->statements, new_list);
 }
 
 static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self)
@@ -827,8 +842,7 @@ static void _pysqlite_drop_unused_cursor_references(pysqlite_Connection* self)
         }
     }
 
-    Py_DECREF(self->cursors);
-    self->cursors = new_list;
+    Py_SETREF(self->cursors, new_list);
 }
 
 PyObject* pysqlite_connection_create_function(pysqlite_Connection* self, PyObject* args, PyObject* kwargs)
@@ -1174,59 +1188,48 @@ static PyObject* pysqlite_connection_get_total_changes(pysqlite_Connection* self
 
 static int pysqlite_connection_set_isolation_level(pysqlite_Connection* self, PyObject* isolation_level)
 {
-    PyObject* res;
-    PyObject* begin_statement;
-    static PyObject* begin_word;
-
-    Py_XDECREF(self->isolation_level);
-
-    if (self->begin_statement) {
-        PyMem_Free(self->begin_statement);
-        self->begin_statement = NULL;
-    }
-
     if (isolation_level == Py_None) {
-        Py_INCREF(Py_None);
-        self->isolation_level = Py_None;
-
-        res = pysqlite_connection_commit(self, NULL);
+        PyObject *res = pysqlite_connection_commit(self, NULL);
         if (!res) {
             return -1;
         }
         Py_DECREF(res);
 
+        self->begin_statement = NULL;
         self->inTransaction = 0;
     } else {
-        const char *statement;
-        Py_ssize_t size;
+        const char * const *candidate;
+        PyObject *uppercase_level;
+        _Py_IDENTIFIER(upper);
 
-        Py_INCREF(isolation_level);
-        self->isolation_level = isolation_level;
-
-        if (!begin_word) {
-            begin_word = PyUnicode_FromString("BEGIN ");
-            if (!begin_word) return -1;
-        }
-        begin_statement = PyUnicode_Concat(begin_word, isolation_level);
-        if (!begin_statement) {
+        if (!PyUnicode_Check(isolation_level)) {
+            PyErr_Format(PyExc_TypeError,
+                         "isolation_level must be a string or None, not %.100s",
+                         Py_TYPE(isolation_level)->tp_name);
             return -1;
         }
 
-        statement = _PyUnicode_AsStringAndSize(begin_statement, &size);
-        if (!statement) {
-            Py_DECREF(begin_statement);
+        uppercase_level = _PyObject_CallMethodIdObjArgs(
+                        (PyObject *)&PyUnicode_Type, &PyId_upper,
+                        isolation_level, NULL);
+        if (!uppercase_level) {
             return -1;
         }
-        self->begin_statement = PyMem_Malloc(size + 2);
-        if (!self->begin_statement) {
-            Py_DECREF(begin_statement);
+        for (candidate = begin_statements; *candidate; candidate++) {
+            if (_PyUnicode_EqualToASCIIString(uppercase_level, *candidate + 6))
+                break;
+        }
+        Py_DECREF(uppercase_level);
+        if (!*candidate) {
+            PyErr_SetString(PyExc_ValueError,
+                            "invalid value for isolation_level");
             return -1;
         }
-
-        strcpy(self->begin_statement, statement);
-        Py_DECREF(begin_statement);
+        self->begin_statement = *candidate;
     }
 
+    Py_INCREF(isolation_level);
+    Py_XSETREF(self->isolation_level, isolation_level);
     return 0;
 }
 
@@ -1240,6 +1243,9 @@ PyObject* pysqlite_connection_call(pysqlite_Connection* self, PyObject* args, Py
     if (!pysqlite_check_thread(self) || !pysqlite_check_connection(self)) {
         return NULL;
     }
+
+    if (!_PyArg_NoKeywords(MODULE_NAME ".Connection()", kwargs))
+        return NULL;
 
     if (!PyArg_ParseTuple(args, "O", &sql))
         return NULL;
@@ -1287,7 +1293,7 @@ error:
     return NULL;
 }
 
-PyObject* pysqlite_connection_execute(pysqlite_Connection* self, PyObject* args, PyObject* kwargs)
+PyObject* pysqlite_connection_execute(pysqlite_Connection* self, PyObject* args)
 {
     PyObject* cursor = 0;
     PyObject* result = 0;
@@ -1316,7 +1322,7 @@ error:
     return cursor;
 }
 
-PyObject* pysqlite_connection_executemany(pysqlite_Connection* self, PyObject* args, PyObject* kwargs)
+PyObject* pysqlite_connection_executemany(pysqlite_Connection* self, PyObject* args)
 {
     PyObject* cursor = 0;
     PyObject* result = 0;
@@ -1345,7 +1351,7 @@ error:
     return cursor;
 }
 
-PyObject* pysqlite_connection_executescript(pysqlite_Connection* self, PyObject* args, PyObject* kwargs)
+PyObject* pysqlite_connection_executescript(pysqlite_Connection* self, PyObject* args)
 {
     PyObject* cursor = 0;
     PyObject* result = 0;
@@ -1517,11 +1523,13 @@ pysqlite_connection_create_collation(pysqlite_Connection* self, PyObject* args)
         goto finally;
     }
 
-    if (!PyArg_ParseTuple(args, "O!O:create_collation(name, callback)", &PyUnicode_Type, &name, &callable)) {
+    if (!PyArg_ParseTuple(args, "UO:create_collation(name, callback)",
+                          &name, &callable)) {
         goto finally;
     }
 
-    uppercase_name = _PyObject_CallMethodId(name, &PyId_upper, "");
+    uppercase_name = _PyObject_CallMethodIdObjArgs((PyObject *)&PyUnicode_Type,
+                                                   &PyId_upper, name, NULL);
     if (!uppercase_name) {
         goto finally;
     }

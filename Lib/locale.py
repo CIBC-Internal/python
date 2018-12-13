@@ -1,13 +1,12 @@
-""" Locale support.
+"""Locale support module.
 
-    The module provides low-level access to the C lib's locale APIs
-    and adds high level number formatting APIs as well as a locale
-    aliasing engine to complement these.
+The module provides low-level access to the C lib's locale APIs and adds high
+level number formatting APIs as well as a locale aliasing engine to complement
+these.
 
-    The aliasing engine includes support for many commonly used locale
-    names and maps them to values suitable for passing to the C lib's
-    setlocale() function. It also includes default encodings for all
-    supported locale names.
+The aliasing engine includes support for many commonly used locale names and
+maps them to values suitable for passing to the C lib's setlocale() function. It
+also includes default encodings for all supported locale names.
 
 """
 
@@ -298,11 +297,11 @@ def currency(val, symbol=True, grouping=False, international=False):
     return s.replace('<', '').replace('>', '')
 
 def str(val):
-    """Convert float to integer, taking the locale into account."""
+    """Convert float to string, taking the locale into account."""
     return format("%.12g", val)
 
-def atof(string, func=float):
-    "Parses a string as a float according to the locale settings."
+def delocalize(string):
+    "Parses a string as a normalized number according to the locale settings."
     #First, get rid of the grouping
     ts = localeconv()['thousands_sep']
     if ts:
@@ -311,12 +310,15 @@ def atof(string, func=float):
     dd = localeconv()['decimal_point']
     if dd:
         string = string.replace(dd, '.')
-    #finally, parse the string
-    return func(string)
+    return string
 
-def atoi(str):
+def atof(string, func=float):
+    "Parses a string as a float according to the locale settings."
+    return func(delocalize(string))
+
+def atoi(string):
     "Converts a string to an integer according to the locale settings."
-    return atof(str, int)
+    return int(delocalize(string))
 
 def _test():
     setlocale(LC_ALL, "")
@@ -696,7 +698,9 @@ locale_encoding_alias = {
     'euc_kr':                       'eucKR',
     'utf_8':                        'UTF-8',
     'koi8_r':                       'KOI8-R',
+    'koi8_t':                       'KOI8-T',
     'koi8_u':                       'KOI8-U',
+    'kz1048':                       'RK1048',
     'cp1251':                       'CP1251',
     'cp1255':                       'CP1255',
     'cp1256':                       'CP1256',
@@ -1447,7 +1451,7 @@ windows_locale = {
     0x1809: "en_IE", # English - Ireland
     0x1c09: "en_ZA", # English - South Africa
     0x2009: "en_JA", # English - Jamaica
-    0x2409: "en_CB", # English - Carribbean
+    0x2409: "en_CB", # English - Caribbean
     0x2809: "en_BZ", # English - Belize
     0x2c09: "en_TT", # English - Trinidad
     0x3009: "en_ZW", # English - Zimbabwe

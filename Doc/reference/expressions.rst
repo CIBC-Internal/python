@@ -133,7 +133,7 @@ Parenthesized forms
 A parenthesized form is an optional expression list enclosed in parentheses:
 
 .. productionlist::
-   parenth_form: "(" [`expression_list`] ")"
+   parenth_form: "(" [`starred_expression`] ")"
 
 A parenthesized expression list yields whatever that expression list yields: if
 the list contains at least one comma, it yields a tuple; otherwise, it yields
@@ -202,7 +202,7 @@ A list display is a possibly empty series of expressions enclosed in square
 brackets:
 
 .. productionlist::
-   list_display: "[" [`expression_list` | `comprehension`] "]"
+   list_display: "[" [`starred_list` | `comprehension`] "]"
 
 A list display yields a new list object, the contents being specified by either
 a list of expressions or a comprehension.  When a comma-separated list of
@@ -223,7 +223,7 @@ A set display is denoted by curly braces and distinguishable from dictionary
 displays by the lack of colons separating keys and values:
 
 .. productionlist::
-   set_display: "{" (`expression_list` | `comprehension`) "}"
+   set_display: "{" (`starred_list` | `comprehension`) "}"
 
 A set display yields a new mutable set object, the contents being specified by
 either a sequence of expressions or a comprehension.  When a comma-separated
@@ -250,7 +250,7 @@ curly braces:
 .. productionlist::
    dict_display: "{" [`key_datum_list` | `dict_comprehension`] "}"
    key_datum_list: `key_datum` ("," `key_datum`)* [","]
-   key_datum: `expression` ":" `expression`
+   key_datum: `expression` ":" `expression` | "**" `or_expr`
    dict_comprehension: `expression` ":" `expression` `comp_for`
 
 A dictionary display yields a new dictionary object.
@@ -260,6 +260,16 @@ from left to right to define the entries of the dictionary: each key object is
 used as a key into the dictionary to store the corresponding datum.  This means
 that you can specify the same key multiple times in the key/datum list, and the
 final dictionary's value for that key will be the last one given.
+
+.. index:: unpacking; dictionary, **; in dictionary displays
+
+A double asterisk ``**`` denotes :dfn:`dictionary unpacking`.
+Its operand must be a :term:`mapping`.  Each mapping item is added
+to the new dictionary.  Later values replace values already set by
+earlier key/datum pairs and earlier dictionary unpackings.
+
+.. versionadded:: 3.5
+   Unpacking into dictionary displays, originally proposed by :pep:`448`.
 
 A dict comprehension, in contrast to list and set comprehensions, needs two
 expressions separated with a colon followed by the usual "for" and "if" clauses.
@@ -325,7 +335,7 @@ thus can only be used in the body of a function definition.  Using a yield
 expression in a function's body causes that function to be a generator.
 
 When a generator function is called, it returns an iterator known as a
-generator.  That generator then controls the execution of a generator function.
+generator.  That generator then controls the execution of the generator function.
 The execution starts when one of the generator's methods is called.  At that
 time, the execution proceeds to the first yield expression, where it is
 suspended again, returning the value of :token:`expression_list` to the generator's
@@ -371,25 +381,26 @@ the yield expression. It can be either set explicitly when raising
 (by returning a value from the sub-generator).
 
    .. versionchanged:: 3.3
-      Added ``yield from <expr>`` to delegate control flow to a subiterator
+      Added ``yield from <expr>`` to delegate control flow to a subiterator.
 
 The parentheses may be omitted when the yield expression is the sole expression
 on the right hand side of an assignment statement.
 
 .. seealso::
 
-   :pep:`0255` - Simple Generators
+   :pep:`255` - Simple Generators
       The proposal for adding generators and the :keyword:`yield` statement to Python.
 
-   :pep:`0342` - Coroutines via Enhanced Generators
+   :pep:`342` - Coroutines via Enhanced Generators
       The proposal to enhance the API and syntax of generators, making them
       usable as simple coroutines.
 
-   :pep:`0380` - Syntax for Delegating to a Subgenerator
+   :pep:`380` - Syntax for Delegating to a Subgenerator
       The proposal to introduce the :token:`yield_from` syntax, making delegation
       to sub-generators easy.
 
 .. index:: object: generator
+.. _generator-methods:
 
 Generator-iterator methods
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -443,12 +454,12 @@ is already executing raises a :exc:`ValueError` exception.
 .. method:: generator.close()
 
    Raises a :exc:`GeneratorExit` at the point where the generator function was
-   paused.  If the generator function then raises :exc:`StopIteration` (by
-   exiting normally, or due to already being closed) or :exc:`GeneratorExit` (by
-   not catching the exception), close returns to its caller.  If the generator
-   yields a value, a :exc:`RuntimeError` is raised.  If the generator raises any
-   other exception, it is propagated to the caller.  :meth:`close` does nothing
-   if the generator has already exited due to an exception or normal exit.
+   paused.  If the generator function then exits gracefully, is already closed,
+   or raises :exc:`GeneratorExit` (by not catching the exception), close
+   returns to its caller.  If the generator yields a value, a
+   :exc:`RuntimeError` is raised.  If the generator raises any other exception,
+   it is propagated to the caller.  :meth:`close` does nothing if the generator
+   has already exited due to an exception or normal exit.
 
 .. index:: single: yield; examples
 
@@ -648,15 +659,15 @@ series of :term:`arguments <argument>`:
 
 .. productionlist::
    call: `primary` "(" [`argument_list` [","] | `comprehension`] ")"
-   argument_list: `positional_arguments` ["," `keyword_arguments`]
-                :   ["," "*" `expression`] ["," `keyword_arguments`]
-                :   ["," "**" `expression`]
-                : | `keyword_arguments` ["," "*" `expression`]
-                :   ["," `keyword_arguments`] ["," "**" `expression`]
-                : | "*" `expression` ["," `keyword_arguments`] ["," "**" `expression`]
-                : | "**" `expression`
-   positional_arguments: `expression` ("," `expression`)*
-   keyword_arguments: `keyword_item` ("," `keyword_item`)*
+   argument_list: `positional_arguments` ["," `starred_and_keywords`]
+                :   ["," `keywords_arguments`]
+                : | `starred_and_keywords` ["," `keywords_arguments`]
+                : | `keywords_arguments`
+   positional_arguments: ["*"] `expression` ("," ["*"] `expression`)*
+   starred_and_keywords: ("*" `expression` | `keyword_item`)
+                : ("," "*" `expression` | "," `keyword_item`)*
+   keywords_arguments: (`keyword_item` | "**" `expression`)
+                : ("," `keyword_item` | "," "**" `expression`)*
    keyword_item: `identifier` "=" `expression`
 
 An optional trailing comma may be present after the positional and keyword arguments
@@ -714,26 +725,27 @@ there were no excess keyword arguments.
 
 .. index::
    single: *; in function calls
+   single: unpacking; in function calls
 
 If the syntax ``*expression`` appears in the function call, ``expression`` must
-evaluate to an iterable.  Elements from this iterable are treated as if they
-were additional positional arguments; if there are positional arguments
-*x1*, ..., *xN*, and ``expression`` evaluates to a sequence *y1*, ..., *yM*,
-this is equivalent to a call with M+N positional arguments *x1*, ..., *xN*,
-*y1*, ..., *yM*.
+evaluate to an :term:`iterable`.  Elements from these iterables are
+treated as if they were additional positional arguments.  For the call
+``f(x1, x2, *y, x3, x4)``, if *y* evaluates to a sequence *y1*, ..., *yM*,
+this is equivalent to a call with M+4 positional arguments *x1*, *x2*,
+*y1*, ..., *yM*, *x3*, *x4*.
 
 A consequence of this is that although the ``*expression`` syntax may appear
-*after* some keyword arguments, it is processed *before* the keyword arguments
-(and the ``**expression`` argument, if any -- see below).  So::
+*after* explicit keyword arguments, it is processed *before* the
+keyword arguments (and any ``**expression`` arguments -- see below).  So::
 
    >>> def f(a, b):
-   ...  print(a, b)
+   ...     print(a, b)
    ...
    >>> f(b=1, *(2,))
    2 1
    >>> f(a=1, *(2,))
    Traceback (most recent call last):
-     File "<stdin>", line 1, in ?
+     File "<stdin>", line 1, in <module>
    TypeError: f() got multiple values for keyword argument 'a'
    >>> f(1, *(2,))
    1 2
@@ -745,12 +757,19 @@ used in the same call, so in practice this confusion does not arise.
    single: **; in function calls
 
 If the syntax ``**expression`` appears in the function call, ``expression`` must
-evaluate to a mapping, the contents of which are treated as additional keyword
-arguments.  In the case of a keyword appearing in both ``expression`` and as an
-explicit keyword argument, a :exc:`TypeError` exception is raised.
+evaluate to a :term:`mapping`, the contents of which are treated as
+additional keyword arguments.  If a keyword is already present
+(as an explicit keyword argument, or from another unpacking),
+a :exc:`TypeError` exception is raised.
 
 Formal parameters using the syntax ``*identifier`` or ``**identifier`` cannot be
 used as positional argument slots or as keyword argument names.
+
+.. versionchanged:: 3.5
+   Function calls accept any number of ``*`` and ``**`` unpackings,
+   positional arguments may follow iterable unpackings (``*``),
+   and keyword arguments may follow dictionary unpackings (``**``).
+   Originally proposed by :pep:`448`.
 
 A call always returns some value, possibly ``None``, unless it raises an
 exception.  How this value is computed depends on the type of the callable
@@ -811,6 +830,20 @@ a class instance:
    if that method was called.
 
 
+.. _await:
+
+Await expression
+================
+
+Suspend the execution of :term:`coroutine` on an :term:`awaitable` object.
+Can only be used inside a :term:`coroutine function`.
+
+.. productionlist::
+   await_expr: "await" `primary`
+
+.. versionadded:: 3.5
+
+
 .. _power:
 
 The power operator
@@ -820,7 +853,7 @@ The power operator binds more tightly than unary operators on its left; it binds
 less tightly than unary operators on its right.  The syntax is:
 
 .. productionlist::
-   power: `primary` ["**" `u_expr`]
+   power: ( `await_expr` | `primary` ) ["**" `u_expr`]
 
 Thus, in an unparenthesized sequence of power and unary operators, the operators
 are evaluated from right to left (this does not constrain the evaluation order
@@ -891,8 +924,9 @@ from the power operator, there are only two levels, one for multiplicative
 operators and one for additive operators:
 
 .. productionlist::
-   m_expr: `u_expr` | `m_expr` "*" `u_expr` | `m_expr` "//" `u_expr` | `m_expr` "/" `u_expr`
-         : | `m_expr` "%" `u_expr`
+   m_expr: `u_expr` | `m_expr` "*" `u_expr` | `m_expr` "@" `m_expr` |
+         : `m_expr` "//" `u_expr`| `m_expr` "/" `u_expr` |
+         : `m_expr` "%" `u_expr`
    a_expr: `m_expr` | `a_expr` "+" `m_expr` | `a_expr` "-" `m_expr`
 
 .. index:: single: multiplication
@@ -902,6 +936,13 @@ arguments must either both be numbers, or one argument must be an integer and
 the other must be a sequence. In the former case, the numbers are converted to a
 common type and then multiplied together.  In the latter case, sequence
 repetition is performed; a negative repetition factor yields an empty sequence.
+
+.. index:: single: matrix multiplication
+
+The ``@`` (at) operator is intended to be used for matrix multiplication.  No
+builtin Python types implement this operator.
+
+.. versionadded:: 3.5
 
 .. index::
    exception: ZeroDivisionError
@@ -1013,10 +1054,6 @@ must be integers.
 
 
 .. _comparisons:
-.. _is:
-.. _is not:
-.. _in:
-.. _not in:
 
 Comparisons
 ===========
@@ -1052,89 +1089,211 @@ Note that ``a op1 b op2 c`` doesn't imply any kind of comparison between *a* and
 *c*, so that, e.g., ``x < y > z`` is perfectly legal (though perhaps not
 pretty).
 
+Value comparisons
+-----------------
+
 The operators ``<``, ``>``, ``==``, ``>=``, ``<=``, and ``!=`` compare the
-values of two objects.  The objects need not have the same type. If both are
-numbers, they are converted to a common type.  Otherwise, the ``==`` and ``!=``
-operators *always* consider objects of different types to be unequal, while the
-``<``, ``>``, ``>=`` and ``<=`` operators raise a :exc:`TypeError` when
-comparing objects of different types that do not implement these operators for
-the given pair of types.  You can control comparison behavior of objects of
-non-built-in types by defining rich comparison methods like :meth:`__gt__`,
-described in section :ref:`customization`.
+values of two objects.  The objects do not need to have the same type.
 
-Comparison of objects of the same type depends on the type:
+Chapter :ref:`objects` states that objects have a value (in addition to type
+and identity).  The value of an object is a rather abstract notion in Python:
+For example, there is no canonical access method for an object's value.  Also,
+there is no requirement that the value of an object should be constructed in a
+particular way, e.g. comprised of all its data attributes. Comparison operators
+implement a particular notion of what the value of an object is.  One can think
+of them as defining the value of an object indirectly, by means of their
+comparison implementation.
 
-* Numbers are compared arithmetically.
+Because all types are (direct or indirect) subtypes of :class:`object`, they
+inherit the default comparison behavior from :class:`object`.  Types can
+customize their comparison behavior by implementing
+:dfn:`rich comparison methods` like :meth:`__lt__`, described in
+:ref:`customization`.
 
-* The values :const:`float('NaN')` and :const:`Decimal('NaN')` are special.
-  The are identical to themselves, ``x is x`` but are not equal to themselves,
-  ``x != x``.  Additionally, comparing any value to a not-a-number value
+The default behavior for equality comparison (``==`` and ``!=``) is based on
+the identity of the objects.  Hence, equality comparison of instances with the
+same identity results in equality, and equality comparison of instances with
+different identities results in inequality.  A motivation for this default
+behavior is the desire that all objects should be reflexive (i.e. ``x is y``
+implies ``x == y``).
+
+A default order comparison (``<``, ``>``, ``<=``, and ``>=``) is not provided;
+an attempt raises :exc:`TypeError`.  A motivation for this default behavior is
+the lack of a similar invariant as for equality.
+
+The behavior of the default equality comparison, that instances with different
+identities are always unequal, may be in contrast to what types will need that
+have a sensible definition of object value and value-based equality.  Such
+types will need to customize their comparison behavior, and in fact, a number
+of built-in types have done that.
+
+The following list describes the comparison behavior of the most important
+built-in types.
+
+* Numbers of built-in numeric types (:ref:`typesnumeric`) and of the standard
+  library types :class:`fractions.Fraction` and :class:`decimal.Decimal` can be
+  compared within and across their types, with the restriction that complex
+  numbers do not support order comparison.  Within the limits of the types
+  involved, they compare mathematically (algorithmically) correct without loss
+  of precision.
+
+  The not-a-number values :const:`float('NaN')` and :const:`Decimal('NaN')`
+  are special.  They are identical to themselves (``x is x`` is true) but
+  are not equal to themselves (``x == x`` is false).  Additionally,
+  comparing any number to a not-a-number value
   will return ``False``.  For example, both ``3 < float('NaN')`` and
   ``float('NaN') < 3`` will return ``False``.
 
-* Bytes objects are compared lexicographically using the numeric values of their
-  elements.
+* Binary sequences (instances of :class:`bytes` or :class:`bytearray`) can be
+  compared within and across their types.  They compare lexicographically using
+  the numeric values of their elements.
 
-* Strings are compared lexicographically using the numeric equivalents (the
-  result of the built-in function :func:`ord`) of their characters. [#]_ String
-  and bytes object can't be compared!
+* Strings (instances of :class:`str`) compare lexicographically using the
+  numerical Unicode code points (the result of the built-in function
+  :func:`ord`) of their characters. [#]_
 
-* Tuples and lists are compared lexicographically using comparison of
-  corresponding elements.  This means that to compare equal, each element must
-  compare equal and the two sequences must be of the same type and have the same
-  length.
+  Strings and binary sequences cannot be directly compared.
 
-  If not equal, the sequences are ordered the same as their first differing
-  elements.  For example, ``[1,2,x] <= [1,2,y]`` has the same value as
-  ``x <= y``.  If the corresponding element does not exist, the shorter
-  sequence is ordered first (for example, ``[1,2] < [1,2,3]``).
+* Sequences (instances of :class:`tuple`, :class:`list`, or :class:`range`) can
+  be compared only within each of their types, with the restriction that ranges
+  do not support order comparison.  Equality comparison across these types
+  results in unequality, and ordering comparison across these types raises
+  :exc:`TypeError`.
 
-* Mappings (dictionaries) compare equal if and only if they have the same
-  ``(key, value)`` pairs. Order comparisons ``('<', '<=', '>=', '>')``
-  raise :exc:`TypeError`.
+  Sequences compare lexicographically using comparison of corresponding
+  elements, whereby reflexivity of the elements is enforced.
 
-* Sets and frozensets define comparison operators to mean subset and superset
-  tests.  Those relations do not define total orderings (the two sets ``{1,2}``
-  and {2,3} are not equal, nor subsets of one another, nor supersets of one
+  In enforcing reflexivity of elements, the comparison of collections assumes
+  that for a collection element ``x``, ``x == x`` is always true.  Based on
+  that assumption, element identity is compared first, and element comparison
+  is performed only for distinct elements.  This approach yields the same
+  result as a strict element comparison would, if the compared elements are
+  reflexive.  For non-reflexive elements, the result is different than for
+  strict element comparison, and may be surprising:  The non-reflexive
+  not-a-number values for example result in the following comparison behavior
+  when used in a list::
+
+    >>> nan = float('NaN')
+    >>> nan is nan
+    True
+    >>> nan == nan
+    False                 <-- the defined non-reflexive behavior of NaN
+    >>> [nan] == [nan]
+    True                  <-- list enforces reflexivity and tests identity first
+
+  Lexicographical comparison between built-in collections works as follows:
+
+  - For two collections to compare equal, they must be of the same type, have
+    the same length, and each pair of corresponding elements must compare
+    equal (for example, ``[1,2] == (1,2)`` is false because the type is not the
+    same).
+
+  - Collections that support order comparison are ordered the same as their
+    first unequal elements (for example, ``[1,2,x] <= [1,2,y]`` has the same
+    value as ``x <= y``).  If a corresponding element does not exist, the
+    shorter collection is ordered first (for example, ``[1,2] < [1,2,3]`` is
+    true).
+
+* Mappings (instances of :class:`dict`) compare equal if and only if they have
+  equal `(key, value)` pairs. Equality comparison of the keys and values
+  enforces reflexivity.
+
+  Order comparisons (``<``, ``>``, ``<=``, and ``>=``) raise :exc:`TypeError`.
+
+* Sets (instances of :class:`set` or :class:`frozenset`) can be compared within
+  and across their types.
+
+  They define order
+  comparison operators to mean subset and superset tests.  Those relations do
+  not define total orderings (for example, the two sets ``{1,2}`` and ``{2,3}``
+  are not equal, nor subsets of one another, nor supersets of one
   another).  Accordingly, sets are not appropriate arguments for functions
-  which depend on total ordering.  For example, :func:`min`, :func:`max`, and
-  :func:`sorted` produce undefined results given a list of sets as inputs.
+  which depend on total ordering (for example, :func:`min`, :func:`max`, and
+  :func:`sorted` produce undefined results given a list of sets as inputs).
 
-* Most other objects of built-in types compare unequal unless they are the same
-  object; the choice whether one object is considered smaller or larger than
-  another one is made arbitrarily but consistently within one execution of a
-  program.
+  Comparison of sets enforces reflexivity of its elements.
 
-Comparison of objects of differing types depends on whether either of the
-types provide explicit support for the comparison.  Most numeric types can be
-compared with one another.  When cross-type comparison is not supported, the
-comparison method returns ``NotImplemented``.
+* Most other built-in types have no comparison methods implemented, so they
+  inherit the default comparison behavior.
 
+User-defined classes that customize their comparison behavior should follow
+some consistency rules, if possible:
+
+* Equality comparison should be reflexive.
+  In other words, identical objects should compare equal:
+
+    ``x is y`` implies ``x == y``
+
+* Comparison should be symmetric.
+  In other words, the following expressions should have the same result:
+
+    ``x == y`` and ``y == x``
+
+    ``x != y`` and ``y != x``
+
+    ``x < y`` and ``y > x``
+
+    ``x <= y`` and ``y >= x``
+
+* Comparison should be transitive.
+  The following (non-exhaustive) examples illustrate that:
+
+    ``x > y and y > z`` implies ``x > z``
+
+    ``x < y and y <= z`` implies ``x < z``
+
+* Inverse comparison should result in the boolean negation.
+  In other words, the following expressions should have the same result:
+
+    ``x == y`` and ``not x != y``
+
+    ``x < y`` and ``not x >= y`` (for total ordering)
+
+    ``x > y`` and ``not x <= y`` (for total ordering)
+
+  The last two expressions apply to totally ordered collections (e.g. to
+  sequences, but not to sets or mappings). See also the
+  :func:`~functools.total_ordering` decorator.
+
+* The :func:`hash` result should be consistent with equality.
+  Objects that are equal should either have the same hash value,
+  or be marked as unhashable.
+
+Python does not enforce these consistency rules. In fact, the not-a-number
+values are an example for not following these rules.
+
+
+.. _in:
+.. _not in:
 .. _membership-test-details:
 
+Membership test operations
+--------------------------
+
 The operators :keyword:`in` and :keyword:`not in` test for membership.  ``x in
-s`` evaluates to true if *x* is a member of *s*, and false otherwise.  ``x not
-in s`` returns the negation of ``x in s``.  All built-in sequences and set types
-support this as well as dictionary, for which :keyword:`in` tests whether the
-dictionary has a given key. For container types such as list, tuple, set,
-frozenset, dict, or collections.deque, the expression ``x in y`` is equivalent
+s`` evaluates to ``True`` if *x* is a member of *s*, and ``False`` otherwise.
+``x not in s`` returns the negation of ``x in s``.  All built-in sequences and
+set types support this as well as dictionary, for which :keyword:`in` tests
+whether the dictionary has a given key. For container types such as list, tuple,
+set, frozenset, dict, or collections.deque, the expression ``x in y`` is equivalent
 to ``any(x is e or x == e for e in y)``.
 
-For the string and bytes types, ``x in y`` is true if and only if *x* is a
+For the string and bytes types, ``x in y`` is ``True`` if and only if *x* is a
 substring of *y*.  An equivalent test is ``y.find(x) != -1``.  Empty strings are
 always considered to be a substring of any other string, so ``"" in "abc"`` will
 return ``True``.
 
 For user-defined classes which define the :meth:`__contains__` method, ``x in
-y`` is true if and only if ``y.__contains__(x)`` is true.
+y`` returns ``True`` if ``y.__contains__(x)`` returns a true value, and
+``False`` otherwise.
 
 For user-defined classes which do not define :meth:`__contains__` but do define
-:meth:`__iter__`, ``x in y`` is true if some value ``z`` with ``x == z`` is
+:meth:`__iter__`, ``x in y`` is ``True`` if some value ``z`` with ``x == z`` is
 produced while iterating over ``y``.  If an exception is raised during the
 iteration, it is as if :keyword:`in` raised that exception.
 
 Lastly, the old-style iteration protocol is tried: if a class defines
-:meth:`__getitem__`, ``x in y`` is true if and only if there is a non-negative
+:meth:`__getitem__`, ``x in y`` is ``True`` if and only if there is a non-negative
 integer index *i* such that ``x == y[i]``, and all lower integer indices do not
 raise :exc:`IndexError` exception.  (If any other exception is raised, it is as
 if :keyword:`in` raised that exception).
@@ -1153,9 +1312,17 @@ The operator :keyword:`not in` is defined to have the inverse true value of
    operator: is not
    pair: identity; test
 
+
+.. _is:
+.. _is not:
+
+Identity comparisons
+--------------------
+
 The operators :keyword:`is` and :keyword:`is not` test for object identity: ``x
-is y`` is true if and only if *x* and *y* are the same object.  ``x is not y``
-yields the inverse truth value. [#]_
+is y`` is true if and only if *x* and *y* are the same object.  Object identity
+is determined using the :meth:`id` function.  ``x is not y`` yields the inverse
+truth value. [#]_
 
 
 .. _booleans:
@@ -1245,7 +1412,9 @@ Lambdas
 
 Lambda expressions (sometimes called lambda forms) are used to create anonymous
 functions. The expression ``lambda arguments: expression`` yields a function
-object.  The unnamed object behaves like a function object defined with ::
+object.  The unnamed object behaves like a function object defined with:
+
+.. code-block:: none
 
    def <lambda>(arguments):
        return expression
@@ -1264,12 +1433,28 @@ Expression lists
 
 .. productionlist::
    expression_list: `expression` ( "," `expression` )* [","]
+   starred_list: `starred_item` ( "," `starred_item` )* [","]
+   starred_expression: `expression` | ( `starred_item` "," )* [`starred_item`]
+   starred_item: `expression` | "*" `or_expr`
 
 .. index:: object: tuple
 
-An expression list containing at least one comma yields a tuple.  The length of
+Except when part of a list or set display, an expression list
+containing at least one comma yields a tuple.  The length of
 the tuple is the number of expressions in the list.  The expressions are
 evaluated from left to right.
+
+.. index::
+   pair: iterable; unpacking
+   single: *; in expression lists
+
+An asterisk ``*`` denotes :dfn:`iterable unpacking`.  Its operand must be
+an :term:`iterable`.  The iterable is expanded into a sequence of items,
+which are included in the new tuple, list, or set, at the site of
+the unpacking.
+
+.. versionadded:: 3.5
+   Iterable unpacking in expression lists, originally proposed by :pep:`448`.
 
 .. index:: pair: trailing; comma
 
@@ -1346,12 +1531,15 @@ precedence and have a left-to-right chaining feature as described in the
 +-----------------------------------------------+-------------------------------------+
 | ``+``, ``-``                                  | Addition and subtraction            |
 +-----------------------------------------------+-------------------------------------+
-| ``*``, ``/``, ``//``, ``%``                   | Multiplication, division, remainder |
-|                                               | [#]_                                |
+| ``*``, ``@``, ``/``, ``//``, ``%``            | Multiplication, matrix              |
+|                                               | multiplication division,            |
+|                                               | remainder [#]_                      |
 +-----------------------------------------------+-------------------------------------+
 | ``+x``, ``-x``, ``~x``                        | Positive, negative, bitwise NOT     |
 +-----------------------------------------------+-------------------------------------+
 | ``**``                                        | Exponentiation [#]_                 |
++-----------------------------------------------+-------------------------------------+
+| ``await`` ``x``                               | Await expression                    |
 +-----------------------------------------------+-------------------------------------+
 | ``x[index]``, ``x[index:index]``,             | Subscription, slicing,              |
 | ``x(arguments...)``, ``x.attribute``          | call, attribute reference           |
@@ -1379,12 +1567,24 @@ precedence and have a left-to-right chaining feature as described in the
    cases, Python returns the latter result, in order to preserve that
    ``divmod(x,y)[0] * y + x % y`` be very close to ``x``.
 
-.. [#] While comparisons between strings make sense at the byte level, they may
-   be counter-intuitive to users.  For example, the strings ``"\u00C7"`` and
-   ``"\u0327\u0043"`` compare differently, even though they both represent the
-   same unicode character (LATIN CAPITAL LETTER C WITH CEDILLA).  To compare
-   strings in a human recognizable way, compare using
-   :func:`unicodedata.normalize`.
+.. [#] The Unicode standard distinguishes between :dfn:`code points`
+   (e.g. U+0041) and :dfn:`abstract characters` (e.g. "LATIN CAPITAL LETTER A").
+   While most abstract characters in Unicode are only represented using one
+   code point, there is a number of abstract characters that can in addition be
+   represented using a sequence of more than one code point.  For example, the
+   abstract character "LATIN CAPITAL LETTER C WITH CEDILLA" can be represented
+   as a single :dfn:`precomposed character` at code position U+00C7, or as a
+   sequence of a :dfn:`base character` at code position U+0043 (LATIN CAPITAL
+   LETTER C), followed by a :dfn:`combining character` at code position U+0327
+   (COMBINING CEDILLA).
+
+   The comparison operators on strings compare at the level of Unicode code
+   points. This may be counter-intuitive to humans.  For example,
+   ``"\u00C7" == "\u0043\u0327"`` is ``False``, even though both strings
+   represent the same abstract character "LATIN CAPITAL LETTER C WITH CEDILLA".
+
+   To compare strings at the level of abstract characters (that is, in a way
+   intuitive to humans), use :func:`unicodedata.normalize`.
 
 .. [#] Due to automatic garbage-collection, free lists, and the dynamic nature of
    descriptors, you may notice seemingly unusual behaviour in certain uses of

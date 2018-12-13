@@ -24,7 +24,7 @@ PyAPI_FUNC(int) PyTraceBack_Here(struct _frame *);
 PyAPI_FUNC(int) PyTraceBack_Print(PyObject *, PyObject *);
 #ifndef Py_LIMITED_API
 PyAPI_FUNC(int) _Py_DisplaySourceLine(PyObject *, PyObject *, int, int);
-PyAPI_FUNC(void) _PyTraceback_Add(char *, char *, int);
+PyAPI_FUNC(void) _PyTraceback_Add(const char *, const char *, int);
 #endif
 
 /* Reveal traceback type so we can typecheck traceback objects */
@@ -48,7 +48,7 @@ PyAPI_DATA(PyTypeObject) PyTraceBack_Type;
 
    This function is signal safe. */
 
-PyAPI_DATA(void) _Py_DumpTraceback(
+PyAPI_FUNC(void) _Py_DumpTraceback(
     int fd,
     PyThreadState *tstate);
 
@@ -62,7 +62,7 @@ PyAPI_DATA(void) _Py_DumpTraceback(
 
    This function is signal safe. */
 
-PyAPI_DATA(const char*) _Py_DumpTracebackThreads(
+PyAPI_FUNC(const char*) _Py_DumpTracebackThreads(
     int fd, PyInterpreterState *interp,
     PyThreadState *current_thread);
 

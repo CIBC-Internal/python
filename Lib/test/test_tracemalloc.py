@@ -4,8 +4,9 @@ import sys
 import tracemalloc
 import unittest
 from unittest.mock import patch
-from test.script_helper import assert_python_ok, assert_python_failure
-from test import script_helper, support
+from test.support.script_helper import (assert_python_ok, assert_python_failure,
+                                        interpreter_requires_environment)
+from test import support
 try:
     import threading
 except ImportError:
@@ -252,7 +253,7 @@ class TestTracemallocEnabled(unittest.TestCase):
         snapshot.dump(support.TESTFN)
         self.addCleanup(support.unlink, support.TESTFN)
 
-        # load() should recreates the attribute
+        # load() should recreate the attribute
         snapshot2 = tracemalloc.Snapshot.load(support.TESTFN)
         self.assertEqual(snapshot2.test_attr, "new")
 
@@ -660,11 +661,9 @@ class TestFilters(unittest.TestCase):
         self.assertFalse(fnmatch('abcdd', 'a*c*e'))
         self.assertFalse(fnmatch('abcbdefef', 'a*bd*eg'))
 
-        # replace .pyc and .pyo suffix with .py
+        # replace .pyc suffix with .py
         self.assertTrue(fnmatch('a.pyc', 'a.py'))
-        self.assertTrue(fnmatch('a.pyo', 'a.py'))
         self.assertTrue(fnmatch('a.py', 'a.pyc'))
-        self.assertTrue(fnmatch('a.py', 'a.pyo'))
 
         if os.name == 'nt':
             # case insensitive
@@ -672,18 +671,14 @@ class TestFilters(unittest.TestCase):
             self.assertTrue(fnmatch('aBcDe', 'Ab*dE'))
 
             self.assertTrue(fnmatch('a.pyc', 'a.PY'))
-            self.assertTrue(fnmatch('a.PYO', 'a.py'))
             self.assertTrue(fnmatch('a.py', 'a.PYC'))
-            self.assertTrue(fnmatch('a.PY', 'a.pyo'))
         else:
             # case sensitive
             self.assertFalse(fnmatch('aBC', 'ABc'))
             self.assertFalse(fnmatch('aBcDe', 'Ab*dE'))
 
             self.assertFalse(fnmatch('a.pyc', 'a.PY'))
-            self.assertFalse(fnmatch('a.PYO', 'a.py'))
             self.assertFalse(fnmatch('a.py', 'a.PYC'))
-            self.assertFalse(fnmatch('a.PY', 'a.pyo'))
 
         if os.name == 'nt':
             # normalize alternate separator "/" to the standard separator "\"
@@ -697,6 +692,9 @@ class TestFilters(unittest.TestCase):
             self.assertFalse(fnmatch(r'a\b', r'a/b'))
             self.assertFalse(fnmatch(r'a/b\c', r'a\b/c'))
             self.assertFalse(fnmatch(r'a/b/c', r'a\b\c'))
+
+        # as of 3.5, .pyo is no longer munged to .py
+        self.assertFalse(fnmatch('a.pyo', 'a.py'))
 
     def test_filter_match_trace(self):
         t1 = (("a.py", 2), ("b.py", 3))
@@ -755,7 +753,7 @@ class TestCommandLine(unittest.TestCase):
         stdout = stdout.rstrip()
         self.assertEqual(stdout, b'False')
 
-    @unittest.skipIf(script_helper._interpreter_requires_environment(),
+    @unittest.skipIf(interpreter_requires_environment(),
                      'Cannot run -E tests when PYTHON env vars are required.')
     def test_env_var_ignored_with_E(self):
         """PYTHON* environment variables must be ignored when -E is present."""
@@ -811,6 +809,7 @@ class TestCommandLine(unittest.TestCase):
                                   b'number of frames',
                                   stderr)
 
+    @support.cpython_only
     def test_pymem_alloc0(self):
         # Issue #21639: Check that PyMem_Malloc(0) with tracemalloc enabled
         # does not crash.
