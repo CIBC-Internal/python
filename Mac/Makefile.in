@@ -28,7 +28,7 @@ export MACOSX_DEPLOYMENT_TARGET
 
 # These are normally glimpsed from the previous set
 BINDIR=		@bindir@
-PYTHONAPPSDIR=@FRAMEWORKINSTALLAPPSPREFIX@/$(PYTHONFRAMEWORK) $(VERSION)
+#PYTHONAPPSDIR=@FRAMEWORKINSTALLAPPSPREFIX@/$(PYTHONFRAMEWORK) $(VERSION)
 APPINSTALLDIR=$(prefix)/Resources/Python.app
 
 # Variables for installing the "normal" unix binaries
@@ -50,7 +50,7 @@ APPTEMPLATE=$(srcdir)/Resources/app
 APPSUBDIRS=MacOS Resources
 compileall=$(srcdir)/../Lib/compileall.py
 
-installapps: install_Python install_PythonLauncher install_IDLE
+installapps: install_Python
 
 #
 # Install unix tools in /usr/local/bin. These are just aliases for the
@@ -165,7 +165,7 @@ install_PythonLauncher:
 	cd PythonLauncher && make install DESTDIR=$(DESTDIR)
 
 install_Python:
-	@for i in "$(PYTHONAPPSDIR)" "$(APPINSTALLDIR)" "$(APPINSTALLDIR)/Contents"; do \
+	@for i in "$(APPINSTALLDIR)" "$(APPINSTALLDIR)/Contents"; do \
 		if test ! -d "$(DESTDIR)$$i"; then \
 			echo "Creating directory $(DESTDIR)$$i"; \
 			$(INSTALL) -d -m $(DIRMODE) "$(DESTDIR)$$i"; \
