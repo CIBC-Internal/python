@@ -3,6 +3,7 @@
 
 .. module:: fileinput
    :synopsis: Loop over standard input or a list of files.
+
 .. moduleauthor:: Guido van Rossum <guido@python.org>
 .. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
 
@@ -22,8 +23,9 @@ The typical use is::
 
 This iterates over the lines of all files listed in ``sys.argv[1:]``, defaulting
 to ``sys.stdin`` if the list is empty.  If a filename is ``'-'``, it is also
-replaced by ``sys.stdin``.  To specify an alternative list of filenames, pass it
-as the first argument to :func:`.input`.  A single file name is also allowed.
+replaced by ``sys.stdin`` and the optional arguments *mode* and *openhook*
+are ignored.  To specify an alternative list of filenames, pass it as the
+first argument to :func:`.input`.  A single file name is also allowed.
 
 All files are opened in text mode by default, but you can override this by
 specifying the *mode* parameter in the call to :func:`.input` or
@@ -53,7 +55,7 @@ provided by this module.
 The following function is the primary interface of this module:
 
 
-.. function:: input(files=None, inplace=False, backup='', bufsize=0, mode='r', openhook=None)
+.. function:: input(files=None, inplace=False, backup='', *, mode='r', openhook=None)
 
    Create an instance of the :class:`FileInput` class.  The instance will be used
    as global state for the functions of this module, and is also returned to use
@@ -62,7 +64,7 @@ The following function is the primary interface of this module:
 
    The :class:`FileInput` instance can be used as a context manager in the
    :keyword:`with` statement.  In this example, *input* is closed after the
-   :keyword:`with` statement is exited, even if an exception occurs::
+   :keyword:`!with` statement is exited, even if an exception occurs::
 
       with fileinput.input(files=('spam.txt', 'eggs.txt')) as f:
           for line in f:
@@ -70,6 +72,9 @@ The following function is the primary interface of this module:
 
    .. versionchanged:: 3.2
       Can be used as a context manager.
+
+   .. versionchanged:: 3.8
+      The keyword parameters *mode* and *openhook* are now keyword-only.
 
 
 The following functions use the global state created by :func:`fileinput.input`;
@@ -104,14 +109,14 @@ if there is no active state, :exc:`RuntimeError` is raised.
 
 .. function:: isfirstline()
 
-   Returns true if the line just read is the first line of its file, otherwise
-   returns false.
+   Return ``True`` if the line just read is the first line of its file, otherwise
+   return ``False``.
 
 
 .. function:: isstdin()
 
-   Returns true if the last line was read from ``sys.stdin``, otherwise returns
-   false.
+   Return ``True`` if the last line was read from ``sys.stdin``, otherwise return
+   ``False``.
 
 
 .. function:: nextfile()
@@ -132,7 +137,7 @@ The class which implements the sequence behavior provided by the module is
 available for subclassing as well:
 
 
-.. class:: FileInput(files=None, inplace=False, backup='', bufsize=0, mode='r', openhook=None)
+.. class:: FileInput(files=None, inplace=False, backup='', *, mode='r', openhook=None)
 
    Class :class:`FileInput` is the implementation; its methods :meth:`filename`,
    :meth:`fileno`, :meth:`lineno`, :meth:`filelineno`, :meth:`isfirstline`,
@@ -152,16 +157,24 @@ available for subclassing as well:
 
    A :class:`FileInput` instance can be used as a context manager in the
    :keyword:`with` statement.  In this example, *input* is closed after the
-   :keyword:`with` statement is exited, even if an exception occurs::
+   :keyword:`!with` statement is exited, even if an exception occurs::
 
       with FileInput(files=('spam.txt', 'eggs.txt')) as input:
           process(input)
+
 
    .. versionchanged:: 3.2
       Can be used as a context manager.
 
    .. deprecated:: 3.4
-        The ``'rU'`` and ``'U'`` modes.
+      The ``'rU'`` and ``'U'`` modes.
+
+   .. deprecated:: 3.8
+      Support for :meth:`__getitem__` method is deprecated.
+
+   .. versionchanged:: 3.8
+      The keyword parameter *mode* and *openhook* are now keyword-only.
+
 
 
 **Optional in-place filtering:** if the keyword argument ``inplace=True`` is
@@ -188,10 +201,14 @@ The two following opening hooks are provided by this module:
    Usage example:  ``fi = fileinput.FileInput(openhook=fileinput.hook_compressed)``
 
 
-.. function:: hook_encoded(encoding)
+.. function:: hook_encoded(encoding, errors=None)
 
-   Returns a hook which opens each file with :func:`codecs.open`, using the given
-   *encoding* to read the file.
+   Returns a hook which opens each file with :func:`open`, using the given
+   *encoding* and *errors* to read the file.
 
    Usage example: ``fi =
-   fileinput.FileInput(openhook=fileinput.hook_encoded("iso-8859-1"))``
+   fileinput.FileInput(openhook=fileinput.hook_encoded("utf-8",
+   "surrogateescape"))``
+
+   .. versionchanged:: 3.6
+      Added the optional *errors* parameter.

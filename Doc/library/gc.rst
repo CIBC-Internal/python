@@ -3,9 +3,11 @@
 
 .. module:: gc
    :synopsis: Interface to the cycle-detecting garbage collector.
+
 .. moduleauthor:: Neil Schemenauer <nas@arctrix.com>
 .. sectionauthor:: Neil Schemenauer <nas@arctrix.com>
 
+--------------
 
 This module provides an interface to the optional garbage collector.  It
 provides the ability to disable the collector, tune the collection frequency,
@@ -33,10 +35,10 @@ The :mod:`gc` module provides the following functions:
 
 .. function:: isenabled()
 
-   Returns true if automatic collection is enabled.
+   Return ``True`` if automatic collection is enabled.
 
 
-.. function:: collect(generations=2)
+.. function:: collect(generation=2)
 
    With no arguments, run a full collection.  The optional argument *generation*
    may be an integer specifying which generation to collect (from 0 to 2).  A
@@ -61,11 +63,14 @@ The :mod:`gc` module provides the following functions:
    Return the debugging flags currently set.
 
 
-.. function:: get_objects()
+.. function:: get_objects(generation=None)
 
    Returns a list of all objects tracked by the collector, excluding the list
-   returned.
+   returned. If *generation* is not None, return only the objects tracked by
+   the collector that are in that generation.
 
+   .. versionchanged:: 3.8
+      New *generation* parameter.
 
 .. function:: get_stats()
 
@@ -172,6 +177,33 @@ The :mod:`gc` module provides the following functions:
    .. versionadded:: 3.1
 
 
+.. function:: freeze()
+
+   Freeze all the objects tracked by gc - move them to a permanent generation
+   and ignore all the future collections. This can be used before a POSIX
+   fork() call to make the gc copy-on-write friendly or to speed up collection.
+   Also collection before a POSIX fork() call may free pages for future
+   allocation which can cause copy-on-write too so it's advised to disable gc
+   in parent process and freeze before fork and enable gc in child process.
+
+   .. versionadded:: 3.7
+
+
+.. function:: unfreeze()
+
+   Unfreeze the objects in the permanent generation, put them back into the
+   oldest generation.
+
+   .. versionadded:: 3.7
+
+
+.. function:: get_freeze_count()
+
+   Return the number of objects in the permanent generation.
+
+   .. versionadded:: 3.7
+
+
 The following variables are provided for read-only access (you can mutate the
 values but should not rebind them):
 
@@ -180,13 +212,13 @@ values but should not rebind them):
    A list of objects which the collector found to be unreachable but could
    not be freed (uncollectable objects).  Starting with Python 3.4, this
    list should be empty most of the time, except when using instances of
-   C extension types with a non-NULL ``tp_del`` slot.
+   C extension types with a non-``NULL`` ``tp_del`` slot.
 
    If :const:`DEBUG_SAVEALL` is set, then all unreachable objects will be
    added to this list rather than freed.
 
    .. versionchanged:: 3.2
-      If this list is non-empty at interpreter shutdown, a
+      If this list is non-empty at :term:`interpreter shutdown`, a
       :exc:`ResourceWarning` is emitted, which is silent by default.  If
       :const:`DEBUG_UNCOLLECTABLE` is set, in addition all uncollectable objects
       are printed.
@@ -252,8 +284,8 @@ The following constants are provided for use with :func:`set_debug`:
    to the ``garbage`` list.
 
    .. versionchanged:: 3.2
-      Also print the contents of the :data:`garbage` list at interpreter
-      shutdown, if it isn't empty.
+      Also print the contents of the :data:`garbage` list at
+      :term:`interpreter shutdown`, if it isn't empty.
 
 .. data:: DEBUG_SAVEALL
 

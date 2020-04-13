@@ -3,9 +3,11 @@
 
 .. module:: wsgiref
    :synopsis: WSGI Utilities and Reference Implementation.
+
 .. moduleauthor:: Phillip J. Eby <pje@telecommunity.com>
 .. sectionauthor:: Phillip J. Eby <pje@telecommunity.com>
 
+--------------
 
 The Web Server Gateway Interface (WSGI) is a standard interface between web
 server software and web applications written in Python. Having a standard
@@ -24,8 +26,8 @@ for implementing WSGI servers, a demo HTTP server that serves WSGI applications,
 and a validation tool that checks WSGI servers and applications for conformance
 to the WSGI specification (:pep:`3333`).
 
-See http://www.wsgi.org for more information about WSGI, and links to tutorials
-and other resources.
+See `wsgi.readthedocs.io <https://wsgi.readthedocs.io/>`_ for more information about WSGI, and links
+to tutorials and other resources.
 
 .. XXX If you're just trying to write a web application...
 
@@ -52,7 +54,7 @@ parameter expect a WSGI-compliant dictionary to be supplied; please see
 
    This function is useful when creating a gateway that wraps CGI or a CGI-like
    protocol such as FastCGI.  Typically, servers providing such protocols will
-   include a ``HTTPS`` variable with a value of "1" "yes", or "on" when a request
+   include a ``HTTPS`` variable with a value of "1", "yes", or "on" when a request
    is received via SSL.  So, this function returns "https" if such a value is
    found, and "http" otherwise.
 
@@ -131,9 +133,9 @@ parameter expect a WSGI-compliant dictionary to be supplied; please see
                  for key, value in environ.items()]
           return ret
 
-      httpd = make_server('', 8000, simple_app)
-      print("Serving on port 8000...")
-      httpd.serve_forever()
+      with make_server('', 8000, simple_app) as httpd:
+          print("Serving on port 8000...")
+          httpd.serve_forever()
 
 
 In addition to the environment functions above, the :mod:`wsgiref.util` module
@@ -142,7 +144,7 @@ also provides these miscellaneous utilities:
 
 .. function:: is_hop_by_hop(header_name)
 
-   Return true if 'header_name' is an HTTP/1.1 "Hop-by-Hop" header, as defined by
+   Return ``True`` if 'header_name' is an HTTP/1.1 "Hop-by-Hop" header, as defined by
    :rfc:`2616`.
 
 
@@ -171,6 +173,8 @@ also provides these miscellaneous utilities:
       for chunk in wrapper:
           print(chunk)
 
+   .. deprecated:: 3.8
+      Support for :meth:`sequence protocol <__getitem__>` is deprecated.
 
 
 :mod:`wsgiref.headers` -- WSGI response header tools
@@ -184,10 +188,11 @@ This module provides a single class, :class:`Headers`, for convenient
 manipulation of WSGI response headers using a mapping-like interface.
 
 
-.. class:: Headers(headers)
+.. class:: Headers([headers])
 
    Create a mapping-like object wrapping *headers*, which must be a list of header
-   name/value tuples as described in :pep:`3333`.
+   name/value tuples as described in :pep:`3333`. The default value of *headers* is
+   an empty list.
 
    :class:`Headers` objects support typical mapping operations including
    :meth:`__getitem__`, :meth:`get`, :meth:`__setitem__`, :meth:`setdefault`,
@@ -251,6 +256,10 @@ manipulation of WSGI response headers using a mapping-like interface.
          Content-Disposition: attachment; filename="bud.gif"
 
 
+   .. versionchanged:: 3.5
+      *headers* parameter is optional.
+
+
 :mod:`wsgiref.simple_server` -- a simple WSGI HTTP server
 ---------------------------------------------------------
 
@@ -278,14 +287,14 @@ request.  (E.g., using the :func:`shift_path_info` function from
 
       from wsgiref.simple_server import make_server, demo_app
 
-      httpd = make_server('', 8000, demo_app)
-      print("Serving HTTP on port 8000...")
+      with make_server('', 8000, demo_app) as httpd:
+          print("Serving HTTP on port 8000...")
 
-      # Respond to requests until process is killed
-      httpd.serve_forever()
+          # Respond to requests until process is killed
+          httpd.serve_forever()
 
-      # Alternative: serve one request, then exit
-      httpd.handle_request()
+          # Alternative: serve one request, then exit
+          httpd.handle_request()
 
 
 .. function:: demo_app(environ, start_response)
@@ -390,7 +399,7 @@ Paste" library.
    Wrap *application* and return a new WSGI application object.  The returned
    application will forward all requests to the original *application*, and will
    check that both the *application* and the server invoking it are conforming to
-   the WSGI specification and to RFC 2616.
+   the WSGI specification and to :rfc:`2616`.
 
    Any detected nonconformance results in an :exc:`AssertionError` being raised;
    note, however, that how these errors are handled is server-dependent.  For
@@ -414,8 +423,8 @@ Paste" library.
       # Our callable object which is intentionally not compliant to the
       # standard, so the validator is going to break
       def simple_app(environ, start_response):
-          status = '200 OK' # HTTP Status
-          headers = [('Content-type', 'text/plain')] # HTTP Headers
+          status = '200 OK'  # HTTP Status
+          headers = [('Content-type', 'text/plain')]  # HTTP Headers
           start_response(status, headers)
 
           # This is going to break because we need to return a list, and
@@ -425,9 +434,9 @@ Paste" library.
       # This is the application wrapped in a validator
       validator_app = validator(simple_app)
 
-      httpd = make_server('', 8000, validator_app)
-      print("Listening on port 8000....")
-      httpd.serve_forever()
+      with make_server('', 8000, validator_app) as httpd:
+          print("Listening on port 8000....")
+          httpd.serve_forever()
 
 
 :mod:`wsgiref.handlers` -- server/gateway base classes
@@ -501,7 +510,7 @@ input, output, and error streams.
 
    Similar to :class:`BaseCGIHandler`, but designed for use with HTTP origin
    servers.  If you are writing an HTTP server implementation, you will probably
-   want to subclass this instead of :class:`BaseCGIHandler`
+   want to subclass this instead of :class:`BaseCGIHandler`.
 
    This class is a subclass of :class:`BaseHandler`.  It overrides the
    :meth:`__init__`, :meth:`get_stdin`, :meth:`get_stderr`, :meth:`add_cgi_vars`,
@@ -509,6 +518,9 @@ input, output, and error streams.
    environment and streams via the constructor.  The supplied environment and
    streams are stored in the :attr:`stdin`, :attr:`stdout`, :attr:`stderr`, and
    :attr:`environ` attributes.
+
+   The :meth:`~io.BufferedIOBase.write` method of *stdout* should write
+   each chunk in full, like :class:`io.BufferedIOBase`.
 
 
 .. class:: BaseHandler()
@@ -727,7 +739,7 @@ input, output, and error streams.
 
 .. function:: read_environ()
 
-   Transcode CGI variables from ``os.environ`` to PEP 3333 "bytes in unicode"
+   Transcode CGI variables from ``os.environ`` to :pep:`3333` "bytes in unicode"
    strings, returning a new dictionary.  This function is used by
    :class:`CGIHandler` and :class:`IISCGIHandler` in place of directly using
    ``os.environ``, which is not necessarily WSGI-compliant on all platforms
@@ -754,18 +766,24 @@ This is a working "Hello World" WSGI application::
    # object that accepts two arguments. For that purpose, we're going to
    # use a function (note that you're not limited to a function, you can
    # use a class for example). The first argument passed to the function
-   # is a dictionary containing CGI-style envrironment variables and the
-   # second variable is the callable object (see PEP 333).
+   # is a dictionary containing CGI-style environment variables and the
+   # second variable is the callable object.
    def hello_world_app(environ, start_response):
-       status = '200 OK' # HTTP Status
-       headers = [('Content-type', 'text/plain; charset=utf-8')] # HTTP Headers
+       status = '200 OK'  # HTTP Status
+       headers = [('Content-type', 'text/plain; charset=utf-8')]  # HTTP Headers
        start_response(status, headers)
 
        # The returned object is going to be printed
        return [b"Hello World"]
 
-   httpd = make_server('', 8000, hello_world_app)
-   print("Serving on port 8000...")
+   with make_server('', 8000, hello_world_app) as httpd:
+       print("Serving on port 8000...")
 
-   # Serve until process is killed
-   httpd.serve_forever()
+       # Serve until process is killed
+       httpd.serve_forever()
+
+
+Example of a WSGI application serving the current directory, accept optional
+directory and port number (default: 8000) on the command line:
+
+.. literalinclude:: ../../Tools/scripts/serve.py

@@ -3,15 +3,16 @@
 
 .. module:: plistlib
    :synopsis: Generate and parse Mac OS X plist files.
+
 .. moduleauthor:: Jack Jansen
 .. sectionauthor:: Georg Brandl <georg@python.org>
 .. (harvested from docstrings in the original file)
 
+**Source code:** :source:`Lib/plistlib.py`
+
 .. index::
    pair: plist; file
    single: property list
-
-**Source code:** :source:`Lib/plistlib.py`
 
 --------------
 
@@ -35,9 +36,13 @@ or :class:`datetime.datetime` objects.
 .. versionchanged:: 3.4
    New API, old API deprecated.  Support for binary format plists added.
 
+.. versionchanged:: 3.8
+   Support added for reading and writing :class:`UID` tokens in binary plists as used
+   by NSKeyedArchiver and NSKeyedUnarchiver.
+
 .. seealso::
 
-   `PList manual page <https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man5/plist.5.html>`_
+   `PList manual page <https://developer.apple.com/library/content/documentation/Cocoa/Conceptual/PropertyLists/>`_
       Apple's documentation of the file format.
 
 
@@ -62,9 +67,7 @@ This module defines the following functions:
    :class:`Data`.
 
    The *dict_type* is the type used for dictionaries that are read from the
-   plist file. The exact structure of the plist can be recovered by using
-   :class:`collections.OrderedDict` (although the order of keys shouldn't be
-   important in plist files).
+   plist file.
 
    XML data for the :data:`FMT_XML` format is parsed using the Expat parser
    from :mod:`xml.parsers.expat` -- see its documentation for possible
@@ -129,16 +132,14 @@ The following functions are deprecated:
    and binary) file object. Returns the unpacked root object (which usually
    is a dictionary).
 
-   This function calls :func:`load` to do the actual work, the the documentation
+   This function calls :func:`load` to do the actual work, see the documentation
    of :func:`that function <load>` for an explanation of the keyword arguments.
 
-   .. note::
-
-      Dict values in the result have a ``__getattr__`` method that defers
-      to ``__getitem_``. This means that you can use attribute access to
-      access items of these dictionaries.
-
    .. deprecated:: 3.4 Use :func:`load` instead.
+
+   .. versionchanged:: 3.7
+      Dict values in the result are now normal dicts.  You no longer can use
+      attribute access to access items of these dictionaries.
 
 
 .. function:: writePlist(rootObject, pathOrFile)
@@ -155,13 +156,11 @@ The following functions are deprecated:
 
    See :func:`load` for a description of the keyword arguments.
 
-   .. note::
-
-      Dict values in the result have a ``__getattr__`` method that defers
-      to ``__getitem_``. This means that you can use attribute access to
-      access items of these dictionaries.
-
    .. deprecated:: 3.4 Use :func:`loads` instead.
+
+   .. versionchanged:: 3.7
+      Dict values in the result are now normal dicts.  You no longer can use
+      attribute access to access items of these dictionaries.
 
 
 .. function:: writePlistToBytes(rootObject)
@@ -173,18 +172,6 @@ The following functions are deprecated:
 
 The following classes are available:
 
-.. class:: Dict([dict]):
-
-   Return an extended mapping object with the same value as dictionary
-   *dict*.
-
-   This class is a subclass of :class:`dict` where attribute access can
-   be used to access items. That is, ``aDict.key`` is the same as
-   ``aDict['key']`` for getting, setting and deleting items in the mapping.
-
-   .. deprecated:: 3.0
-
-
 .. class:: Data(data)
 
    Return a "data" wrapper object around the bytes object *data*.  This is used
@@ -194,7 +181,17 @@ The following classes are available:
    It has one attribute, :attr:`data`, that can be used to retrieve the Python
    bytes object stored in it.
 
-   .. deprecated:: 3.4 Use a :class:`bytes` object instead
+   .. deprecated:: 3.4 Use a :class:`bytes` object instead.
+
+.. class:: UID(data)
+
+   Wraps an :class:`int`.  This is used when reading or writing NSKeyedArchiver
+   encoded data, which contains UID (see PList manual).
+
+   It has one attribute, :attr:`data`, which can be used to retrieve the int value
+   of the UID.  :attr:`data` must be in the range `0 <= data < 2**64`.
+
+   .. versionadded:: 3.8
 
 
 The following constants are available:

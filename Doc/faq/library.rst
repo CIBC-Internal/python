@@ -19,7 +19,7 @@ standard library module.  (Eventually you'll learn what's in the standard
 library and will be able to skip this step.)
 
 For third-party packages, search the `Python Package Index
-<https://pypi.python.org/pypi>`_ or try `Google <https://www.google.com>`_ or
+<https://pypi.org>`_ or try `Google <https://www.google.com>`_ or
 another Web search engine.  Searching for "Python" plus a keyword or two for
 your topic of interest will usually find something helpful.
 
@@ -74,7 +74,9 @@ interpreter.
 
 Occasionally, a user's environment is so full that the :program:`/usr/bin/env`
 program fails; or there's no env program at all.  In that case, you can try the
-following hack (due to Alex Rezinsky)::
+following hack (due to Alex Rezinsky):
+
+.. code-block:: sh
 
    #! /bin/sh
    """:"
@@ -257,7 +259,8 @@ all the threads to finish::
    import threading, time
 
    def thread_task(name, n):
-       for i in range(n): print(name, i)
+       for i in range(n):
+           print(name, i)
 
    for i in range(10):
        T = threading.Thread(target=thread_task, args=(str(i), i))
@@ -273,7 +276,8 @@ A simple fix is to add a tiny sleep to the start of the run function::
 
    def thread_task(name, n):
        time.sleep(0.001)  # <--------------------!
-       for i in range(n): print(name, i)
+       for i in range(n):
+           print(name, i)
 
    for i in range(10):
        T = threading.Thread(target=thread_task, args=(str(i), i))
@@ -417,7 +421,7 @@ Python program effectively only uses one CPU, due to the insistence that
 Back in the days of Python 1.5, Greg Stein actually implemented a comprehensive
 patch set (the "free threading" patches) that removed the GIL and replaced it
 with fine-grained locking.  Adam Olsen recently did a similar experiment
-in his `python-safethread <http://code.google.com/p/python-safethread/>`_
+in his `python-safethread <https://code.google.com/archive/p/python-safethread>`_
 project.  Unfortunately, both experiments exhibited a sharp drop in single-thread
 performance (at least 30% slower), due to the amount of fine-grained locking
 necessary to compensate for the removal of the GIL.
@@ -502,8 +506,8 @@ in big-endian format from a file::
    import struct
 
    with open(filename, "rb") as f:
-      s = f.read(8)
-      x, y, z = struct.unpack(">hhl", s)
+       s = f.read(8)
+       x, y, z = struct.unpack(">hhl", s)
 
 The '>' in the format string forces big-endian data; the letter 'h' reads one
 "short integer" (2 bytes), and 'l' reads one "long integer" (4 bytes) from the
@@ -607,7 +611,7 @@ use ``p.read(n)``.
    "expect" library.  A Python extension that interfaces to expect is called
    "expy" and available from http://expectpy.sourceforge.net.  A pure Python
    solution that works like expect is `pexpect
-   <https://pypi.python.org/pypi/pexpect/>`_.
+   <https://pypi.org/project/pexpect/>`_.
 
 
 How do I access the serial (RS232) port?
@@ -619,7 +623,7 @@ For Win32, POSIX (Linux, BSD, etc.), Jython:
 
 For Unix, see a Usenet post by Mitch Chapman:
 
-   http://groups.google.com/groups?selm=34A04430.CF9@ohioee.com
+   https://groups.google.com/groups?selm=34A04430.CF9@ohioee.com
 
 
 Why doesn't closing sys.stdout (stdin, stderr) really close it?
@@ -681,13 +685,14 @@ Yes. Here's a simple example that uses urllib.request::
 
    import urllib.request
 
-   ### build the query string
+   # build the query string
    qs = "First=Josephine&MI=Q&Last=Public"
 
-   ### connect and send the server a path
+   # connect and send the server a path
    req = urllib.request.urlopen('http://www.some-server.out-there'
                                 '/cgi-bin/some-cgi-script', data=qs)
-   msg, hdrs = req.read(), req.info()
+   with req:
+       msg, hdrs = req.read(), req.info()
 
 Note that in general for percent-encoded POST operations, query strings must be
 quoted using :func:`urllib.parse.urlencode`.  For example, to send
@@ -739,8 +744,9 @@ varies between systems; sometimes it is ``/usr/lib/sendmail``, sometimes
 ``/usr/sbin/sendmail``.  The sendmail manual page will help you out.  Here's
 some sample code::
 
-   SENDMAIL = "/usr/sbin/sendmail"  # sendmail location
    import os
+
+   SENDMAIL = "/usr/sbin/sendmail"  # sendmail location
    p = os.popen("%s -t -i" % SENDMAIL, "w")
    p.write("To: receiver@example.com\n")
    p.write("Subject: test\n")

@@ -5,9 +5,10 @@ Written by Marc-Andre Lemburg (mal@lemburg.com).
 
 (c) Copyright CNRI, All Rights Reserved. NO WARRANTY.
 
-"""#"
+"""
 
-import builtins, sys
+import builtins
+import sys
 
 ### Registry and builtin stateless codec functions
 
@@ -27,7 +28,8 @@ __all__ = ["register", "lookup", "open", "EncodedFile", "BOM", "BOM_BE",
            "getincrementaldecoder", "getreader", "getwriter",
            "encode", "decode", "iterencode", "iterdecode",
            "strict_errors", "ignore_errors", "replace_errors",
-           "xmlcharrefreplace_errors", "backslashreplace_errors",
+           "xmlcharrefreplace_errors",
+           "backslashreplace_errors", "namereplace_errors",
            "register_error", "lookup_error"]
 
 ### Constants
@@ -105,8 +107,8 @@ class CodecInfo(tuple):
         return self
 
     def __repr__(self):
-        return "<%s.%s object for encoding %s at 0x%x>" % \
-                (self.__class__.__module__, self.__class__.__name__,
+        return "<%s.%s object for encoding %s at %#x>" % \
+                (self.__class__.__module__, self.__class__.__qualname__,
                  self.name, id(self))
 
 class Codec:
@@ -126,7 +128,8 @@ class Codec:
          'surrogateescape' - replace with private code points U+DCnn.
          'xmlcharrefreplace' - Replace with the appropriate XML
                                character reference (only for encoding).
-         'backslashreplace'  - Replace with backslashed escape sequences
+         'backslashreplace'  - Replace with backslashed escape sequences.
+         'namereplace'       - Replace with \\N{...} escape sequences
                                (only for encoding).
 
         The set of allowed values can be extended via register_error.
@@ -141,8 +144,8 @@ class Codec:
             'strict' handling.
 
             The method may not store state in the Codec instance. Use
-            StreamCodec for codecs which have to keep state in order to
-            make encoding/decoding efficient.
+            StreamWriter for codecs which have to keep state in order to
+            make encoding efficient.
 
             The encoder must be able to handle zero length input and
             return an empty object of the output object type in this
@@ -164,8 +167,8 @@ class Codec:
             'strict' handling.
 
             The method may not store state in the Codec instance. Use
-            StreamCodec for codecs which have to keep state in order to
-            make encoding/decoding efficient.
+            StreamReader for codecs which have to keep state in order to
+            make decoding efficient.
 
             The decoder must be able to handle zero length input and
             return an empty object of the output object type in this
@@ -256,7 +259,7 @@ class IncrementalDecoder(object):
     """
     def __init__(self, errors='strict'):
         """
-        Create a IncrementalDecoder instance.
+        Create an IncrementalDecoder instance.
 
         The IncrementalDecoder may use different error handling schemes by
         providing the errors keyword argument. See the module docstring
@@ -358,7 +361,8 @@ class StreamWriter(Codec):
              'xmlcharrefreplace' - Replace with the appropriate XML
                                    character reference.
              'backslashreplace'  - Replace with backslashed escape
-                                   sequences (only for encoding).
+                                   sequences.
+             'namereplace'       - Replace with \\N{...} escape sequences.
 
             The set of allowed parameter values can be extended via
             register_error.
@@ -428,7 +432,8 @@ class StreamReader(Codec):
 
              'strict' - raise a ValueError (or a subclass)
              'ignore' - ignore the character and continue with the next
-             'replace'- replace with a suitable replacement character;
+             'replace'- replace with a suitable replacement character
+             'backslashreplace' - Replace with backslashed escape sequences;
 
             The set of allowed parameter values can be extended via
             register_error.
@@ -475,14 +480,16 @@ class StreamReader(Codec):
             self.charbuffer = self._empty_charbuffer.join(self.linebuffer)
             self.linebuffer = None
 
+        if chars < 0:
+            # For compatibility with other read() methods that take a
+            # single argument
+            chars = size
+
         # read until we get the required number of characters (if available)
         while True:
             # can the request be satisfied from the character buffer?
             if chars >= 0:
                 if len(self.charbuffer) >= chars:
-                    break
-            elif size >= 0:
-                if len(self.charbuffer) >= size:
                     break
             # we need more data
             if size < 0:
@@ -735,7 +742,7 @@ class StreamReaderWriter:
         """
         return getattr(self.stream, name)
 
-    # these are needed to make "with codecs.open(...)" work properly
+    # these are needed to make "with StreamReaderWriter(...)" work properly
 
     def __enter__(self):
         return self
@@ -831,7 +838,7 @@ class StreamRecoder:
 
     def writelines(self, list):
 
-        data = ''.join(list)
+        data = b''.join(list)
         data, bytesdecoded = self.decode(data, self.errors)
         return self.writer.write(data)
 
@@ -839,6 +846,12 @@ class StreamRecoder:
 
         self.reader.reset()
         self.writer.reset()
+
+    def seek(self, offset, whence=0):
+        # Seeks must be propagated to both the readers and writers
+        # as they might need to reset their internal buffers.
+        self.reader.seek(offset, whence)
+        self.writer.seek(offset, whence)
 
     def __getattr__(self, name,
                     getattr=getattr):
@@ -855,7 +868,7 @@ class StreamRecoder:
 
 ### Shortcuts
 
-def open(filename, mode='r', encoding=None, errors='strict', buffering=1):
+def open(filename, mode='r', encoding=None, errors='strict', buffering=-1):
 
     """ Open an encoded file using the given mode and return
         a wrapped version providing transparent encoding/decoding.
@@ -876,7 +889,8 @@ def open(filename, mode='r', encoding=None, errors='strict', buffering=1):
         encoding error occurs.
 
         buffering has the same meaning as for the builtin open() API.
-        It defaults to line buffered.
+        It defaults to -1 which means that the default buffer size will
+        be used.
 
         The returned wrapped file object provides an extra attribute
         .encoding which allows querying the used encoding. This
@@ -1007,7 +1021,7 @@ def iterencode(iterator, encoding, errors='strict', **kwargs):
     """
     Encoding iterator.
 
-    Encodes the input strings from the iterator using a IncrementalEncoder.
+    Encodes the input strings from the iterator using an IncrementalEncoder.
 
     errors and kwargs are passed through to the IncrementalEncoder
     constructor.
@@ -1025,7 +1039,7 @@ def iterdecode(iterator, encoding, errors='strict', **kwargs):
     """
     Decoding iterator.
 
-    Decodes the input strings from the iterator using a IncrementalDecoder.
+    Decodes the input strings from the iterator using an IncrementalDecoder.
 
     errors and kwargs are passed through to the IncrementalDecoder
     constructor.
@@ -1061,7 +1075,7 @@ def make_encoding_map(decoding_map):
         during translation.
 
         One example where this happens is cp875.py which decodes
-        multiple character to \u001a.
+        multiple character to \\u001a.
 
     """
     m = {}
@@ -1080,6 +1094,7 @@ try:
     replace_errors = lookup_error("replace")
     xmlcharrefreplace_errors = lookup_error("xmlcharrefreplace")
     backslashreplace_errors = lookup_error("backslashreplace")
+    namereplace_errors = lookup_error("namereplace")
 except LookupError:
     # In --disable-unicode builds, these error handler are missing
     strict_errors = None
@@ -1087,6 +1102,7 @@ except LookupError:
     replace_errors = None
     xmlcharrefreplace_errors = None
     backslashreplace_errors = None
+    namereplace_errors = None
 
 # Tell modulefinder that using codecs probably needs the encodings
 # package

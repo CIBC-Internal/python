@@ -13,6 +13,12 @@ annotated statement coverage listings, print caller/callee relationships and
 list functions executed during a program run.  It can be used in another program
 or from the command line.
 
+.. seealso::
+
+   `Coverage.py <https://coverage.readthedocs.io/>`_
+      A popular third-party coverage tool that provides HTML
+      output along with advanced features such as branch coverage.
+
 .. _trace-cli:
 
 Command-Line Usage
@@ -35,6 +41,9 @@ all Python modules imported during the execution into the current directory.
 .. cmdoption:: --version
 
    Display the version of the module and exit.
+
+.. versionadded:: 3.8
+    Added ``--module`` option that allows to run an executable module.
 
 Main options
 ^^^^^^^^^^^^

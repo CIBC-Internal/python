@@ -25,7 +25,7 @@ there.
 
 What you get after installing is a number of things:
 
-* A :file:`MacPython 3.4` folder in your :file:`Applications` folder. In here
+* A :file:`Python 3.8` folder in your :file:`Applications` folder. In here
   you find IDLE, the development environment that is a standard part of official
   Python distributions; PythonLauncher, which handles double-clicking Python
   scripts from the Finder; and the "Build Applet" tool, which allows you to
@@ -65,8 +65,8 @@ number of standard Unix command line editors, :program:`vim` and
 :program:`emacs` among them. If you want a more Mac-like editor,
 :program:`BBEdit` or :program:`TextWrangler` from Bare Bones Software (see
 http://www.barebones.com/products/bbedit/index.html) are good choices, as is
-:program:`TextMate` (see http://macromates.com/). Other editors include
-:program:`Gvim` (http://macvim.org) and :program:`Aquamacs`
+:program:`TextMate` (see https://macromates.com/). Other editors include
+:program:`Gvim` (http://macvim-dev.github.io/macvim/) and :program:`Aquamacs`
 (http://aquamacs.org/).
 
 To run your script from the Terminal window you must make sure that
@@ -93,7 +93,7 @@ aware of: programs that talk to the Aqua window manager (in other words,
 anything that has a GUI) need to be run in a special way. Use :program:`pythonw`
 instead of :program:`python` to start such scripts.
 
-With Python 3.4, you can use either :program:`python` or :program:`pythonw`.
+With Python 3.8, you can use either :program:`python` or :program:`pythonw`.
 
 
 Configuration
@@ -102,8 +102,9 @@ Configuration
 Python on OS X honors all standard Unix environment variables such as
 :envvar:`PYTHONPATH`, but setting these variables for programs started from the
 Finder is non-standard as the Finder does not read your :file:`.profile` or
-:file:`.cshrc` at startup. You need to create a file :file:`~
-/.MacOSX/environment.plist`. See Apple's Technical Document QA1067 for details.
+:file:`.cshrc` at startup. You need to create a file
+:file:`~/.MacOSX/environment.plist`. See Apple's Technical Document QA1067 for
+details.
 
 For more information on installation Python packages in MacPython, see section
 :ref:`mac-package-manager`.
@@ -116,7 +117,7 @@ The IDE
 
 MacPython ships with the standard IDLE development environment. A good
 introduction to using IDLE can be found at
-https://hkn.eecs.berkeley.edu/~dyoo/python/idle_intro/index.html.
+http://www.hashcollision.org/hkn/python/idle_intro/index.html.
 
 
 .. _mac-package-manager:
@@ -140,25 +141,25 @@ There are several options for building GUI applications on the Mac with Python.
 
 *PyObjC* is a Python binding to Apple's Objective-C/Cocoa framework, which is
 the foundation of most modern Mac development. Information on PyObjC is
-available from https://pythonhosted.org/pyobjc/.
+available from https://pypi.org/project/pyobjc/.
 
 The standard Python GUI toolkit is :mod:`tkinter`, based on the cross-platform
-Tk toolkit (http://www.tcl.tk). An Aqua-native version of Tk is bundled with OS
+Tk toolkit (https://www.tcl.tk). An Aqua-native version of Tk is bundled with OS
 X by Apple, and the latest version can be downloaded and installed from
-http://www.activestate.com; it can also be built from source.
+https://www.activestate.com; it can also be built from source.
 
 *wxPython* is another popular cross-platform GUI toolkit that runs natively on
-Mac OS X. Packages and documentation are available from http://www.wxpython.org.
+Mac OS X. Packages and documentation are available from https://www.wxpython.org.
 
 *PyQt* is another popular cross-platform GUI toolkit that runs natively on Mac
 OS X. More information can be found at
-http://www.riverbankcomputing.co.uk/software/pyqt/intro.
+https://riverbankcomputing.com/software/pyqt/intro.
 
 
 Distributing Python Applications on the Mac
 ===========================================
 
-The "Build Applet" tool that is placed in the MacPython 3.4 folder is fine for
+The "Build Applet" tool that is placed in the MacPython 3.6 folder is fine for
 packaging small Python scripts on your own machine to run as a standard Mac
 application. This tool, however, is not robust enough to distribute Python
 applications to other users.

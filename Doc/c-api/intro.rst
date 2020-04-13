@@ -1,4 +1,4 @@
-.. highlightlang:: c
+.. highlight:: c
 
 
 .. _api-intro:
@@ -17,17 +17,27 @@ common use.  The second reason is to use Python as a component in a larger
 application; this technique is generally referred to as :dfn:`embedding` Python
 in an application.
 
-Writing an extension module is a relatively well-understood process,  where a
-"cookbook" approach works well.  There are several tools  that automate the
-process to some extent.  While people have embedded  Python in other
-applications since its early existence, the process of  embedding Python is less
-straightforward than writing an extension.
+Writing an extension module is a relatively well-understood process, where a
+"cookbook" approach works well.  There are several tools that automate the
+process to some extent.  While people have embedded Python in other
+applications since its early existence, the process of embedding Python is
+less straightforward than writing an extension.
 
 Many API functions are useful independent of whether you're embedding  or
 extending Python; moreover, most applications that embed Python  will need to
 provide a custom extension as well, so it's probably a  good idea to become
 familiar with writing an extension before  attempting to embed Python in a real
 application.
+
+
+Coding standards
+================
+
+If you're writing C code for inclusion in CPython, you **must** follow the
+guidelines and standards defined in :PEP:`7`.  These guidelines apply
+regardless of the version of Python you are contributing to.  Following these
+conventions is not necessary for your own third party extension modules,
+unless you eventually expect to contribute them to Python.
 
 
 .. _api-includes:
@@ -38,7 +48,8 @@ Include Files
 All function, type and macro definitions needed to use the Python/C API are
 included in your code by the following line::
 
-   #include "Python.h"
+   #define PY_SSIZE_T_CLEAN
+   #include <Python.h>
 
 This implies inclusion of the following standard headers: ``<stdio.h>``,
 ``<string.h>``, ``<errno.h>``, ``<limits.h>``, ``<assert.h>`` and ``<stdlib.h>``
@@ -50,23 +61,29 @@ This implies inclusion of the following standard headers: ``<stdio.h>``,
    headers on some systems, you *must* include :file:`Python.h` before any standard
    headers are included.
 
+   It is recommended to always define ``PY_SSIZE_T_CLEAN`` before including
+   ``Python.h``.  See :ref:`arg-parsing` for a description of this macro.
+
 All user visible names defined by Python.h (except those defined by the included
 standard headers) have one of the prefixes ``Py`` or ``_Py``.  Names beginning
 with ``_Py`` are for internal use by the Python implementation and should not be
 used by extension writers. Structure member names do not have a reserved prefix.
 
-**Important:** user code should never define names that begin with ``Py`` or
-``_Py``.  This confuses the reader, and jeopardizes the portability of the user
-code to future Python versions, which may define additional names beginning with
-one of these prefixes.
+.. note::
+
+   User code should never define names that begin with ``Py`` or ``_Py``. This
+   confuses the reader, and jeopardizes the portability of the user code to
+   future Python versions, which may define additional names beginning with one
+   of these prefixes.
 
 The header files are typically installed with Python.  On Unix, these  are
 located in the directories :file:`{prefix}/include/pythonversion/` and
 :file:`{exec_prefix}/include/pythonversion/`, where :envvar:`prefix` and
 :envvar:`exec_prefix` are defined by the corresponding parameters to Python's
-:program:`configure` script and *version* is ``sys.version[:3]``.  On Windows,
-the headers are installed in :file:`{prefix}/include`, where :envvar:`prefix` is
-the installation directory specified to the installer.
+:program:`configure` script and *version* is
+``'%d.%d' % sys.version_info[:2]``.  On Windows, the headers are installed
+in :file:`{prefix}/include`, where :envvar:`prefix` is the installation
+directory specified to the installer.
 
 To include the headers, place both directories (if different) on your compiler's
 search path for includes.  Do *not* place the parent directories on the search
@@ -75,9 +92,87 @@ multi-platform builds since the platform independent headers under
 :envvar:`prefix` include the platform specific headers from
 :envvar:`exec_prefix`.
 
-C++ users should note that though the API is defined entirely using C, the
-header files do properly declare the entry points to be ``extern "C"``, so there
-is no need to do anything special to use the API from C++.
+C++ users should note that although the API is defined entirely using C, the
+header files properly declare the entry points to be ``extern "C"``. As a result,
+there is no need to do anything special to use the API from C++.
+
+
+Useful macros
+=============
+
+Several useful macros are defined in the Python header files.  Many are
+defined closer to where they are useful (e.g. :c:macro:`Py_RETURN_NONE`).
+Others of a more general utility are defined here.  This is not necessarily a
+complete listing.
+
+.. c:macro:: Py_UNREACHABLE()
+
+   Use this when you have a code path that you do not expect to be reached.
+   For example, in the ``default:`` clause in a ``switch`` statement for which
+   all possible values are covered in ``case`` statements.  Use this in places
+   where you might be tempted to put an ``assert(0)`` or ``abort()`` call.
+
+   .. versionadded:: 3.7
+
+.. c:macro:: Py_ABS(x)
+
+   Return the absolute value of ``x``.
+
+   .. versionadded:: 3.3
+
+.. c:macro:: Py_MIN(x, y)
+
+   Return the minimum value between ``x`` and ``y``.
+
+   .. versionadded:: 3.3
+
+.. c:macro:: Py_MAX(x, y)
+
+   Return the maximum value between ``x`` and ``y``.
+
+   .. versionadded:: 3.3
+
+.. c:macro:: Py_STRINGIFY(x)
+
+   Convert ``x`` to a C string.  E.g. ``Py_STRINGIFY(123)`` returns
+   ``"123"``.
+
+   .. versionadded:: 3.4
+
+.. c:macro:: Py_MEMBER_SIZE(type, member)
+
+   Return the size of a structure (``type``) ``member`` in bytes.
+
+   .. versionadded:: 3.6
+
+.. c:macro:: Py_CHARMASK(c)
+
+   Argument must be a character or an integer in the range [-128, 127] or [0,
+   255].  This macro returns ``c`` cast to an ``unsigned char``.
+
+.. c:macro:: Py_GETENV(s)
+
+   Like ``getenv(s)``, but returns ``NULL`` if :option:`-E` was passed on the
+   command line (i.e. if ``Py_IgnoreEnvironmentFlag`` is set).
+
+.. c:macro:: Py_UNUSED(arg)
+
+   Use this for unused arguments in a function definition to silence compiler
+   warnings. Example: ``int func(int a, int Py_UNUSED(b)) { return a; }``.
+
+   .. versionadded:: 3.4
+
+.. c:macro:: Py_DEPRECATED(version)
+
+   Use this for deprecated declarations.  The macro must be placed before the
+   symbol name.
+
+   Example::
+
+      Py_DEPRECATED(3.8) PyAPI_FUNC(int) Py_OldFunction(void);
+
+   .. versionchanged:: 3.8
+      MSVC support was added.
 
 
 .. _api-objects:
@@ -157,7 +252,7 @@ duration of the call.
 However, a common pitfall is to extract an object from a list and hold on to it
 for a while without incrementing its reference count. Some other operation might
 conceivably remove the object from the list, decrementing its reference count
-and possible deallocating it. The real danger is that innocent-looking
+and possibly deallocating it. The real danger is that innocent-looking
 operations may invoke arbitrary Python code which could do this; there is a code
 path which allows control to flow back to the user from a :c:func:`Py_DECREF`, so
 almost any operation is potentially dangerous.
@@ -380,7 +475,7 @@ functions in the Python/C API can raise exceptions, unless an explicit claim is
 made otherwise in a function's documentation.  In general, when a function
 encounters an error, it sets an exception, discards any object references that
 it owns, and returns an error indicator.  If not documented otherwise, this
-indicator is either *NULL* or ``-1``, depending on the function's return type.
+indicator is either ``NULL`` or ``-1``, depending on the function's return type.
 A few functions return a Boolean true/false result, with false indicating an
 error.  Very few functions return no explicit error indicator or have an
 ambiguous return value, and require explicit testing for errors with
@@ -395,13 +490,13 @@ using global storage in an unthreaded application).  A  thread can be in one of
 two states: an exception has occurred, or not. The function
 :c:func:`PyErr_Occurred` can be used to check for this: it returns a borrowed
 reference to the exception type object when an exception has occurred, and
-*NULL* otherwise.  There are a number of functions to set the exception state:
+``NULL`` otherwise.  There are a number of functions to set the exception state:
 :c:func:`PyErr_SetString` is the most common (though not the most general)
 function to set the exception state, and :c:func:`PyErr_Clear` clears the
 exception state.
 
 The full exception state consists of three objects (all of which can  be
-*NULL*): the exception type, the corresponding exception  value, and the
+``NULL``): the exception type, the corresponding exception  value, and the
 traceback.  These have the same meanings as the Python result of
 ``sys.exc_info()``; however, they are not the same: the Python objects represent
 the last exception being handled by a Python  :keyword:`try` ...
@@ -502,10 +597,10 @@ Here is the corresponding C code, in all its glory::
 This example represents an endorsed use of the ``goto`` statement  in C!
 It illustrates the use of :c:func:`PyErr_ExceptionMatches` and
 :c:func:`PyErr_Clear` to handle specific exceptions, and the use of
-:c:func:`Py_XDECREF` to dispose of owned references that may be *NULL* (note the
+:c:func:`Py_XDECREF` to dispose of owned references that may be ``NULL`` (note the
 ``'X'`` in the name; :c:func:`Py_DECREF` would crash when confronted with a
-*NULL* reference).  It is important that the variables used to hold owned
-references are initialized to *NULL* for this to work; likewise, the proposed
+``NULL`` reference).  It is important that the variables used to hold owned
+references are initialized to ``NULL`` for this to work; likewise, the proposed
 return value is initialized to ``-1`` (failure) and only set to success after
 the final call made is successful.
 
@@ -578,9 +673,9 @@ Sometimes, it is desirable to "uninitialize" Python.  For instance,  the
 application may want to start over (make another call to
 :c:func:`Py_Initialize`) or the application is simply done with its  use of
 Python and wants to free memory allocated by Python.  This can be accomplished
-by calling :c:func:`Py_Finalize`.  The function :c:func:`Py_IsInitialized` returns
+by calling :c:func:`Py_FinalizeEx`.  The function :c:func:`Py_IsInitialized` returns
 true if Python is currently in the initialized state.  More information about
-these functions is given in a later chapter. Notice that :c:func:`Py_Finalize`
+these functions is given in a later chapter. Notice that :c:func:`Py_FinalizeEx`
 does *not* free all memory allocated by the Python interpreter, e.g. memory
 allocated by extension modules currently cannot be released.
 
