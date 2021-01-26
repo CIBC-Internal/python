@@ -4,6 +4,7 @@
 .. module:: sys
    :synopsis: Access system-specific parameters and functions.
 
+--------------
 
 This module provides access to some variables used or maintained by the
 interpreter and to functions that interact strongly with the interpreter. It is
@@ -28,6 +29,12 @@ always available.
 
    To loop over the standard input, or the list of files given on the
    command line, see the :mod:`fileinput` module.
+
+   .. note::
+      On Unix, command line arguments are passed by bytes from OS.  Python decodes
+      them with filesystem encoding and "surrogateescape" error handler.
+      When you need original bytes, you can get it by
+      ``[os.fsencode(arg) for arg in sys.argv]``.
 
 
 .. data:: base_exec_prefix
@@ -108,6 +115,40 @@ always available.
    This function should be used for internal and specialized purposes only.
 
 
+.. function:: breakpointhook()
+
+   This hook function is called by built-in :func:`breakpoint`.  By default,
+   it drops you into the :mod:`pdb` debugger, but it can be set to any other
+   function so that you can choose which debugger gets used.
+
+   The signature of this function is dependent on what it calls.  For example,
+   the default binding (e.g. ``pdb.set_trace()``) expects no arguments, but
+   you might bind it to a function that expects additional arguments
+   (positional and/or keyword).  The built-in ``breakpoint()`` function passes
+   its ``*args`` and ``**kws`` straight through.  Whatever
+   ``breakpointhooks()`` returns is returned from ``breakpoint()``.
+
+   The default implementation first consults the environment variable
+   :envvar:`PYTHONBREAKPOINT`.  If that is set to ``"0"`` then this function
+   returns immediately; i.e. it is a no-op.  If the environment variable is
+   not set, or is set to the empty string, ``pdb.set_trace()`` is called.
+   Otherwise this variable should name a function to run, using Python's
+   dotted-import nomenclature, e.g. ``package.subpackage.module.function``.
+   In this case, ``package.subpackage.module`` would be imported and the
+   resulting module must have a callable named ``function()``.  This is run,
+   passing in ``*args`` and ``**kws``, and whatever ``function()`` returns,
+   ``sys.breakpointhook()`` returns to the built-in :func:`breakpoint`
+   function.
+
+   Note that if anything goes wrong while importing the callable named by
+   :envvar:`PYTHONBREAKPOINT`, a :exc:`RuntimeWarning` is reported and the
+   breakpoint is ignored.
+
+   Also note that if ``sys.breakpointhook()`` is overridden programmatically,
+   :envvar:`PYTHONBREAKPOINT` is *not* consulted.
+
+   .. versionadded:: 3.7
+
 .. function:: _debugmallocstats()
 
    Print low-level information to stderr about the state of CPython's memory
@@ -126,7 +167,9 @@ always available.
 
 .. data:: dllhandle
 
-   Integer specifying the handle of the Python DLL. Availability: Windows.
+   Integer specifying the handle of the Python DLL.
+
+   .. availability:: Windows.
 
 
 .. function:: displayhook(value)
@@ -167,7 +210,7 @@ always available.
 
 .. data:: dont_write_bytecode
 
-   If this is true, Python won't try to write ``.pyc`` or ``.pyo`` files on the
+   If this is true, Python won't try to write ``.pyc`` files on the
    import of source modules.  This value is initially set to ``True`` or
    ``False`` depending on the :option:`-B` command line option and the
    :envvar:`PYTHONDONTWRITEBYTECODE` environment variable, but you can set it
@@ -186,13 +229,18 @@ always available.
    customized by assigning another three-argument function to ``sys.excepthook``.
 
 
-.. data:: __displayhook__
+.. data:: __breakpointhook__
+          __displayhook__
           __excepthook__
 
-   These objects contain the original values of ``displayhook`` and ``excepthook``
-   at the start of the program.  They are saved so that ``displayhook`` and
-   ``excepthook`` can be restored in case they happen to get replaced with broken
+   These objects contain the original values of ``breakpointhook``,
+   ``displayhook``, and ``excepthook`` at the start of the program.  They are
+   saved so that ``breakpointhook``, ``displayhook`` and ``excepthook`` can be
+   restored in case they happen to get replaced with broken or alternative
    objects.
+
+   .. versionadded:: 3.7
+      __breakpointhook__
 
 
 .. function:: exc_info()
@@ -255,7 +303,7 @@ always available.
    (defaulting to zero), or another type of object.  If it is an integer, zero
    is considered "successful termination" and any nonzero value is considered
    "abnormal termination" by shells and the like.  Most systems require it to be
-   in the range 0-127, and produce undefined results otherwise.  Some systems
+   in the range 0--127, and produce undefined results otherwise.  Some systems
    have a convention for assigning specific meanings to specific exit codes, but
    these are generally underdeveloped; Unix programs generally use 2 for command
    line syntax errors and 1 for all other kind of errors.  If another type of
@@ -268,10 +316,15 @@ always available.
    the process when called from the main thread, and the exception is not
    intercepted.
 
+   .. versionchanged:: 3.6
+      If an error occurs in the cleanup after the Python interpreter
+      has caught :exc:`SystemExit` (such as an error flushing buffered data
+      in the standard streams), the exit status is changed to 120.
+
 
 .. data:: flags
 
-   The :term:`struct sequence` *flags* exposes the status of command line
+   The :term:`named tuple` *flags* exposes the status of command line
    flags. The attributes are read only.
 
    ============================= =============================
@@ -280,6 +333,7 @@ always available.
    :const:`debug`                :option:`-d`
    :const:`inspect`              :option:`-i`
    :const:`interactive`          :option:`-i`
+   :const:`isolated`             :option:`-I`
    :const:`optimize`             :option:`-O` or :option:`-OO`
    :const:`dont_write_bytecode`  :option:`-B`
    :const:`no_user_site`         :option:`-s`
@@ -289,6 +343,8 @@ always available.
    :const:`bytes_warning`        :option:`-b`
    :const:`quiet`                :option:`-q`
    :const:`hash_randomization`   :option:`-R`
+   :const:`dev_mode`             :option:`-X` ``dev``
+   :const:`utf8_mode`            :option:`-X` ``utf8``
    ============================= =============================
 
    .. versionchanged:: 3.2
@@ -300,10 +356,17 @@ always available.
    .. versionchanged:: 3.3
       Removed obsolete ``division_warning`` attribute.
 
+   .. versionchanged:: 3.4
+      Added ``isolated`` attribute for :option:`-I` ``isolated`` flag.
+
+   .. versionchanged:: 3.7
+      Added ``dev_mode`` attribute for the new :option:`-X` ``dev`` flag
+      and ``utf8_mode`` attribute for the new  :option:`-X` ``utf8`` flag.
+
 
 .. data:: float_info
 
-   A :term:`struct sequence` holding information about the float type. It
+   A :term:`named tuple` holding information about the float type. It
    contains low level information about the precision and internal
    representation.  The values correspond to the various floating-point
    constants defined in the standard header file :file:`float.h` for the 'C'
@@ -315,8 +378,8 @@ always available.
    +---------------------+----------------+--------------------------------------------------+
    | attribute           | float.h macro  | explanation                                      |
    +=====================+================+==================================================+
-   | :const:`epsilon`    | DBL_EPSILON    | difference between 1 and the least value greater |
-   |                     |                | than 1 that is representable as a float          |
+   | :const:`epsilon`    | DBL_EPSILON    | difference between 1.0 and the least value       |
+   |                     |                | greater than 1.0 that is representable as a float|
    +---------------------+----------------+--------------------------------------------------+
    | :const:`dig`        | DBL_DIG        | maximum number of decimal digits that can be     |
    |                     |                | faithfully represented in a float;  see below    |
@@ -324,20 +387,20 @@ always available.
    | :const:`mant_dig`   | DBL_MANT_DIG   | float precision: the number of base-``radix``    |
    |                     |                | digits in the significand of a float             |
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`max`        | DBL_MAX        | maximum representable finite float               |
+   | :const:`max`        | DBL_MAX        | maximum representable positive finite float      |
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`max_exp`    | DBL_MAX_EXP    | maximum integer e such that ``radix**(e-1)`` is  |
+   | :const:`max_exp`    | DBL_MAX_EXP    | maximum integer *e* such that ``radix**(e-1)`` is|
    |                     |                | a representable finite float                     |
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`max_10_exp` | DBL_MAX_10_EXP | maximum integer e such that ``10**e`` is in the  |
+   | :const:`max_10_exp` | DBL_MAX_10_EXP | maximum integer *e* such that ``10**e`` is in the|
    |                     |                | range of representable finite floats             |
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`min`        | DBL_MIN        | minimum positive normalized float                |
+   | :const:`min`        | DBL_MIN        | minimum representable positive *normalized* float|
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`min_exp`    | DBL_MIN_EXP    | minimum integer e such that ``radix**(e-1)`` is  |
+   | :const:`min_exp`    | DBL_MIN_EXP    | minimum integer *e* such that ``radix**(e-1)`` is|
    |                     |                | a normalized float                               |
    +---------------------+----------------+--------------------------------------------------+
-   | :const:`min_10_exp` | DBL_MIN_10_EXP | minimum integer e such that ``10**e`` is a       |
+   | :const:`min_10_exp` | DBL_MIN_10_EXP | minimum integer *e* such that ``10**e`` is a     |
    |                     |                | normalized float                                 |
    +---------------------+----------------+--------------------------------------------------+
    | :const:`radix`      | FLT_RADIX      | radix of exponent representation                 |
@@ -398,6 +461,15 @@ always available.
    .. versionadded:: 3.4
 
 
+.. function:: getandroidapilevel()
+
+   Return the build time API version of Android as an integer.
+
+   .. availability:: Android.
+
+   .. versionadded:: 3.7
+
+
 .. function:: getcheckinterval()
 
    Return the interpreter's "check interval"; see :func:`setcheckinterval`.
@@ -417,30 +489,55 @@ always available.
    Return the current value of the flags that are used for
    :c:func:`dlopen` calls.  Symbolic names for the flag values can be
    found in the :mod:`os` module (``RTLD_xxx`` constants, e.g.
-   :data:`os.RTLD_LAZY`).  Availability: Unix.
+   :data:`os.RTLD_LAZY`).
+
+   .. availability:: Unix.
 
 
 .. function:: getfilesystemencoding()
 
-   Return the name of the encoding used to convert Unicode filenames into
-   system file names. The result value depends on the operating system:
+   Return the name of the encoding used to convert between Unicode
+   filenames and bytes filenames. For best compatibility, str should be
+   used for filenames in all cases, although representing filenames as bytes
+   is also supported. Functions accepting or returning filenames should support
+   either str or bytes and internally convert to the system's preferred
+   representation.
+
+   This encoding is always ASCII-compatible.
+
+   :func:`os.fsencode` and :func:`os.fsdecode` should be used to ensure that
+   the correct encoding and errors mode are used.
+
+   * In the UTF-8 mode, the encoding is ``utf-8`` on any platform.
 
    * On Mac OS X, the encoding is ``'utf-8'``.
 
-   * On Unix, the encoding is the user's preference according to the result of
-     nl_langinfo(CODESET).
+   * On Unix, the encoding is the locale encoding.
 
-   * On Windows NT+, file names are Unicode natively, so no conversion is
-     performed. :func:`getfilesystemencoding` still returns ``'mbcs'``, as
-     this is the encoding that applications should use when they explicitly
-     want to convert Unicode strings to byte strings that are equivalent when
-     used as file names.
-
-   * On Windows 9x, the encoding is ``'mbcs'``.
+   * On Windows, the encoding may be ``'utf-8'`` or ``'mbcs'``, depending
+     on user configuration.
 
    .. versionchanged:: 3.2
       :func:`getfilesystemencoding` result cannot be ``None`` anymore.
 
+   .. versionchanged:: 3.6
+      Windows is no longer guaranteed to return ``'mbcs'``. See :pep:`529`
+      and :func:`_enablelegacywindowsfsencoding` for more information.
+
+   .. versionchanged:: 3.7
+      Return 'utf-8' in the UTF-8 mode.
+
+
+.. function:: getfilesystemencodeerrors()
+
+   Return the name of the error mode used to convert between Unicode filenames
+   and bytes filenames. The encoding name is returned from
+   :func:`getfilesystemencoding`.
+
+   :func:`os.fsencode` and :func:`os.fsdecode` should be used to ensure that
+   the correct encoding and errors mode are used.
+
+   .. versionadded:: 3.6
 
 .. function:: getrefcount(object)
 
@@ -474,7 +571,7 @@ always available.
    additional garbage collector overhead if the object is managed by the garbage
    collector.
 
-   See `recursive sizeof recipe <http://code.activestate.com/recipes/577504>`_
+   See `recursive sizeof recipe <https://code.activestate.com/recipes/577504>`_
    for an example of using :func:`getsizeof` recursively to find the size of
    containers and all their contents.
 
@@ -529,26 +626,15 @@ always available.
    Return a named tuple describing the Windows version
    currently running.  The named elements are *major*, *minor*,
    *build*, *platform*, *service_pack*, *service_pack_minor*,
-   *service_pack_major*, *suite_mask*, and *product_type*.
-   *service_pack* contains a string while all other values are
+   *service_pack_major*, *suite_mask*, *product_type* and
+   *platform_version*. *service_pack* contains a string,
+   *platform_version* a 3-tuple and all other values are
    integers. The components can also be accessed by name, so
    ``sys.getwindowsversion()[0]`` is equivalent to
    ``sys.getwindowsversion().major``. For compatibility with prior
    versions, only the first 5 elements are retrievable by indexing.
 
-   *platform* may be one of the following values:
-
-   +-----------------------------------------+-------------------------+
-   | Constant                                | Platform                |
-   +=========================================+=========================+
-   | :const:`0 (VER_PLATFORM_WIN32s)`        | Win32s on Windows 3.1   |
-   +-----------------------------------------+-------------------------+
-   | :const:`1 (VER_PLATFORM_WIN32_WINDOWS)` | Windows 95/98/ME        |
-   +-----------------------------------------+-------------------------+
-   | :const:`2 (VER_PLATFORM_WIN32_NT)`      | Windows NT/2000/XP/x64  |
-   +-----------------------------------------+-------------------------+
-   | :const:`3 (VER_PLATFORM_WIN32_CE)`      | Windows CE              |
-   +-----------------------------------------+-------------------------+
+   *platform* will be :const:`2 (VER_PLATFORM_WIN32_NT)`.
 
    *product_type* may be one of the following values:
 
@@ -564,21 +650,73 @@ always available.
    |                                       | a domain controller.            |
    +---------------------------------------+---------------------------------+
 
-
    This function wraps the Win32 :c:func:`GetVersionEx` function; see the
    Microsoft documentation on :c:func:`OSVERSIONINFOEX` for more information
    about these fields.
 
-   Availability: Windows.
+   *platform_version* returns the accurate major version, minor version and
+   build number of the current operating system, rather than the version that
+   is being emulated for the process. It is intended for use in logging rather
+   than for feature detection.
+
+   .. availability:: Windows.
 
    .. versionchanged:: 3.2
       Changed to a named tuple and added *service_pack_minor*,
       *service_pack_major*, *suite_mask*, and *product_type*.
 
+   .. versionchanged:: 3.6
+      Added *platform_version*
+
+
+.. function:: get_asyncgen_hooks()
+
+   Returns an *asyncgen_hooks* object, which is similar to a
+   :class:`~collections.namedtuple` of the form `(firstiter, finalizer)`,
+   where *firstiter* and *finalizer* are expected to be either ``None`` or
+   functions which take an :term:`asynchronous generator iterator` as an
+   argument, and are used to schedule finalization of an asynchronous
+   generator by an event loop.
+
+   .. versionadded:: 3.6
+      See :pep:`525` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)
+
+
+.. function:: get_coroutine_origin_tracking_depth()
+
+   Get the current coroutine origin tracking depth, as set by
+   :func:`set_coroutine_origin_tracking_depth`.
+
+   .. versionadded:: 3.7
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+
+.. function:: get_coroutine_wrapper()
+
+   Returns ``None``, or a wrapper set by :func:`set_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+   .. deprecated:: 3.7
+      The coroutine wrapper functionality has been deprecated, and
+      will be removed in 3.8. See :issue:`32591` for details.
+
 
 .. data:: hash_info
 
-   A :term:`struct sequence` giving parameters of the numeric hash
+   A :term:`named tuple` giving parameters of the numeric hash
    implementation.  For more details about hashing of numeric types, see
    :ref:`numeric-hash`.
 
@@ -626,10 +764,10 @@ always available.
 
    This is called ``hexversion`` since it only really looks meaningful when viewed
    as the result of passing it to the built-in :func:`hex` function.  The
-   :term:`struct sequence`  :data:`sys.version_info` may be used for a more
+   :term:`named tuple`  :data:`sys.version_info` may be used for a more
    human-friendly encoding of the same information.
 
-   More details of ``hexversion`` can be found at :ref:`apiabiversion`
+   More details of ``hexversion`` can be found at :ref:`apiabiversion`.
 
 
 .. data:: implementation
@@ -671,10 +809,14 @@ always available.
 
    .. versionadded:: 3.3
 
+   .. note::
+
+      The addition of new required attributes must go through the normal PEP
+      process. See :pep:`421` for more information.
 
 .. data:: int_info
 
-   A :term:`struct sequence` that holds information about Python's internal
+   A :term:`named tuple` that holds information about Python's internal
    representation of integers.  The attributes are read only.
 
    .. tabularcolumns:: |l|L|
@@ -718,6 +860,14 @@ always available.
    value of :func:`intern` around to benefit from it.
 
 
+.. function:: is_finalizing()
+
+   Return :const:`True` if the Python interpreter is
+   :term:`shutting down <interpreter shutdown>`, :const:`False` otherwise.
+
+   .. versionadded:: 3.5
+
+
 .. data:: last_type
           last_value
           last_traceback
@@ -754,19 +904,32 @@ always available.
 
 .. data:: meta_path
 
-    A list of :term:`finder` objects that have their :meth:`find_module`
-    methods called to see if one of the objects can find the module to be
-    imported. The :meth:`find_module` method is called at least with the
-    absolute name of the module being imported. If the module to be imported is
-    contained in package then the parent package's :attr:`__path__` attribute
-    is passed in as a second argument. The method returns ``None`` if
-    the module cannot be found, else returns a :term:`loader`.
+    A list of :term:`meta path finder` objects that have their
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` methods called to see if one
+    of the objects can find the module to be imported. The
+    :meth:`~importlib.abc.MetaPathFinder.find_spec` method is called with at
+    least the absolute name of the module being imported. If the module to be
+    imported is contained in a package, then the parent package's :attr:`__path__`
+    attribute is passed in as a second argument. The method returns a
+    :term:`module spec`, or ``None`` if the module cannot be found.
 
-    :data:`sys.meta_path` is searched before any implicit default finders or
-    :data:`sys.path`.
+    .. seealso::
 
-    See :pep:`302` for the original specification.
+        :class:`importlib.abc.MetaPathFinder`
+          The abstract base class defining the interface of finder objects on
+          :data:`meta_path`.
+        :class:`importlib.machinery.ModuleSpec`
+          The concrete class which
+          :meth:`~importlib.abc.MetaPathFinder.find_spec` should return
+          instances of.
 
+    .. versionchanged:: 3.4
+
+        :term:`Module specs <module spec>` were introduced in Python 3.4, by
+        :pep:`451`. Earlier versions of Python looked for a method called
+        :meth:`~importlib.abc.MetaPathFinder.find_module`.
+        This is still called as a fallback if a :data:`meta_path` entry doesn't
+        have a :meth:`~importlib.abc.MetaPathFinder.find_spec` method.
 
 .. data:: modules
 
@@ -891,6 +1054,8 @@ always available.
    .. index::
       single: interpreter prompts
       single: prompts, interpreter
+      single: >>>; interpreter prompt
+      single: ...; interpreter prompt
 
    Strings specifying the primary and secondary prompt of the interpreter.  These
    are only defined if the interpreter is in interactive mode.  Their initial
@@ -925,7 +1090,7 @@ always available.
    can be found in the :mod:`os` module (``RTLD_xxx`` constants, e.g.
    :data:`os.RTLD_LAZY`).
 
-   Availability: Unix.
+   .. availability:: Unix.
 
 .. function:: setprofile(profilefunc)
 
@@ -936,13 +1101,39 @@ always available.
    Set the system's profile function, which allows you to implement a Python source
    code profiler in Python.  See chapter :ref:`profile` for more information on the
    Python profiler.  The system's profile function is called similarly to the
-   system's trace function (see :func:`settrace`), but it isn't called for each
-   executed line of code (only on call and return, but the return event is reported
-   even when an exception has been set).  The function is thread-specific, but
-   there is no way for the profiler to know about context switches between threads,
-   so it does not make sense to use this in the presence of multiple threads. Also,
-   its return value is not used, so it can simply return ``None``.
+   system's trace function (see :func:`settrace`), but it is called with different events,
+   for example it isn't called for each executed line of code (only on call and return,
+   but the return event is reported even when an exception has been set). The function is
+   thread-specific, but there is no way for the profiler to know about context switches between
+   threads, so it does not make sense to use this in the presence of multiple threads. Also,
+   its return value is not used, so it can simply return ``None``.  Error in the profile
+   function will cause itself unset.
 
+   Profile functions should have three arguments: *frame*, *event*, and
+   *arg*. *frame* is the current stack frame.  *event* is a string: ``'call'``,
+   ``'return'``, ``'c_call'``, ``'c_return'``, or ``'c_exception'``. *arg* depends
+   on the event type.
+
+   The events have the following meaning:
+
+   ``'call'``
+      A function is called (or some other code block entered).  The
+      profile function is called; *arg* is ``None``.
+
+   ``'return'``
+      A function (or other code block) is about to return.  The profile
+      function is called; *arg* is the value that will be returned, or ``None``
+      if the event is caused by an exception being raised.
+
+   ``'c_call'``
+      A C function is about to be called.  This may be an extension function or
+      a built-in.  *arg* is the C function object.
+
+   ``'c_return'``
+      A C function has returned. *arg* is the C function object.
+
+   ``'c_exception'``
+      A C function has raised an exception.  *arg* is the C function object.
 
 .. function:: setrecursionlimit(limit)
 
@@ -954,6 +1145,13 @@ always available.
    limit higher when they have a program that requires deep recursion and a platform
    that supports a higher limit.  This should be done with care, because a too-high
    limit can lead to a crash.
+
+   If the new limit is too low at the current recursion depth, a
+   :exc:`RecursionError` exception is raised.
+
+   .. versionchanged:: 3.5.1
+      A :exc:`RecursionError` exception is now raised if the new limit is too
+      low at the current recursion depth.
 
 
 .. function:: setswitchinterval(interval)
@@ -977,21 +1175,25 @@ always available.
 
    Set the system's trace function, which allows you to implement a Python
    source code debugger in Python.  The function is thread-specific; for a
-   debugger to support multiple threads, it must be registered using
-   :func:`settrace` for each thread being debugged.
+   debugger to support multiple threads, it must register a trace function using
+   :func:`settrace` for each thread being debugged or use :func:`threading.settrace`.
 
    Trace functions should have three arguments: *frame*, *event*, and
    *arg*. *frame* is the current stack frame.  *event* is a string: ``'call'``,
-   ``'line'``, ``'return'``, ``'exception'``, ``'c_call'``, ``'c_return'``, or
-   ``'c_exception'``. *arg* depends on the event type.
+   ``'line'``, ``'return'``, ``'exception'`` or ``'opcode'``.  *arg* depends on
+   the event type.
 
    The trace function is invoked (with *event* set to ``'call'``) whenever a new
    local scope is entered; it should return a reference to a local trace
-   function to be used that scope, or ``None`` if the scope shouldn't be traced.
+   function to be used for the new scope, or ``None`` if the scope shouldn't be
+   traced.
 
    The local trace function should return a reference to itself (or to another
    function for further tracing in that scope), or ``None`` to turn off tracing
    in that scope.
+
+   If there is any error occurred in the trace function, it will be unset, just
+   like ``settrace(None)`` is called.
 
    The events have the following meaning:
 
@@ -1006,6 +1208,8 @@ always available.
       ``None``; the return value specifies the new local trace function.  See
       :file:`Objects/lnotab_notes.txt` for a detailed explanation of how this
       works.
+      Per-line events may be disabled for a frame by setting
+      :attr:`f_trace_lines` to :const:`False` on that frame.
 
    ``'return'``
       A function (or other code block) is about to return.  The local trace
@@ -1018,18 +1222,27 @@ always available.
       tuple ``(exception, value, traceback)``; the return value specifies the
       new local trace function.
 
-   ``'c_call'``
-      A C function is about to be called.  This may be an extension function or
-      a built-in.  *arg* is the C function object.
-
-   ``'c_return'``
-      A C function has returned. *arg* is the C function object.
-
-   ``'c_exception'``
-      A C function has raised an exception.  *arg* is the C function object.
+   ``'opcode'``
+      The interpreter is about to execute a new opcode (see :mod:`dis` for
+      opcode details).  The local trace function is called; *arg* is
+      ``None``; the return value specifies the new local trace function.
+      Per-opcode events are not emitted by default: they must be explicitly
+      requested by setting :attr:`f_trace_opcodes` to :const:`True` on the
+      frame.
 
    Note that as an exception is propagated down the chain of callers, an
    ``'exception'`` event is generated at each level.
+
+   For more fine-grained usage, it's possible to set a trace function by
+   assigning ``frame.f_trace = tracefunc`` explicitly, rather than relying on
+   it being set indirectly via the return value from an already installed
+   trace function. This is also required for activating the trace function on
+   the current frame, which :func:`settrace` doesn't do. Note that in order
+   for this to work, a global tracing function must have been installed
+   with :func:`settrace` in order to enable the runtime tracing machinery,
+   but it doesn't need to be the same tracing function (e.g. it could be a
+   low overhead tracing function that simply returns ``None`` to disable
+   itself immediately on each frame).
 
    For more information on code and frame objects, refer to :ref:`types`.
 
@@ -1040,18 +1253,105 @@ always available.
       implementation platform, rather than part of the language definition, and
       thus may not be available in all Python implementations.
 
+   .. versionchanged:: 3.7
 
-.. function:: settscdump(on_flag)
+      ``'opcode'`` event type added; :attr:`f_trace_lines` and
+      :attr:`f_trace_opcodes` attributes added to frames
 
-   Activate dumping of VM measurements using the Pentium timestamp counter, if
-   *on_flag* is true. Deactivate these dumps if *on_flag* is off. The function is
-   available only if Python was compiled with ``--with-tsc``. To understand
-   the output of this dump, read :file:`Python/ceval.c` in the Python sources.
+.. function:: set_asyncgen_hooks(firstiter, finalizer)
 
-   .. impl-detail::
-      This function is intimately bound to CPython implementation details and
-      thus not likely to be implemented elsewhere.
+   Accepts two optional keyword arguments which are callables that accept an
+   :term:`asynchronous generator iterator` as an argument. The *firstiter*
+   callable will be called when an asynchronous generator is iterated for the
+   first time. The *finalizer* will be called when an asynchronous generator
+   is about to be garbage collected.
 
+   .. versionadded:: 3.6
+      See :pep:`525` for more details, and for a reference example of a
+      *finalizer* method see the implementation of
+      ``asyncio.Loop.shutdown_asyncgens`` in
+      :source:`Lib/asyncio/base_events.py`
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)
+
+.. function:: set_coroutine_origin_tracking_depth(depth)
+
+   Allows enabling or disabling coroutine origin tracking. When
+   enabled, the ``cr_origin`` attribute on coroutine objects will
+   contain a tuple of (filename, line number, function name) tuples
+   describing the traceback where the coroutine object was created,
+   with the most recent call first. When disabled, ``cr_origin`` will
+   be None.
+
+   To enable, pass a *depth* value greater than zero; this sets the
+   number of frames whose information will be captured. To disable,
+   pass set *depth* to zero.
+
+   This setting is thread-specific.
+
+   .. versionadded:: 3.7
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+.. function:: set_coroutine_wrapper(wrapper)
+
+   Allows intercepting creation of :term:`coroutine` objects (only ones that
+   are created by an :keyword:`async def` function; generators decorated with
+   :func:`types.coroutine` or :func:`asyncio.coroutine` will not be
+   intercepted).
+
+   The *wrapper* argument must be either:
+
+   * a callable that accepts one argument (a coroutine object);
+   * ``None``, to reset the wrapper.
+
+   If called twice, the new wrapper replaces the previous one.  The function
+   is thread-specific.
+
+   The *wrapper* callable cannot define new coroutines directly or indirectly::
+
+        def wrapper(coro):
+            async def wrap(coro):
+                return await coro
+            return wrap(coro)
+        sys.set_coroutine_wrapper(wrapper)
+
+        async def foo():
+            pass
+
+        # The following line will fail with a RuntimeError, because
+        # ``wrapper`` creates a ``wrap(coro)`` coroutine:
+        foo()
+
+   See also :func:`get_coroutine_wrapper`.
+
+   .. versionadded:: 3.5
+      See :pep:`492` for more details.
+
+   .. note::
+      This function has been added on a provisional basis (see :pep:`411`
+      for details.)  Use it only for debugging purposes.
+
+   .. deprecated:: 3.7
+      The coroutine wrapper functionality has been deprecated, and
+      will be removed in 3.8. See :issue:`32591` for details.
+
+.. function:: _enablelegacywindowsfsencoding()
+
+   Changes the default filesystem encoding and errors mode to 'mbcs' and
+   'replace' respectively, for consistency with versions of Python prior to 3.6.
+
+   This is equivalent to defining the :envvar:`PYTHONLEGACYWINDOWSFSENCODING`
+   environment variable before launching Python.
+
+   .. availability:: Windows.
+
+   .. versionadded:: 3.6
+      See :pep:`529` for more details.
 
 .. data:: stdin
           stdout
@@ -1070,17 +1370,34 @@ always available.
    returned by the :func:`open` function.  Their parameters are chosen as
    follows:
 
-   * The character encoding is platform-dependent.  Under Windows, if the stream
-     is interactive (that is, if its :meth:`isatty` method returns ``True``), the
-     console codepage is used, otherwise the ANSI code page.  Under other
-     platforms, the locale encoding is used (see :meth:`locale.getpreferredencoding`).
+   * The character encoding is platform-dependent.  Non-Windows
+     platforms use the locale encoding (see
+     :meth:`locale.getpreferredencoding()`).
 
-     Under all platforms though, you can override this value by setting the
-     :envvar:`PYTHONIOENCODING` environment variable before starting Python.
+     On Windows, UTF-8 is used for the console device.  Non-character
+     devices such as disk files and pipes use the system locale
+     encoding (i.e. the ANSI codepage).  Non-console character
+     devices such as NUL (i.e. where ``isatty()`` returns ``True``) use the
+     value of the console input and output codepages at startup,
+     respectively for stdin and stdout/stderr. This defaults to the
+     system locale encoding if the process is not initially attached
+     to a console.
 
-   * When interactive, standard streams are line-buffered.  Otherwise, they
-     are block-buffered like regular text files.  You can override this
-     value with the :option:`-u` command-line option.
+     The special behaviour of the console can be overridden
+     by setting the environment variable PYTHONLEGACYWINDOWSSTDIO
+     before starting Python. In that case, the console codepages are
+     used as for any other character device.
+
+     Under all platforms, you can override the character encoding by
+     setting the :envvar:`PYTHONIOENCODING` environment variable before
+     starting Python or by using the new :option:`-X` ``utf8`` command
+     line option and :envvar:`PYTHONUTF8` environment variable.  However,
+     for the Windows console, this only applies when
+     :envvar:`PYTHONLEGACYWINDOWSSTDIO` is also set.
+
+   * When interactive, ``stdout`` and ``stderr`` streams are line-buffered.
+     Otherwise, they are block-buffered like regular text files.  You can
+     override this value with the :option:`-u` command-line option.
 
    .. note::
 
@@ -1111,13 +1428,13 @@ always available.
    .. note::
        Under some conditions ``stdin``, ``stdout`` and ``stderr`` as well as the
        original values ``__stdin__``, ``__stdout__`` and ``__stderr__`` can be
-       None. It is usually the case for Windows GUI apps that aren't connected
+       ``None``. It is usually the case for Windows GUI apps that aren't connected
        to a console and Python apps started with :program:`pythonw`.
 
 
 .. data:: thread_info
 
-   A :term:`struct sequence` holding information about the thread
+   A :term:`named tuple` holding information about the thread
    implementation.
 
    .. tabularcolumns:: |l|p{0.7\linewidth}|
@@ -1139,7 +1456,7 @@ always available.
    |                  |  * ``None`` if this information is unknown              |
    +------------------+---------------------------------------------------------+
    | :const:`version` | Name and version of the thread library. It is a string, |
-   |                  | or ``None`` if these informations are unknown.          |
+   |                  | or ``None`` if this information is unknown.             |
    +------------------+---------------------------------------------------------+
 
    .. versionadded:: 3.3
@@ -1194,14 +1511,18 @@ always available.
    stored as string resource 1000 in the Python DLL.  The value is normally the
    first three characters of :const:`version`.  It is provided in the :mod:`sys`
    module for informational purposes; modifying this value has no effect on the
-   registry keys used by Python. Availability: Windows.
+   registry keys used by Python.
+
+   .. availability:: Windows.
 
 
 .. data:: _xoptions
 
    A dictionary of the various implementation-specific flags passed through
    the :option:`-X` command-line option.  Option names are either mapped to
-   their values, if given explicitly, or to :const:`True`.  Example::
+   their values, if given explicitly, or to :const:`True`.  Example:
+
+   .. code-block:: shell-session
 
       $ ./python -Xa=b -Xc
       Python 3.2a3+ (py3k, Oct 16 2010, 20:14:50)
@@ -1223,4 +1544,3 @@ always available.
 .. rubric:: Citations
 
 .. [C99] ISO/IEC 9899:1999.  "Programming languages -- C."  A public draft of this standard is available at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf\ .
-

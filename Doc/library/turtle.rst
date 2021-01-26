@@ -4,19 +4,24 @@
 
 .. module:: turtle
    :synopsis: An educational framework for simple graphics applications
+
 .. sectionauthor:: Gregor Lingl <gregor.lingl@aon.at>
+
+**Source code:** :source:`Lib/turtle.py`
 
 .. testsetup:: default
 
    from turtle import *
    turtle = Turtle()
 
+--------------
+
 Introduction
 ============
 
 Turtle graphics is a popular way for introducing programming to kids.  It was
-part of the original Logo programming language developed by Wally Feurzig and
-Seymour Papert in 1966.
+part of the original Logo programming language developed by Wally Feurzeig,
+Seymour Papert and Cynthia Solomon in 1967.
 
 Imagine a robotic turtle starting at (0, 0) in the x-y plane.  After an ``import turtle``, give it the
 command ``turtle.forward(15)``, and it moves (on-screen!) 15 pixels in the
@@ -544,7 +549,7 @@ Turtle motion
 
    :param n: an integer (or ``None``)
 
-   Delete all or first/last *n* of turtle's stamps.  If *n* is None, delete
+   Delete all or first/last *n* of turtle's stamps.  If *n* is ``None``, delete
    all stamps, if *n* > 0 delete first *n* stamps, else if *n* < 0 delete
    last *n* stamps.
 
@@ -931,10 +936,9 @@ Color control
        >>> turtle.fillcolor("violet")
        >>> turtle.fillcolor()
        'violet'
-       >>> col = turtle.pencolor()
-       >>> col
+       >>> turtle.pencolor()
        (50.0, 193.0, 143.0)
-       >>> turtle.fillcolor(col)
+       >>> turtle.fillcolor((50, 193, 143))  # Integers, not floats
        >>> turtle.fillcolor()
        (50.0, 193.0, 143.0)
        >>> turtle.fillcolor('#ffffff')
@@ -1008,6 +1012,11 @@ Filling
 .. function:: end_fill()
 
    Fill the shape drawn after the last call to :func:`begin_fill`.
+
+   Whether or not overlap regions for self-intersecting polygons
+   or multiple shapes are filled depends on the operating system graphics,
+   type of overlap, and number of overlaps.  For example, the Turtle star
+   above may be either all yellow or have some white regions.
 
    .. doctest::
 
@@ -1305,7 +1314,7 @@ Using events
 
    :param fun: a function with two arguments which will be called with the
                coordinates of the clicked point on the canvas
-   :param num: number of the mouse-button, defaults to 1 (left mouse button)
+   :param btn: number of the mouse-button, defaults to 1 (left mouse button)
    :param add: ``True`` or ``False`` -- if ``True``, a new binding will be
                added, otherwise it will replace a former binding
 
@@ -1326,7 +1335,7 @@ Using events
 
    :param fun: a function with two arguments which will be called with the
                coordinates of the clicked point on the canvas
-   :param num: number of the mouse-button, defaults to 1 (left mouse button)
+   :param btn: number of the mouse-button, defaults to 1 (left mouse button)
    :param add: ``True`` or ``False`` -- if ``True``, a new binding will be
                added, otherwise it will replace a former binding
 
@@ -1350,7 +1359,7 @@ Using events
 
    :param fun: a function with two arguments which will be called with the
                coordinates of the clicked point on the canvas
-   :param num: number of the mouse-button, defaults to 1 (left mouse button)
+   :param btn: number of the mouse-button, defaults to 1 (left mouse button)
    :param add: ``True`` or ``False`` -- if ``True``, a new binding will be
                added, otherwise it will replace a former binding
 
@@ -1731,7 +1740,7 @@ Using screen events
 
    :param fun: a function with two arguments which will be called with the
                coordinates of the clicked point on the canvas
-   :param num: number of the mouse-button, defaults to 1 (left mouse button)
+   :param btn: number of the mouse-button, defaults to 1 (left mouse button)
    :param add: ``True`` or ``False`` -- if ``True``, a new binding will be
                added, otherwise it will replace a former binding
 
@@ -1792,9 +1801,9 @@ Input methods
    :param prompt: string
 
    Pop up a dialog window for input of a string. Parameter title is
-   the title of the dialog window, propmt is a text mostly describing
+   the title of the dialog window, prompt is a text mostly describing
    what information to input.
-   Return the string input. If the dialog is canceled, return None. ::
+   Return the string input. If the dialog is canceled, return ``None``. ::
 
       >>> screen.textinput("NIM", "Name of first player:")
 
@@ -1809,12 +1818,12 @@ Input methods
 
    Pop up a dialog window for input of a number. title is the title of the
    dialog window, prompt is a text mostly describing what numerical information
-   to input. default: default value, minval: minimum value for imput,
+   to input. default: default value, minval: minimum value for input,
    maxval: maximum value for input
    The number input must be in the range minval .. maxval if these are
    given. If not, a hint is issued and the dialog remains open for
    correction.
-   Return the number input. If the dialog is canceled,  return None. ::
+   Return the number input. If the dialog is canceled,  return ``None``. ::
 
       >>> screen.numinput("Poker", "Your stakes:", 1000, minval=10, maxval=10000)
 
@@ -1879,7 +1888,7 @@ Settings and special methods
 
       >>> cv = screen.getcanvas()
       >>> cv
-      <turtle.ScrolledCanvas object at ...>
+      <turtle.ScrolledCanvas object ...>
 
 
 .. function:: getshapes()
@@ -1979,10 +1988,10 @@ Methods specific to Screen, not inherited from TurtleScreen
    :param height: if an integer, the height in pixels, if a float, a fraction of
                   the screen; default is 75% of screen
    :param startx: if positive, starting position in pixels from the left
-                  edge of the screen, if negative from the right edge, if None,
+                  edge of the screen, if negative from the right edge, if ``None``,
                   center window horizontally
    :param starty: if positive, starting position in pixels from the top
-                  edge of the screen, if negative from the bottom edge, if None,
+                  edge of the screen, if negative from the bottom edge, if ``None``,
                   center window vertically
 
    .. doctest::
@@ -2351,6 +2360,9 @@ The demo scripts are:
 |                | pairwise in opposite         | shapesize, tilt,      |
 |                | direction                    | get_shapepoly, update |
 +----------------+------------------------------+-----------------------+
+| sorting_animate| visual demonstration of      | simple alignment,     |
+|                | different sorting methods    | randomization         |
++----------------+------------------------------+-----------------------+
 | tree           | a (graphical) breadth        | :func:`clone`         |
 |                | first tree (using generators)|                       |
 +----------------+------------------------------+-----------------------+
@@ -2360,7 +2372,7 @@ The demo scripts are:
 | wikipedia      | a pattern from the wikipedia | :func:`clone`,        |
 |                | article on turtle graphics   | :func:`undo`          |
 +----------------+------------------------------+-----------------------+
-| yingyang       | another elementary example   | :func:`circle`        |
+| yinyang        | another elementary example   | :func:`circle`        |
 +----------------+------------------------------+-----------------------+
 
 Have fun!
@@ -2402,7 +2414,7 @@ Changes since Python 3.0
   Accordingly the latter has got an alias: :meth:`Screen.onkeyrelease`.
 
 - The method  :meth:`Screen.mainloop` has been added. So when working only
-  with Screen and Turtle objects one must not additonally import
+  with Screen and Turtle objects one must not additionally import
   :func:`mainloop` anymore.
 
 - Two input methods has been added :meth:`Screen.textinput` and

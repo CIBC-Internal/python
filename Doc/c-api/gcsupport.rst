@@ -49,7 +49,7 @@ Constructors for container types must conform to two rules:
 .. c:function:: TYPE* PyObject_GC_Resize(TYPE, PyVarObject *op, Py_ssize_t newsize)
 
    Resize an object allocated by :c:func:`PyObject_NewVar`.  Returns the
-   resized object or *NULL* on failure.
+   resized object or ``NULL`` on failure.  *op* must not be tracked by the collector yet.
 
 
 .. c:function:: void PyObject_GC_Track(PyObject *op)
@@ -65,6 +65,9 @@ Constructors for container types must conform to two rules:
 
    A macro version of :c:func:`PyObject_GC_Track`.  It should not be used for
    extension modules.
+
+   .. deprecated:: 3.6
+      This macro is removed from Python 3.8.
 
 Similarly, the deallocator for the object must conform to a similar pair of
 rules:
@@ -95,6 +98,9 @@ rules:
    A macro version of :c:func:`PyObject_GC_UnTrack`.  It should not be used for
    extension modules.
 
+   .. deprecated:: 3.6
+      This macro is removed from Python 3.8.
+
 The :c:member:`~PyTypeObject.tp_traverse` handler accepts a function parameter of this type:
 
 
@@ -115,7 +121,7 @@ The :c:member:`~PyTypeObject.tp_traverse` handler must have the following type:
    Traversal function for a container object.  Implementations must call the
    *visit* function for each object directly contained by *self*, with the
    parameters to *visit* being the contained object and the *arg* value passed
-   to the handler.  The *visit* function must not be called with a *NULL*
+   to the handler.  The *visit* function must not be called with a ``NULL``
    object argument.  If *visit* returns a non-zero value that value should be
    returned immediately.
 
@@ -126,9 +132,10 @@ must name its arguments exactly *visit* and *arg*:
 
 .. c:function:: void Py_VISIT(PyObject *o)
 
-   Call the *visit* callback, with arguments *o* and *arg*. If *visit* returns
-   a non-zero value, then return it.  Using this macro, :c:member:`~PyTypeObject.tp_traverse`
-   handlers look like::
+   If *o* is not ``NULL``, call the *visit* callback, with arguments *o*
+   and *arg*.  If *visit* returns a non-zero value, then return it.
+   Using this macro, :c:member:`~PyTypeObject.tp_traverse` handlers
+   look like::
 
       static int
       my_traverse(Noddy *self, visitproc visit, void *arg)
@@ -138,7 +145,7 @@ must name its arguments exactly *visit* and *arg*:
           return 0;
       }
 
-The :c:member:`~PyTypeObject.tp_clear` handler must be of the :c:type:`inquiry` type, or *NULL*
+The :c:member:`~PyTypeObject.tp_clear` handler must be of the :c:type:`inquiry` type, or ``NULL``
 if the object is immutable.
 
 

@@ -10,21 +10,23 @@
 """
 
 import re
-import codecs
-from os import path
+import io
+from os import getenv, path
 from time import asctime
 from pprint import pformat
 from docutils.io import StringOutput
+from docutils.parsers.rst import Directive
 from docutils.utils import new_document
 
 from docutils import nodes, utils
 
 from sphinx import addnodes
 from sphinx.builders import Builder
+from sphinx.locale import translators
+from sphinx.util import status_iterator
 from sphinx.util.nodes import split_explicit_title
-from sphinx.util.compat import Directive
 from sphinx.writers.html import HTMLTranslator
-from sphinx.writers.text import TextWriter
+from sphinx.writers.text import TextWriter, TextTranslator
 from sphinx.writers.latex import LaTeXTranslator
 from sphinx.domains.python import PyModulelevel, PyClassmember
 
@@ -34,7 +36,7 @@ import suspicious
 
 
 ISSUE_URI = 'https://bugs.python.org/issue%s'
-SOURCE_URI = 'https://hg.python.org/cpython/file/3.4/%s'
+SOURCE_URI = 'https://github.com/python/cpython/tree/3.7/%s'
 
 # monkey-patch reST parser to disable alphabetic and roman enumerated lists
 from docutils.parsers.rst.states import Body
@@ -79,7 +81,7 @@ LaTeXTranslator.depart_literal_block = new_depart_literal_block
 
 def issue_role(typ, rawtext, text, lineno, inliner, options={}, content=[]):
     issue = utils.unescape(text)
-    text = 'issue ' + issue
+    text = 'bpo-' + issue
     refnode = nodes.reference(text, text, refuri=ISSUE_URI % issue)
     return [refnode], []
 
@@ -103,20 +105,49 @@ class ImplementationDetail(Directive):
     optional_arguments = 1
     final_argument_whitespace = True
 
+    # This text is copied to templates/dummy.html
+    label_text = 'CPython implementation detail:'
+
     def run(self):
         pnode = nodes.compound(classes=['impl-detail'])
+        label = translators['sphinx'].gettext(self.label_text)
         content = self.content
-        add_text = nodes.strong('CPython implementation detail:',
-                                'CPython implementation detail:')
+        add_text = nodes.strong(label, label)
         if self.arguments:
             n, m = self.state.inline_text(self.arguments[0], self.lineno)
             pnode.append(nodes.paragraph('', '', *(n + m)))
         self.state.nested_parse(content, self.content_offset, pnode)
         if pnode.children and isinstance(pnode[0], nodes.paragraph):
+            content = nodes.inline(pnode[0].rawsource, translatable=True)
+            content.source = pnode[0].source
+            content.line = pnode[0].line
+            content += pnode[0].children
+            pnode[0].replace_self(nodes.paragraph('', '', content,
+                                                  translatable=False))
             pnode[0].insert(0, add_text)
             pnode[0].insert(1, nodes.Text(' '))
         else:
             pnode.insert(0, nodes.paragraph('', '', add_text))
+        return [pnode]
+
+
+# Support for documenting platform availability
+
+class Availability(Directive):
+
+    has_content = False
+    required_arguments = 1
+    optional_arguments = 0
+    final_argument_whitespace = True
+
+    def run(self):
+        availability_ref = ':ref:`Availability <availability>`: '
+        pnode = nodes.paragraph(availability_ref + self.arguments[0],
+                                classes=["availability"],)
+        n, m = self.state.inline_text(availability_ref, self.lineno)
+        pnode.extend(n + m)
+        n, m = self.state.inline_text(self.arguments[0], self.lineno)
+        pnode.extend(n + m)
         return [pnode]
 
 
@@ -145,6 +176,57 @@ class PyDecoratorMethod(PyDecoratorMixin, PyClassmember):
         return PyClassmember.run(self)
 
 
+class PyCoroutineMixin(object):
+    def handle_signature(self, sig, signode):
+        ret = super(PyCoroutineMixin, self).handle_signature(sig, signode)
+        signode.insert(0, addnodes.desc_annotation('coroutine ', 'coroutine '))
+        return ret
+
+
+class PyAwaitableMixin(object):
+    def handle_signature(self, sig, signode):
+        ret = super(PyAwaitableMixin, self).handle_signature(sig, signode)
+        signode.insert(0, addnodes.desc_annotation('awaitable ', 'awaitable '))
+        return ret
+
+
+class PyCoroutineFunction(PyCoroutineMixin, PyModulelevel):
+    def run(self):
+        self.name = 'py:function'
+        return PyModulelevel.run(self)
+
+
+class PyCoroutineMethod(PyCoroutineMixin, PyClassmember):
+    def run(self):
+        self.name = 'py:method'
+        return PyClassmember.run(self)
+
+
+class PyAwaitableFunction(PyAwaitableMixin, PyClassmember):
+    def run(self):
+        self.name = 'py:function'
+        return PyClassmember.run(self)
+
+
+class PyAwaitableMethod(PyAwaitableMixin, PyClassmember):
+    def run(self):
+        self.name = 'py:method'
+        return PyClassmember.run(self)
+
+
+class PyAbstractMethod(PyClassmember):
+
+    def handle_signature(self, sig, signode):
+        ret = super(PyAbstractMethod, self).handle_signature(sig, signode)
+        signode.insert(0, addnodes.desc_annotation('abstractmethod ',
+                                                   'abstractmethod '))
+        return ret
+
+    def run(self):
+        self.name = 'py:method'
+        return PyClassmember.run(self)
+
+
 # Support for documenting version of removal in deprecations
 
 class DeprecatedRemoved(Directive):
@@ -154,7 +236,8 @@ class DeprecatedRemoved(Directive):
     final_argument_whitespace = True
     option_spec = {}
 
-    _label = 'Deprecated since version %s, will be removed in version %s'
+    _deprecated_label = 'Deprecated since version {deprecated}, will be removed in version {removed}'
+    _removed_label = 'Deprecated since version {deprecated}, removed in version {removed}'
 
     def run(self):
         node = addnodes.versionmodified()
@@ -162,11 +245,20 @@ class DeprecatedRemoved(Directive):
         node['type'] = 'deprecated-removed'
         version = (self.arguments[0], self.arguments[1])
         node['version'] = version
-        text = self._label % version
+        env = self.state.document.settings.env
+        current_version = tuple(int(e) for e in env.config.version.split('.'))
+        removed_version = tuple(int(e) for e in self.arguments[1].split('.'))
+        if current_version < removed_version:
+            label = self._deprecated_label
+        else:
+            label = self._removed_label
+
+        label = translators['sphinx'].gettext(label)
+        text = label.format(deprecated=self.arguments[0], removed=self.arguments[1])
         if len(self.arguments) == 3:
             inodes, messages = self.state.inline_text(self.arguments[2],
                                                       self.lineno+1)
-            para = nodes.paragraph(self.arguments[2], '', *inodes)
+            para = nodes.paragraph(self.arguments[2], '', *inodes, translatable=False)
             node.append(para)
         else:
             messages = []
@@ -178,13 +270,14 @@ class DeprecatedRemoved(Directive):
                 content.source = node[0].source
                 content.line = node[0].line
                 content += node[0].children
-                node[0].replace_self(nodes.paragraph('', '', content))
+                node[0].replace_self(nodes.paragraph('', '', content, translatable=False))
             node[0].insert(0, nodes.inline('', '%s: ' % text,
                                            classes=['versionmodified']))
         else:
             para = nodes.paragraph('', '',
                                    nodes.inline('', '%s.' % text,
-                                                classes=['versionmodified']))
+                                                classes=['versionmodified']),
+                                   translatable=False)
             node.append(para)
         env = self.state.document.settings.env
         env.note_versionchange('deprecated', version[0], node, self.lineno)
@@ -193,7 +286,7 @@ class DeprecatedRemoved(Directive):
 
 # Support for including Misc/NEWS
 
-issue_re = re.compile('([Ii])ssue #([0-9]+)')
+issue_re = re.compile('(?:[Ii]ssue #|bpo-)([0-9]+)')
 whatsnew_re = re.compile(r"(?im)^what's new in (.*?)\??$")
 
 
@@ -208,20 +301,19 @@ class MiscNews(Directive):
         fname = self.arguments[0]
         source = self.state_machine.input_lines.source(
             self.lineno - self.state_machine.input_offset - 1)
-        source_dir = path.dirname(path.abspath(source))
+        source_dir = getenv('PY_MISC_NEWS_DIR')
+        if not source_dir:
+            source_dir = path.dirname(path.abspath(source))
         fpath = path.join(source_dir, fname)
         self.state.document.settings.record_dependencies.add(fpath)
         try:
-            fp = codecs.open(fpath, encoding='utf-8')
-            try:
+            with io.open(fpath, encoding='utf-8') as fp:
                 content = fp.read()
-            finally:
-                fp.close()
         except Exception:
             text = 'The NEWS file is not available.'
             node = nodes.strong(text, text)
             return [node]
-        content = issue_re.sub(r'`\1ssue #\2 <https://bugs.python.org/\2>`__',
+        content = issue_re.sub(r'`bpo-\1 <https://bugs.python.org/issue\1>`__',
                                content)
         content = whatsnew_re.sub(r'\1', content)
         # remove first 3 lines as they are the main heading
@@ -233,9 +325,9 @@ class MiscNews(Directive):
 # Support for building "topic help" for pydoc
 
 pydoc_topic_labels = [
-    'assert', 'assignment', 'atom-identifiers', 'atom-literals',
-    'attribute-access', 'attribute-references', 'augassign', 'binary',
-    'bitwise', 'bltin-code-objects', 'bltin-ellipsis-object',
+    'assert', 'assignment', 'async', 'atom-identifiers', 'atom-literals',
+    'attribute-access', 'attribute-references', 'augassign', 'await',
+    'binary', 'bitwise', 'bltin-code-objects', 'bltin-ellipsis-object',
     'bltin-null-object', 'bltin-type-objects', 'booleans',
     'break', 'callable-types', 'calls', 'class', 'comparisons', 'compound',
     'context-managers', 'continue', 'conversions', 'customization', 'debugger',
@@ -254,8 +346,11 @@ pydoc_topic_labels = [
 class PydocTopicsBuilder(Builder):
     name = 'pydoc-topics'
 
+    default_translator_class = TextTranslator
+
     def init(self):
         self.topics = {}
+        self.secnumbers = {}
 
     def get_outdated_docs(self):
         return 'all pydoc topics'
@@ -265,9 +360,9 @@ class PydocTopicsBuilder(Builder):
 
     def write(self, *ignored):
         writer = TextWriter(self)
-        for label in self.status_iterator(pydoc_topic_labels,
-                                          'building topics... ',
-                                          length=len(pydoc_topic_labels)):
+        for label in status_iterator(pydoc_topic_labels,
+                                     'building topics... ',
+                                     length=len(pydoc_topic_labels)):
             if label not in self.env.domaindata['std']['labels']:
                 self.warn('label %r not in documentation' % label)
                 continue
@@ -337,15 +432,19 @@ def setup(app):
     app.add_role('issue', issue_role)
     app.add_role('source', source_role)
     app.add_directive('impl-detail', ImplementationDetail)
+    app.add_directive('availability', Availability)
     app.add_directive('deprecated-removed', DeprecatedRemoved)
     app.add_builder(PydocTopicsBuilder)
     app.add_builder(suspicious.CheckSuspiciousMarkupBuilder)
-    app.add_description_unit('opcode', 'opcode', '%s (opcode)',
-                             parse_opcode_signature)
-    app.add_description_unit('pdbcommand', 'pdbcmd', '%s (pdb command)',
-                             parse_pdb_command)
-    app.add_description_unit('2to3fixer', '2to3fixer', '%s (2to3 fixer)')
+    app.add_object_type('opcode', 'opcode', '%s (opcode)', parse_opcode_signature)
+    app.add_object_type('pdbcommand', 'pdbcmd', '%s (pdb command)', parse_pdb_command)
+    app.add_object_type('2to3fixer', '2to3fixer', '%s (2to3 fixer)')
     app.add_directive_to_domain('py', 'decorator', PyDecoratorFunction)
     app.add_directive_to_domain('py', 'decoratormethod', PyDecoratorMethod)
+    app.add_directive_to_domain('py', 'coroutinefunction', PyCoroutineFunction)
+    app.add_directive_to_domain('py', 'coroutinemethod', PyCoroutineMethod)
+    app.add_directive_to_domain('py', 'awaitablefunction', PyAwaitableFunction)
+    app.add_directive_to_domain('py', 'awaitablemethod', PyAwaitableMethod)
+    app.add_directive_to_domain('py', 'abstractmethod', PyAbstractMethod)
     app.add_directive('miscnews', MiscNews)
     return {'version': '1.0', 'parallel_read_safe': True}

@@ -4,6 +4,12 @@
 Classes
 *******
 
+Classes provide a means of bundling data and functionality together.  Creating
+a new class creates a new *type* of object, allowing new *instances* of that
+type to be made.  Each class instance can have attributes attached to it for
+maintaining its state.  Class instances can also have methods (defined by its
+class) for modifying its state.
+
 Compared with other programming languages, Python's class mechanism adds classes
 with a minimum of new syntax and semantics.  It is a mixture of the class
 mechanisms found in C++ and Modula-3.  Python classes provide all the standard
@@ -120,7 +126,7 @@ are directly accessible:
 If a name is declared global, then all references and assignments go directly to
 the middle scope containing the module's global names.  To rebind variables
 found outside of the innermost scope, the :keyword:`nonlocal` statement can be
-used; if not declared nonlocal, those variable are read-only (an attempt to
+used; if not declared nonlocal, those variables are read-only (an attempt to
 write to such a variable will simply create a *new* local variable in the
 innermost scope, leaving the identically named outer variable unchanged).
 
@@ -137,10 +143,10 @@ language definition is evolving towards static name resolution, at "compile"
 time, so don't rely on dynamic name resolution!  (In fact, local variables are
 already determined statically.)
 
-A special quirk of Python is that -- if no :keyword:`global` statement is in
-effect -- assignments to names always go into the innermost scope.  Assignments
-do not copy data --- they just bind names to objects.  The same is true for
-deletions: the statement ``del x`` removes the binding of ``x`` from the
+A special quirk of Python is that -- if no :keyword:`global` or :keyword:`nonlocal`
+statement is in effect -- assignments to names always go into the innermost scope.
+Assignments do not copy data --- they just bind names to objects.  The same is true
+for deletions: the statement ``del x`` removes the binding of ``x`` from the
 namespace referenced by the local scope.  In fact, all operations that introduce
 new names use the local scope: in particular, :keyword:`import` statements and
 function definitions bind the module or function name in the local scope.
@@ -162,12 +168,15 @@ binding::
    def scope_test():
        def do_local():
            spam = "local spam"
+
        def do_nonlocal():
            nonlocal spam
            spam = "nonlocal spam"
+
        def do_global():
            global spam
            spam = "global spam"
+
        spam = "test spam"
        do_local()
        print("After local assignment:", spam)
@@ -260,6 +269,7 @@ definition looked like this::
    class MyClass:
        """A simple example class"""
        i = 12345
+
        def f(self):
            return 'hello world'
 
@@ -313,7 +323,7 @@ Instance Objects
 
 Now what can we do with instance objects?  The only operations understood by
 instance objects are attribute references.  There are two kinds of valid
-attribute names, data attributes and methods.
+attribute names: data attributes and methods.
 
 *data attributes* correspond to "instance variables" in Smalltalk, and to "data
 members" in C++.  Data attributes need not be declared; like local variables,
@@ -370,15 +380,15 @@ Surely Python raises an exception when a function that requires an argument is
 called without any --- even if the argument isn't actually used...
 
 Actually, you may have guessed the answer: the special thing about methods is
-that the object is passed as the first argument of the function.  In our
+that the instance object is passed as the first argument of the function.  In our
 example, the call ``x.f()`` is exactly equivalent to ``MyClass.f(x)``.  In
 general, calling a method with a list of *n* arguments is equivalent to calling
 the corresponding function with an argument list that is created by inserting
-the method's object before the first argument.
+the method's instance object before the first argument.
 
 If you still don't understand how methods work, a look at the implementation can
-perhaps clarify matters.  When an instance attribute is referenced that isn't a
-data attribute, its class is searched.  If the name denotes a valid class
+perhaps clarify matters.  When a non-data attribute of an instance is
+referenced, the instance's class is searched.  If the name denotes a valid class
 attribute that is a function object, a method object is created by packing
 (pointers to) the instance object and the function object just found together in
 an abstract object: this is the method object.  When the method object is called
@@ -508,8 +518,10 @@ variable in the class is also ok.  For example::
 
    class C:
        f = f1
+
        def g(self):
            return 'hello world'
+
        h = g
 
 Now ``f``, ``g`` and ``h`` are all attributes of class :class:`C` that refer to
@@ -523,8 +535,10 @@ argument::
    class Bag:
        def __init__(self):
            self.data = []
+
        def add(self, x):
            self.data.append(x)
+
        def addtwice(self, x):
            self.add(x)
            self.add(x)
@@ -658,6 +672,9 @@ be treated as a non-public part of the API (whether it is a function, a method
 or a data member).  It should be considered an implementation detail and subject
 to change without notice.
 
+.. index::
+   pair: name; mangling
+
 Since there is a valid use-case for class-private members (namely to avoid name
 clashes of names with names defined by subclasses), there is limited support for
 such a mechanism, called :dfn:`name mangling`.  Any identifier of the form
@@ -689,6 +706,11 @@ breaking intraclass method calls.  For example::
            for item in zip(keys, values):
                self.items_list.append(item)
 
+The above example would work even if ``MappingSubclass`` were to introduce a
+``__update`` identifier since it is replaced with ``_Mapping__update`` in the
+``Mapping`` class  and ``_MappingSubclass__update`` in the ``MappingSubclass``
+class respectively.
+
 Note that the mangling rules are designed mostly to avoid accidents; it still is
 possible to access or modify a variable that is considered private.  This can
 even be useful in special circumstances, such as in the debugger.
@@ -713,7 +735,7 @@ will do nicely::
    class Employee:
        pass
 
-   john = Employee() # Create an empty employee record
+   john = Employee()  # Create an empty employee record
 
    # Fill the fields of the record
    john.name = 'John Doe'
@@ -734,55 +756,6 @@ data from a string buffer instead, and pass it as an argument.
 Instance method objects have attributes, too: ``m.__self__`` is the instance
 object with the method :meth:`m`, and ``m.__func__`` is the function object
 corresponding to the method.
-
-
-.. _tut-exceptionclasses:
-
-Exceptions Are Classes Too
-==========================
-
-User-defined exceptions are identified by classes as well.  Using this mechanism
-it is possible to create extensible hierarchies of exceptions.
-
-There are two new valid (semantic) forms for the :keyword:`raise` statement::
-
-   raise Class
-
-   raise Instance
-
-In the first form, ``Class`` must be an instance of :class:`type` or of a
-class derived from it.  The first form is a shorthand for::
-
-   raise Class()
-
-A class in an :keyword:`except` clause is compatible with an exception if it is
-the same class or a base class thereof (but not the other way around --- an
-except clause listing a derived class is not compatible with a base class).  For
-example, the following code will print B, C, D in that order::
-
-   class B(Exception):
-       pass
-   class C(B):
-       pass
-   class D(C):
-       pass
-
-   for cls in [B, C, D]:
-       try:
-           raise cls()
-       except D:
-           print("D")
-       except C:
-           print("C")
-       except B:
-           print("B")
-
-Note that if the except clauses were reversed (with ``except B`` first), it
-would have printed B, B, B --- the first matching except clause is triggered.
-
-When an error message is printed for an unhandled exception, the exception's
-class name is printed, then a colon and a space, and finally the instance
-converted to a string using the built-in function :func:`str`.
 
 
 .. _tut-iterators:
@@ -810,7 +783,7 @@ calls :func:`iter` on the container object.  The function returns an iterator
 object that defines the method :meth:`~iterator.__next__` which accesses
 elements in the container one at a time.  When there are no more elements,
 :meth:`~iterator.__next__` raises a :exc:`StopIteration` exception which tells the
-:keyword:`for` loop to terminate.  You can call the :meth:`~iterator.__next__` method
+:keyword:`!for` loop to terminate.  You can call the :meth:`~iterator.__next__` method
 using the :func:`next` built-in function; this example shows how it all works::
 
    >>> s = 'abc'
@@ -825,7 +798,7 @@ using the :func:`next` built-in function; this example shows how it all works::
    'c'
    >>> next(it)
    Traceback (most recent call last):
-     File "<stdin>", line 1, in ?
+     File "<stdin>", line 1, in <module>
        next(it)
    StopIteration
 
@@ -839,8 +812,10 @@ defines :meth:`__next__`, then :meth:`__iter__` can just return ``self``::
        def __init__(self, data):
            self.data = data
            self.index = len(data)
+
        def __iter__(self):
            return self
+
        def __next__(self):
            if self.index == 0:
                raise StopIteration
@@ -909,9 +884,9 @@ Generator Expressions
 =====================
 
 Some simple generators can be coded succinctly as expressions using a syntax
-similar to list comprehensions but with parentheses instead of brackets.  These
-expressions are designed for situations where the generator is used right away
-by an enclosing function.  Generator expressions are more compact but less
+similar to list comprehensions but with parentheses instead of square brackets.
+These expressions are designed for situations where the generator is used right
+away by an enclosing function.  Generator expressions are more compact but less
 versatile than full generator definitions and tend to be more memory friendly
 than equivalent list comprehensions.
 
@@ -941,8 +916,7 @@ Examples::
 .. rubric:: Footnotes
 
 .. [#] Except for one thing.  Module objects have a secret read-only attribute called
-   :attr:`__dict__` which returns the dictionary used to implement the module's
-   namespace; the name :attr:`__dict__` is an attribute but not a global name.
+   :attr:`~object.__dict__` which returns the dictionary used to implement the module's
+   namespace; the name :attr:`~object.__dict__` is an attribute but not a global name.
    Obviously, using this violates the abstraction of namespace implementation, and
    should be restricted to things like post-mortem debuggers.
-

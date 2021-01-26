@@ -41,6 +41,9 @@ Node classes
    with alternatives (aka "sums"), the left-hand side class is abstract: only
    instances of specific constructor nodes are ever created.
 
+   .. index:: single: ? (question mark); in AST grammar
+   .. index:: single: * (asterisk); in AST grammar
+
    .. attribute:: _fields
 
       Each concrete class has an attribute :attr:`_fields` which gives the names
@@ -99,18 +102,24 @@ Abstract Grammar
 The abstract grammar is currently defined as follows:
 
 .. literalinclude:: ../../Parser/Python.asdl
+   :language: none
 
 
 :mod:`ast` Helpers
 ------------------
 
-Apart from the node classes, :mod:`ast` module defines these utility functions
+Apart from the node classes, the :mod:`ast` module defines these utility functions
 and classes for traversing abstract syntax trees:
 
 .. function:: parse(source, filename='<unknown>', mode='exec')
 
    Parse the source into an AST node.  Equivalent to ``compile(source,
    filename, mode, ast.PyCF_ONLY_AST)``.
+
+   .. warning::
+      It is possible to crash the Python interpreter with a
+      sufficiently large/complex string due to stack depth limitations
+      in Python's AST compiler.
 
 
 .. function:: literal_eval(node_or_string)
@@ -125,6 +134,11 @@ and classes for traversing abstract syntax trees:
    capable of evaluating arbitrarily complex expressions, for example involving
    operators or indexing.
 
+   .. warning::
+      It is possible to crash the Python interpreter with a
+      sufficiently large/complex string due to stack depth limitations
+      in Python's AST compiler.
+
    .. versionchanged:: 3.2
       Now allows bytes and set literals.
 
@@ -132,9 +146,13 @@ and classes for traversing abstract syntax trees:
 .. function:: get_docstring(node, clean=True)
 
    Return the docstring of the given *node* (which must be a
-   :class:`FunctionDef`, :class:`ClassDef` or :class:`Module` node), or ``None``
-   if it has no docstring.  If *clean* is true, clean up the docstring's
-   indentation with :func:`inspect.cleandoc`.
+   :class:`FunctionDef`, :class:`AsyncFunctionDef`, :class:`ClassDef`,
+   or :class:`Module` node), or ``None`` if it has no docstring.
+   If *clean* is true, clean up the docstring's indentation with
+   :func:`inspect.cleandoc`.
+
+   .. versionchanged:: 3.5
+      :class:`AsyncFunctionDef` is now supported.
 
 
 .. function:: fix_missing_locations(node)
@@ -222,11 +240,11 @@ and classes for traversing abstract syntax trees:
       class RewriteName(NodeTransformer):
 
           def visit_Name(self, node):
-              return copy_location(Subscript(
+              return Subscript(
                   value=Name(id='data', ctx=Load()),
                   slice=Index(value=Str(s=node.id)),
                   ctx=node.ctx
-              ), node)
+              )
 
    Keep in mind that if the node you're operating on has child nodes you must
    either transform the child nodes yourself or call the :meth:`generic_visit`
@@ -236,6 +254,14 @@ and classes for traversing abstract syntax trees:
    statement nodes), the visitor may also return a list of nodes rather than
    just a single node.
 
+   If :class:`NodeTransformer` introduces new nodes (that weren't part of
+   original tree) without giving them location information (such as
+   :attr:`lineno`), :func:`fix_missing_locations` should be called with
+   the new sub-tree to recalculate the location information::
+
+      tree = ast.parse('foo', mode='eval')
+      new_tree = fix_missing_locations(RewriteName().visit(tree))
+
    Usually you use the transformer like this::
 
       node = YourTransformer().visit(node)
@@ -244,8 +270,14 @@ and classes for traversing abstract syntax trees:
 .. function:: dump(node, annotate_fields=True, include_attributes=False)
 
    Return a formatted dump of the tree in *node*.  This is mainly useful for
-   debugging purposes.  The returned string will show the names and the values
-   for fields.  This makes the code impossible to evaluate, so if evaluation is
-   wanted *annotate_fields* must be set to ``False``.  Attributes such as line
+   debugging purposes.  If *annotate_fields* is true (by default),
+   the returned string will show the names and the values for fields.
+   If *annotate_fields* is false, the result string will be more compact by
+   omitting unambiguous field names.  Attributes such as line
    numbers and column offsets are not dumped by default.  If this is wanted,
-   *include_attributes* can be set to ``True``.
+   *include_attributes* can be set to true.
+
+.. seealso::
+
+    `Green Tree Snakes <https://greentreesnakes.readthedocs.io/>`_, an external documentation resource, has good
+    details on working with Python ASTs.

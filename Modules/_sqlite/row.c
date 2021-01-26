@@ -41,12 +41,12 @@ pysqlite_row_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 
     assert(type != NULL && type->tp_alloc != NULL);
 
-    if (!_PyArg_NoKeywords("Row()", kwargs))
+    if (!_PyArg_NoKeywords("Row", kwargs))
         return NULL;
     if (!PyArg_ParseTuple(args, "OO", &cursor, &data))
         return NULL;
 
-    if (!PyObject_IsInstance((PyObject*)cursor, (PyObject*)&pysqlite_CursorType)) {
+    if (!PyObject_TypeCheck((PyObject*)cursor, &pysqlite_CursorType)) {
         PyErr_SetString(PyExc_TypeError, "instance of cursor required for first argument");
         return NULL;
     }
@@ -76,16 +76,38 @@ PyObject* pysqlite_row_item(pysqlite_Row* self, Py_ssize_t idx)
    return item;
 }
 
+static int
+equal_ignore_case(PyObject *left, PyObject *right)
+{
+    int eq = PyObject_RichCompareBool(left, right, Py_EQ);
+    if (eq) { /* equal or error */
+        return eq;
+    }
+    if (!PyUnicode_Check(left) || !PyUnicode_Check(right)) {
+        return 0;
+    }
+    if (!PyUnicode_IS_ASCII(left) || !PyUnicode_IS_ASCII(right)) {
+        return 0;
+    }
+
+    Py_ssize_t len = PyUnicode_GET_LENGTH(left);
+    if (PyUnicode_GET_LENGTH(right) != len) {
+        return 0;
+    }
+    const Py_UCS1 *p1 = PyUnicode_1BYTE_DATA(left);
+    const Py_UCS1 *p2 = PyUnicode_1BYTE_DATA(right);
+    for (; len; len--, p1++, p2++) {
+        if (Py_TOLOWER(*p1) != Py_TOLOWER(*p2)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 PyObject* pysqlite_row_subscript(pysqlite_Row* self, PyObject* idx)
 {
     Py_ssize_t _idx;
-    char* key;
     Py_ssize_t nitems, i;
-    char* compare_key;
-
-    char* p1;
-    char* p2;
-
     PyObject* item;
 
     if (PyLong_Check(idx)) {
@@ -98,52 +120,29 @@ PyObject* pysqlite_row_subscript(pysqlite_Row* self, PyObject* idx)
         Py_XINCREF(item);
         return item;
     } else if (PyUnicode_Check(idx)) {
-        key = _PyUnicode_AsString(idx);
-        if (key == NULL)
-            return NULL;
-
         nitems = PyTuple_Size(self->description);
 
         for (i = 0; i < nitems; i++) {
             PyObject *obj;
             obj = PyTuple_GET_ITEM(self->description, i);
             obj = PyTuple_GET_ITEM(obj, 0);
-            compare_key = _PyUnicode_AsString(obj);
-            if (!compare_key) {
+            int eq = equal_ignore_case(idx, obj);
+            if (eq < 0) {
                 return NULL;
             }
-
-            p1 = key;
-            p2 = compare_key;
-
-            while (1) {
-                if ((*p1 == (char)0) || (*p2 == (char)0)) {
-                    break;
-                }
-
-                if ((*p1 | 0x20) != (*p2 | 0x20)) {
-                    break;
-                }
-
-                p1++;
-                p2++;
-            }
-
-            if ((*p1 == (char)0) && (*p2 == (char)0)) {
+            if (eq) {
                 /* found item */
                 item = PyTuple_GetItem(self->data, i);
                 Py_INCREF(item);
                 return item;
             }
-
         }
 
         PyErr_SetString(PyExc_IndexError, "No item with that key");
         return NULL;
     }
     else if (PySlice_Check(idx)) {
-        PyErr_SetString(PyExc_ValueError, "slices not implemented, yet");
-        return NULL;
+        return PyObject_GetItem(self->data, idx);
     }
     else {
         PyErr_SetString(PyExc_IndexError, "Index must be int or string");
@@ -151,7 +150,8 @@ PyObject* pysqlite_row_subscript(pysqlite_Row* self, PyObject* idx)
     }
 }
 
-Py_ssize_t pysqlite_row_length(pysqlite_Row* self, PyObject* args, PyObject* kwargs)
+static Py_ssize_t
+pysqlite_row_length(pysqlite_Row* self)
 {
     return PyTuple_GET_SIZE(self->data);
 }
@@ -159,7 +159,7 @@ Py_ssize_t pysqlite_row_length(pysqlite_Row* self, PyObject* args, PyObject* kwa
 PyObject* pysqlite_row_keys(pysqlite_Row* self, PyObject* args, PyObject* kwargs)
 {
     PyObject* list;
-    int nitems, i;
+    Py_ssize_t nitems, i;
 
     list = PyList_New(0);
     if (!list) {
@@ -197,14 +197,16 @@ static PyObject* pysqlite_row_richcompare(pysqlite_Row *self, PyObject *_other, 
     if (opid != Py_EQ && opid != Py_NE)
         Py_RETURN_NOTIMPLEMENTED;
 
-    if (PyType_IsSubtype(Py_TYPE(_other), &pysqlite_RowType)) {
+    if (PyObject_TypeCheck(_other, &pysqlite_RowType)) {
         pysqlite_Row *other = (pysqlite_Row *)_other;
-        PyObject *res = PyObject_RichCompare(self->description, other->description, opid);
-        if ((opid == Py_EQ && res == Py_True)
-            || (opid == Py_NE && res == Py_False)) {
-            Py_DECREF(res);
+        int eq = PyObject_RichCompareBool(self->description, other->description, Py_EQ);
+        if (eq < 0) {
+            return NULL;
+        }
+        if (eq) {
             return PyObject_RichCompare(self->data, other->data, opid);
         }
+        return PyBool_FromLong(opid != Py_EQ);
     }
     Py_RETURN_NOTIMPLEMENTED;
 }

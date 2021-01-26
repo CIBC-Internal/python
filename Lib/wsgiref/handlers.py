@@ -136,6 +136,10 @@ class BaseHandler:
             self.setup_environ()
             self.result = application(self.environ, self.start_response)
             self.finish_response()
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            # We expect the client to close the connection abruptly from time
+            # to time.
+            return
         except:
             try:
                 self.handle_error()
@@ -179,7 +183,16 @@ class BaseHandler:
                 for data in self.result:
                     self.write(data)
                 self.finish_content()
-        finally:
+        except:
+            # Call close() on the iterable returned by the WSGI application
+            # in case of an exception.
+            if hasattr(self.result, 'close'):
+                self.result.close()
+            raise
+        else:
+            # We only call close() when no exception is raised, because it
+            # will set status, result, headers, and environ fields to None.
+            # See bpo-29183 for more details.
             self.close()
 
 
@@ -226,7 +239,7 @@ class BaseHandler:
         self.headers = self.headers_class(headers)
         status = self._convert_string_type(status, "Status")
         assert len(status)>=4,"Status must be at least 4 characters"
-        assert int(status[:3]),"Status message must begin w/3-digit code"
+        assert status[:3].isdigit(), "Status message must begin w/3-digit code"
         assert status[3]==" ", "Status message must have a space after code"
 
         if __debug__:
@@ -450,7 +463,17 @@ class SimpleHandler(BaseHandler):
         self.environ.update(self.base_env)
 
     def _write(self,data):
-        self.stdout.write(data)
+        result = self.stdout.write(data)
+        if result is None or result == len(data):
+            return
+        from warnings import warn
+        warn("SimpleHandler.stdout.write() should not do partial writes",
+            DeprecationWarning)
+        while True:
+            data = data[result:]
+            if not data:
+                break
+            result = self.stdout.write(data)
 
     def _flush(self):
         self.stdout.flush()

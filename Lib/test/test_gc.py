@@ -1,17 +1,14 @@
 import unittest
 from test.support import (verbose, refcount_test, run_unittest,
-                            strip_python_stderr, cpython_only)
-from test.script_helper import assert_python_ok, make_script, temp_dir
+                          strip_python_stderr, cpython_only, start_threads,
+                          temp_dir, requires_type_collecting, TESTFN, unlink)
+from test.support.script_helper import assert_python_ok, make_script
 
 import sys
 import time
 import gc
 import weakref
-
-try:
-    import threading
-except ImportError:
-    threading = None
+import threading
 
 try:
     from _testcapi import with_tp_del
@@ -117,6 +114,7 @@ class GCTests(unittest.TestCase):
         del a
         self.assertNotEqual(gc.collect(), 0)
 
+    @requires_type_collecting
     def test_newinstance(self):
         class A(object):
             pass
@@ -350,7 +348,6 @@ class GCTests(unittest.TestCase):
                 v = {1: v, 2: Ouch()}
         gc.disable()
 
-    @unittest.skipUnless(threading, "test meaningless on builds without threads")
     def test_trashcan_threads(self):
         # Issue #13992: trashcan mechanism should be thread-safe
         NESTING = 60
@@ -397,17 +394,13 @@ class GCTests(unittest.TestCase):
         old_switchinterval = sys.getswitchinterval()
         sys.setswitchinterval(1e-5)
         try:
-            exit = False
+            exit = []
             threads = []
             for i in range(N_THREADS):
                 t = threading.Thread(target=run_thread)
                 threads.append(t)
-            for t in threads:
-                t.start()
-            time.sleep(1.0)
-            exit = True
-            for t in threads:
-                t.join()
+            with start_threads(threads, lambda: exit.append(1)):
+                time.sleep(1.0)
         finally:
             sys.setswitchinterval(old_switchinterval)
         gc.collect()
@@ -550,11 +543,31 @@ class GCTests(unittest.TestCase):
 
         class UserClass:
             pass
+
+        class UserInt(int):
+            pass
+
+        # Base class is object; no extra fields.
+        class UserClassSlots:
+            __slots__ = ()
+
+        # Base class is fixed size larger than object; no extra fields.
+        class UserFloatSlots(float):
+            __slots__ = ()
+
+        # Base class is variable size; no extra fields.
+        class UserIntSlots(int):
+            __slots__ = ()
+
         self.assertTrue(gc.is_tracked(gc))
         self.assertTrue(gc.is_tracked(UserClass))
         self.assertTrue(gc.is_tracked(UserClass()))
+        self.assertTrue(gc.is_tracked(UserInt()))
         self.assertTrue(gc.is_tracked([]))
         self.assertTrue(gc.is_tracked(set()))
+        self.assertFalse(gc.is_tracked(UserClassSlots()))
+        self.assertFalse(gc.is_tracked(UserFloatSlots()))
+        self.assertFalse(gc.is_tracked(UserIntSlots()))
 
     def test_bug1055820b(self):
         # Corresponds to temp2b.py in the bug report.
@@ -661,11 +674,11 @@ class GCTests(unittest.TestCase):
         stderr = run_command(code % "gc.DEBUG_SAVEALL")
         self.assertNotIn(b"uncollectable objects at shutdown", stderr)
 
+    @requires_type_collecting
     def test_gc_main_module_at_shutdown(self):
         # Create a reference cycle through the __main__ module and check
         # it gets collected at interpreter shutdown.
         code = """if 1:
-            import weakref
             class C:
                 def __del__(self):
                     print('__del__ called')
@@ -675,11 +688,11 @@ class GCTests(unittest.TestCase):
         rc, out, err = assert_python_ok('-c', code)
         self.assertEqual(out.strip(), b'__del__ called')
 
+    @requires_type_collecting
     def test_gc_ordinary_module_at_shutdown(self):
         # Same as above, but with a non-__main__ module.
         with temp_dir() as script_dir:
             module = """if 1:
-                import weakref
                 class C:
                     def __del__(self):
                         print('__del__ called')
@@ -694,6 +707,21 @@ class GCTests(unittest.TestCase):
             make_script(script_dir, 'gctest', module)
             rc, out, err = assert_python_ok('-c', code)
             self.assertEqual(out.strip(), b'__del__ called')
+
+    @requires_type_collecting
+    def test_global_del_SystemExit(self):
+        code = """if 1:
+            class ClassWithDel:
+                def __del__(self):
+                    print('__del__ called')
+            a = ClassWithDel()
+            a.link = a
+            raise SystemExit(0)"""
+        self.addCleanup(unlink, TESTFN)
+        with open(TESTFN, 'w') as script:
+            script.write(code)
+        rc, out, err = assert_python_ok(TESTFN)
+        self.assertEqual(out.strip(), b'__del__ called')
 
     def test_get_stats(self):
         stats = gc.get_stats()
@@ -720,6 +748,83 @@ class GCTests(unittest.TestCase):
         self.assertEqual(new[0]["collections"], old[0]["collections"] + 1)
         self.assertEqual(new[1]["collections"], old[1]["collections"])
         self.assertEqual(new[2]["collections"], old[2]["collections"] + 1)
+
+    def test_freeze(self):
+        gc.freeze()
+        self.assertGreater(gc.get_freeze_count(), 0)
+        gc.unfreeze()
+        self.assertEqual(gc.get_freeze_count(), 0)
+
+    def test_38379(self):
+        # When a finalizer resurrects objects, stats were reporting them as
+        # having been collected.  This affected both collect()'s return
+        # value and the dicts returned by get_stats().
+        N = 100
+
+        class A:  # simple self-loop
+            def __init__(self):
+                self.me = self
+
+        class Z(A):  # resurrecting __del__
+            def __del__(self):
+                zs.append(self)
+
+        zs = []
+
+        def getstats():
+            d = gc.get_stats()[-1]
+            return d['collected'], d['uncollectable']
+
+        gc.collect()
+        gc.disable()
+
+        # No problems if just collecting A() instances.
+        oldc, oldnc = getstats()
+        for i in range(N):
+            A()
+        t = gc.collect()
+        c, nc = getstats()
+        self.assertEqual(t, 2*N) # instance object & its dict
+        self.assertEqual(c - oldc, 2*N)
+        self.assertEqual(nc - oldnc, 0)
+
+        # But Z() is not actually collected.
+        oldc, oldnc = c, nc
+        Z()
+        # Nothing is collected - Z() is merely resurrected.
+        t = gc.collect()
+        c, nc = getstats()
+        #self.assertEqual(t, 2)  # before
+        self.assertEqual(t, 0)  # after
+        #self.assertEqual(c - oldc, 2)   # before
+        self.assertEqual(c - oldc, 0)   # after
+        self.assertEqual(nc - oldnc, 0)
+
+        # Unfortunately, a Z() prevents _anything_ from being collected.
+        # It should be possible to collect the A instances anyway, but
+        # that will require non-trivial code changes.
+        oldc, oldnc = c, nc
+        for i in range(N):
+            A()
+        Z()
+        # Z() prevents anything from being collected.
+        t = gc.collect()
+        c, nc = getstats()
+        #self.assertEqual(t, 2*N + 2)  # before
+        self.assertEqual(t, 0)  # after
+        #self.assertEqual(c - oldc, 2*N + 2)   # before
+        self.assertEqual(c - oldc, 0)   # after
+        self.assertEqual(nc - oldnc, 0)
+
+        # But the A() trash is reclaimed on the next run.
+        oldc, oldnc = c, nc
+        t = gc.collect()
+        c, nc = getstats()
+        self.assertEqual(t, 2*N)
+        self.assertEqual(c - oldc, 2*N)
+        self.assertEqual(nc - oldnc, 0)
+
+        gc.enable()
 
 
 class GCCallbackTests(unittest.TestCase):

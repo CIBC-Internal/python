@@ -170,6 +170,29 @@ def _create_and_install_waiters(fs, return_when):
 
     return waiter
 
+
+def _yield_finished_futures(fs, waiter, ref_collect):
+    """
+    Iterate on the list *fs*, yielding finished futures one by one in
+    reverse order.
+    Before yielding a future, *waiter* is removed from its waiters
+    and the future is removed from each set in the collection of sets
+    *ref_collect*.
+
+    The aim of this function is to avoid keeping stale references after
+    the future is yielded and before the iterator resumes.
+    """
+    while fs:
+        f = fs[-1]
+        for futures_set in ref_collect:
+            futures_set.remove(f)
+        with f._condition:
+            f._waiters.remove(waiter)
+        del f
+        # Careful not to keep a reference to the popped value
+        yield fs.pop()
+
+
 def as_completed(fs, timeout=None):
     """An iterator over the given futures that yields each as it completes.
 
@@ -189,28 +212,30 @@ def as_completed(fs, timeout=None):
             before the given timeout.
     """
     if timeout is not None:
-        end_time = timeout + time.time()
+        end_time = timeout + time.monotonic()
 
     fs = set(fs)
+    total_futures = len(fs)
     with _AcquireFutures(fs):
         finished = set(
                 f for f in fs
                 if f._state in [CANCELLED_AND_NOTIFIED, FINISHED])
         pending = fs - finished
         waiter = _create_and_install_waiters(fs, _AS_COMPLETED)
-
+    finished = list(finished)
     try:
-        yield from finished
+        yield from _yield_finished_futures(finished, waiter,
+                                           ref_collect=(fs,))
 
         while pending:
             if timeout is None:
                 wait_timeout = None
             else:
-                wait_timeout = end_time - time.time()
+                wait_timeout = end_time - time.monotonic()
                 if wait_timeout < 0:
                     raise TimeoutError(
                             '%d (of %d) futures unfinished' % (
-                            len(pending), len(fs)))
+                            len(pending), total_futures))
 
             waiter.event.wait(wait_timeout)
 
@@ -219,11 +244,13 @@ def as_completed(fs, timeout=None):
                 waiter.finished_futures = []
                 waiter.event.clear()
 
-            for future in finished:
-                yield future
-                pending.remove(future)
+            # reverse to keep finishing order
+            finished.reverse()
+            yield from _yield_finished_futures(finished, waiter,
+                                               ref_collect=(fs, pending))
 
     finally:
+        # Remove waiter from unfinished futures
         for f in fs:
             with f._condition:
                 f._waiters.remove(waiter)
@@ -302,17 +329,20 @@ class Future(object):
         with self._condition:
             if self._state == FINISHED:
                 if self._exception:
-                    return '<Future at %s state=%s raised %s>' % (
-                        hex(id(self)),
+                    return '<%s at %#x state=%s raised %s>' % (
+                        self.__class__.__name__,
+                        id(self),
                         _STATE_TO_DESCRIPTION_MAP[self._state],
                         self._exception.__class__.__name__)
                 else:
-                    return '<Future at %s state=%s returned %s>' % (
-                        hex(id(self)),
+                    return '<%s at %#x state=%s returned %s>' % (
+                        self.__class__.__name__,
+                        id(self),
                         _STATE_TO_DESCRIPTION_MAP[self._state],
                         self._result.__class__.__name__)
-            return '<Future at %s state=%s>' % (
-                    hex(id(self)),
+            return '<%s at %#x state=%s>' % (
+                    self.__class__.__name__,
+                    id(self),
                    _STATE_TO_DESCRIPTION_MAP[self._state])
 
     def cancel(self):
@@ -370,7 +400,10 @@ class Future(object):
             if self._state not in [CANCELLED, CANCELLED_AND_NOTIFIED, FINISHED]:
                 self._done_callbacks.append(fn)
                 return
-        fn(self)
+        try:
+            fn(self)
+        except Exception:
+            LOGGER.exception('exception calling callback for %r', self)
 
     def result(self, timeout=None):
         """Return the result of the call that the future represents.
@@ -506,7 +539,7 @@ class Future(object):
 class Executor(object):
     """This is an abstract base class for concrete asynchronous executors."""
 
-    def submit(self, fn, *args, **kwargs):
+    def submit(*args, **kwargs):
         """Submits a callable to be executed with the given arguments.
 
         Schedules the callable to be executed as fn(*args, **kwargs) and returns
@@ -515,16 +548,29 @@ class Executor(object):
         Returns:
             A Future representing the given call.
         """
+        if len(args) >= 2:
+            pass
+        elif not args:
+            raise TypeError("descriptor 'submit' of 'Executor' object "
+                            "needs an argument")
+        elif 'fn' not in kwargs:
+            raise TypeError('submit expected at least 1 positional argument, '
+                            'got %d' % (len(args)-1))
+
         raise NotImplementedError()
 
-    def map(self, fn, *iterables, timeout=None):
-        """Returns a iterator equivalent to map(fn, iter).
+    def map(self, fn, *iterables, timeout=None, chunksize=1):
+        """Returns an iterator equivalent to map(fn, iter).
 
         Args:
             fn: A callable that will take as many arguments as there are
                 passed iterables.
             timeout: The maximum number of seconds to wait. If None, then there
                 is no limit on the wait time.
+            chunksize: The size of the chunks the iterable will be broken into
+                before being passed to a child process. This argument is only
+                used by ProcessPoolExecutor; it is ignored by
+                ThreadPoolExecutor.
 
         Returns:
             An iterator equivalent to: map(func, *iterables) but the calls may
@@ -536,7 +582,7 @@ class Executor(object):
             Exception: If fn(*args) raises for any values.
         """
         if timeout is not None:
-            end_time = timeout + time.time()
+            end_time = timeout + time.monotonic()
 
         fs = [self.submit(fn, *args) for args in zip(*iterables)]
 
@@ -544,11 +590,14 @@ class Executor(object):
         # before the first iterator value is required.
         def result_iterator():
             try:
-                for future in fs:
+                # reverse to keep finishing order
+                fs.reverse()
+                while fs:
+                    # Careful not to keep a reference to the popped future
                     if timeout is None:
-                        yield future.result()
+                        yield fs.pop().result()
                     else:
-                        yield future.result(end_time - time.time())
+                        yield fs.pop().result(end_time - time.monotonic())
             finally:
                 for future in fs:
                     future.cancel()
@@ -573,3 +622,9 @@ class Executor(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown(wait=True)
         return False
+
+
+class BrokenExecutor(RuntimeError):
+    """
+    Raised when a executor has become non-functional after a severe failure.
+    """

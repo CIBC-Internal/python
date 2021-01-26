@@ -63,6 +63,7 @@ Here is the auxiliary module::
         def __init__(self):
             self.logger = logging.getLogger('spam_application.auxiliary.Auxiliary')
             self.logger.info('creating an instance of Auxiliary')
+
         def do_something(self):
             self.logger.info('doing something')
             a = 1 + 1
@@ -71,7 +72,9 @@ Here is the auxiliary module::
     def some_function():
         module_logger.info('received a call to "some_function"')
 
-The output looks like this::
+The output looks like this:
+
+.. code-block:: none
 
     2005-03-23 23:47:11,663 - spam_application - INFO -
        creating an instance of auxiliary_module.Auxiliary
@@ -93,6 +96,63 @@ The output looks like this::
        received a call to 'some_function'
     2005-03-23 23:47:11,673 - spam_application - INFO -
        done with auxiliary_module.some_function()
+
+Logging from multiple threads
+-----------------------------
+
+Logging from multiple threads requires no special effort. The following example
+shows logging from the main (initial) thread and another thread::
+
+    import logging
+    import threading
+    import time
+
+    def worker(arg):
+        while not arg['stop']:
+            logging.debug('Hi from myfunc')
+            time.sleep(0.5)
+
+    def main():
+        logging.basicConfig(level=logging.DEBUG, format='%(relativeCreated)6d %(threadName)s %(message)s')
+        info = {'stop': False}
+        thread = threading.Thread(target=worker, args=(info,))
+        thread.start()
+        while True:
+            try:
+                logging.debug('Hello from main')
+                time.sleep(0.75)
+            except KeyboardInterrupt:
+                info['stop'] = True
+                break
+        thread.join()
+
+    if __name__ == '__main__':
+        main()
+
+When run, the script should print something like the following:
+
+.. code-block:: none
+
+     0 Thread-1 Hi from myfunc
+     3 MainThread Hello from main
+   505 Thread-1 Hi from myfunc
+   755 MainThread Hello from main
+  1007 Thread-1 Hi from myfunc
+  1507 MainThread Hello from main
+  1508 Thread-1 Hi from myfunc
+  2010 Thread-1 Hi from myfunc
+  2258 MainThread Hello from main
+  2512 Thread-1 Hi from myfunc
+  3009 MainThread Hello from main
+  3013 Thread-1 Hi from myfunc
+  3515 Thread-1 Hi from myfunc
+  3761 MainThread Hello from main
+  4017 Thread-1 Hi from myfunc
+  4513 MainThread Hello from main
+  4518 Thread-1 Hi from myfunc
+
+This shows the logging output interspersed as one might expect. This approach
+works for more threads than shown here, of course.
 
 Multiple handlers and formatters
 --------------------------------
@@ -126,7 +186,7 @@ previous simple module-based configuration example::
     # 'application' code
     logger.debug('debug message')
     logger.info('info message')
-    logger.warn('warn message')
+    logger.warning('warn message')
     logger.error('error message')
     logger.critical('critical message')
 
@@ -184,14 +244,18 @@ messages should not. Here's how you can achieve this::
    logger2.warning('Jail zesty vixen who grabbed pay from quack.')
    logger2.error('The five boxing wizards jump quickly.')
 
-When you run this, on the console you will see ::
+When you run this, on the console you will see
+
+.. code-block:: none
 
    root        : INFO     Jackdaws love my big sphinx of quartz.
    myapp.area1 : INFO     How quickly daft jumping zebras vex.
    myapp.area2 : WARNING  Jail zesty vixen who grabbed pay from quack.
    myapp.area2 : ERROR    The five boxing wizards jump quickly.
 
-and in the file you will see something like ::
+and in the file you will see something like
+
+.. code-block:: none
 
    10-22 22:19 root         INFO     Jackdaws love my big sphinx of quartz.
    10-22 22:19 myapp.area1  DEBUG    Quick zephyrs blow, vexing daft Jim.
@@ -231,7 +295,7 @@ Here is an example of a module using the logging configuration server::
         while True:
             logger.debug('debug message')
             logger.info('info message')
-            logger.warn('warn message')
+            logger.warning('warn message')
             logger.error('error message')
             logger.critical('critical message')
             time.sleep(5)
@@ -305,7 +369,7 @@ classes, which would eat up one thread per handler for no particular benefit.
 
 An example of using these two classes follows (imports omitted)::
 
-    que = queue.Queue(-1) # no limit on size
+    que = queue.Queue(-1)  # no limit on size
     queue_handler = QueueHandler(que)
     handler = logging.StreamHandler()
     listener = QueueListener(que, handler)
@@ -321,10 +385,21 @@ An example of using these two classes follows (imports omitted)::
     root.warning('Look out!')
     listener.stop()
 
-which, when run, will produce::
+which, when run, will produce:
+
+.. code-block:: none
 
     MainThread: Look out!
 
+.. versionchanged:: 3.5
+   Prior to Python 3.5, the :class:`QueueListener` always passed every message
+   received from the queue to every handler it was initialized with. (This was
+   because it was assumed that level filtering was all done on the other side,
+   where the queue is filled.) From 3.5 onwards, this behaviour can be changed
+   by passing a keyword argument ``respect_handler_level=True`` to the
+   listener's constructor. When this is done, the listener compares the level
+   of each message with the handler's level, and only passes a message to a
+   handler if it's appropriate to do so.
 
 .. _network-logging:
 
@@ -448,7 +523,9 @@ module. Here is a basic working example::
        main()
 
 First run the server, and then the client. On the client side, nothing is
-printed on the console; on the server side, you should see something like::
+printed on the console; on the server side, you should see something like:
+
+.. code-block:: none
 
    About to start TCP server...
       59 root            INFO     Jackdaws love my big sphinx of quartz.
@@ -592,23 +669,25 @@ script::
             return True
 
     if __name__ == '__main__':
-       levels = (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
-       logging.basicConfig(level=logging.DEBUG,
-                           format='%(asctime)-15s %(name)-5s %(levelname)-8s IP: %(ip)-15s User: %(user)-8s %(message)s')
-       a1 = logging.getLogger('a.b.c')
-       a2 = logging.getLogger('d.e.f')
+        levels = (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
+        logging.basicConfig(level=logging.DEBUG,
+                            format='%(asctime)-15s %(name)-5s %(levelname)-8s IP: %(ip)-15s User: %(user)-8s %(message)s')
+        a1 = logging.getLogger('a.b.c')
+        a2 = logging.getLogger('d.e.f')
 
-       f = ContextFilter()
-       a1.addFilter(f)
-       a2.addFilter(f)
-       a1.debug('A debug message')
-       a1.info('An info message with %s', 'some parameters')
-       for x in range(10):
-           lvl = choice(levels)
-           lvlname = logging.getLevelName(lvl)
-           a2.log(lvl, 'A message at %s level with %d %s', lvlname, 2, 'parameters')
+        f = ContextFilter()
+        a1.addFilter(f)
+        a2.addFilter(f)
+        a1.debug('A debug message')
+        a1.info('An info message with %s', 'some parameters')
+        for x in range(10):
+            lvl = choice(levels)
+            lvlname = logging.getLevelName(lvl)
+            a2.log(lvl, 'A message at %s level with %d %s', lvlname, 2, 'parameters')
 
-which, when run, produces something like::
+which, when run, produces something like:
+
+.. code-block:: none
 
     2010-09-06 22:38:15,292 a.b.c DEBUG    IP: 123.231.231.123 User: fred     A debug message
     2010-09-06 22:38:15,300 a.b.c INFO     IP: 192.168.0.1     User: sheila   An info message with some parameters
@@ -700,10 +779,10 @@ the basis for code meeting your own specific requirements::
         while True:
             try:
                 record = queue.get()
-                if record is None: # We send this as a sentinel to tell the listener to quit.
+                if record is None:  # We send this as a sentinel to tell the listener to quit.
                     break
                 logger = logging.getLogger(record.name)
-                logger.handle(record) # No level or filter logic applied - just do it!
+                logger.handle(record)  # No level or filter logic applied - just do it!
             except Exception:
                 import sys, traceback
                 print('Whoops! Problem:', file=sys.stderr)
@@ -726,10 +805,11 @@ the basis for code meeting your own specific requirements::
     # Note that on Windows you can't rely on fork semantics, so each process
     # will run the logging configuration code when it starts.
     def worker_configurer(queue):
-        h = logging.handlers.QueueHandler(queue) # Just the one handler needed
+        h = logging.handlers.QueueHandler(queue)  # Just the one handler needed
         root = logging.getLogger()
         root.addHandler(h)
-        root.setLevel(logging.DEBUG) # send all messages, for demo; no other level or filter logic applied.
+        # send all messages, for demo; no other level or filter logic applied.
+        root.setLevel(logging.DEBUG)
 
     # This is the worker process top-level loop, which just logs ten events with
     # random intervening delays before terminating.
@@ -757,7 +837,7 @@ the basis for code meeting your own specific requirements::
         workers = []
         for i in range(10):
             worker = multiprocessing.Process(target=worker_process,
-                                           args=(queue, worker_configurer))
+                                             args=(queue, worker_configurer))
             workers.append(worker)
             worker.start()
         for w in workers:
@@ -869,11 +949,46 @@ This variant shows how you can e.g. apply configuration for particular loggers
 machinery in the main process (even though the logging events are generated in
 the worker processes) to direct the messages to the appropriate destinations.
 
+Using concurrent.futures.ProcessPoolExecutor
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you want to use :class:`concurrent.futures.ProcessPoolExecutor` to start
+your worker processes, you need to create the queue slightly differently.
+Instead of
+
+.. code-block:: python
+
+   queue = multiprocessing.Queue(-1)
+
+you should use
+
+.. code-block:: python
+
+   queue = multiprocessing.Manager().Queue(-1)  # also works with the examples above
+
+and you can then replace the worker creation from this::
+
+    workers = []
+    for i in range(10):
+        worker = multiprocessing.Process(target=worker_process,
+                                         args=(queue, worker_configurer))
+        workers.append(worker)
+        worker.start()
+    for w in workers:
+        w.join()
+
+to this (remembering to first import :mod:`concurrent.futures`)::
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=10) as executor:
+        for i in range(10):
+            executor.submit(worker_process, queue, worker_configurer)
+
+
 Using file rotation
 -------------------
 
 .. sectionauthor:: Doug Hellmann, Vinay Sajip (changes)
-.. (see <http://blog.doughellmann.com/2007/05/pymotw-logging.html>)
+.. (see <https://pymotw.com/3/logging/>)
 
 Sometimes you want to let a log file grow to a certain size, then open a new
 file and log to that. You may want to keep a certain number of these files, and
@@ -908,7 +1023,9 @@ logging package provides a :class:`~handlers.RotatingFileHandler`::
        print(filename)
 
 The result should be 6 separate files, each with part of the log history for the
-application::
+application:
+
+.. code-block:: none
 
    logging_rotatingfile_example.out
    logging_rotatingfile_example.out.1
@@ -987,7 +1104,7 @@ to indicate additional contextual information to be added to the log). So
 you cannot directly make logging calls using :meth:`str.format` or
 :class:`string.Template` syntax, because internally the logging package
 uses %-formatting to merge the format string and the variable arguments.
-There would no changing this while preserving backward compatibility, since
+There would be no changing this while preserving backward compatibility, since
 all logging calls which are out there in existing code will be using %-format
 strings.
 
@@ -1020,7 +1137,7 @@ $-formatting to be used to build the actual "message" part which appears in the
 formatted log output in place of "%(message)s" or "{message}" or "$message".
 It's a little unwieldy to use the class names whenever you want to log
 something, but it's quite palatable if you use an alias such as __ (double
-underscore – not to be confused with _, the single underscore used as a
+underscore --- not to be confused with _, the single underscore used as a
 synonym/alias for :func:`gettext.gettext` or its brethren).
 
 The above classes are not included in Python, though they're easy enough to
@@ -1141,7 +1258,7 @@ do simply by adding new packages or modules and doing ::
 at module level). It's probably one too many things to think about. Developers
 could also add the filter to a :class:`~logging.NullHandler` attached to their
 top-level logger, but this would not be invoked if an application developer
-attached a handler to a lower-level library logger – so output from that
+attached a handler to a lower-level library logger --- so output from that
 handler would not reflect the intentions of the library developer.
 
 In Python 3.2 and later, :class:`~logging.LogRecord` creation is done through a
@@ -1181,17 +1298,17 @@ You can use a :class:`QueueHandler` subclass to send messages to other kinds
 of queues, for example a ZeroMQ 'publish' socket. In the example below,the
 socket is created separately and passed to the handler (as its 'queue')::
 
-    import zmq # using pyzmq, the Python binding for ZeroMQ
-    import json # for serializing records portably
+    import zmq   # using pyzmq, the Python binding for ZeroMQ
+    import json  # for serializing records portably
 
     ctx = zmq.Context()
-    sock = zmq.Socket(ctx, zmq.PUB) # or zmq.PUSH, or other suitable value
-    sock.bind('tcp://*:5556') # or wherever
+    sock = zmq.Socket(ctx, zmq.PUB)  # or zmq.PUSH, or other suitable value
+    sock.bind('tcp://*:5556')        # or wherever
 
     class ZeroMQSocketHandler(QueueHandler):
         def enqueue(self, record):
-            data = json.dumps(record.__dict__)
-            self.queue.send(data)
+            self.queue.send_json(record.__dict__)
+
 
     handler = ZeroMQSocketHandler(sock)
 
@@ -1204,11 +1321,10 @@ data needed by the handler to create the socket::
             self.ctx = ctx or zmq.Context()
             socket = zmq.Socket(self.ctx, socktype)
             socket.bind(uri)
-            QueueHandler.__init__(self, socket)
+            super().__init__(socket)
 
         def enqueue(self, record):
-            data = json.dumps(record.__dict__)
-            self.queue.send(data)
+            self.queue.send_json(record.__dict__)
 
         def close(self):
             self.queue.close()
@@ -1224,12 +1340,13 @@ of queues, for example a ZeroMQ 'subscribe' socket. Here's an example::
         def __init__(self, uri, *handlers, **kwargs):
             self.ctx = kwargs.get('ctx') or zmq.Context()
             socket = zmq.Socket(self.ctx, zmq.SUB)
-            socket.setsockopt(zmq.SUBSCRIBE, '') # subscribe to everything
+            socket.setsockopt_string(zmq.SUBSCRIBE, '')  # subscribe to everything
             socket.connect(uri)
+            super().__init__(socket, *handlers, **kwargs)
 
         def dequeue(self):
-            msg = self.queue.recv()
-            return logging.makeLogRecord(json.loads(msg))
+            msg = self.queue.recv_json()
+            return logging.makeLogRecord(msg)
 
 
 .. seealso::
@@ -1252,7 +1369,7 @@ An example dictionary-based configuration
 -----------------------------------------
 
 Below is an example of a logging configuration dictionary - it's taken from
-the `documentation on the Django project <https://docs.djangoproject.com/en/1.3/topics/logging/#configuring-logging>`_.
+the `documentation on the Django project <https://docs.djangoproject.com/en/1.9/topics/logging/#configuring-logging>`_.
 This dictionary is passed to :func:`~config.dictConfig` to put the configuration into effect::
 
     LOGGING = {
@@ -1308,7 +1425,7 @@ This dictionary is passed to :func:`~config.dictConfig` to put the configuration
     }
 
 For more information about this configuration, you can see the `relevant
-section <https://docs.djangoproject.com/en/1.6/topics/logging/#configuring-logging>`_
+section <https://docs.djangoproject.com/en/1.9/topics/logging/#configuring-logging>`_
 of the Django documentation.
 
 .. _cookbook-rotator-namer:
@@ -1408,7 +1525,7 @@ works::
     def worker_process(config):
         """
         A number of these are spawned for the purpose of illustration. In
-        practice, they could be a heterogenous bunch of processes rather than
+        practice, they could be a heterogeneous bunch of processes rather than
         ones which are identical to each other.
 
         This initialises logging according to the specified configuration,
@@ -1570,11 +1687,11 @@ works::
 Inserting a BOM into messages sent to a SysLogHandler
 -----------------------------------------------------
 
-`RFC 5424 <http://tools.ietf.org/html/rfc5424>`_ requires that a
+:rfc:`5424` requires that a
 Unicode message be sent to a syslog daemon as a set of bytes which have the
 following structure: an optional pure-ASCII component, followed by a UTF-8 Byte
-Order Mark (BOM), followed by Unicode encoded using UTF-8. (See the `relevant
-section of the specification <http://tools.ietf.org/html/rfc5424#section-6>`_.)
+Order Mark (BOM), followed by Unicode encoded using UTF-8. (See the
+:rfc:`relevant section of the specification <5424#section-6>`.)
 
 In Python 3.1, code was added to
 :class:`~logging.handlers.SysLogHandler` to insert a BOM into the message, but
@@ -1584,7 +1701,7 @@ appear before it.
 
 As this behaviour is broken, the incorrect BOM insertion code is being removed
 from Python 3.2.4 and later. However, it is not being replaced, and if you
-want to produce RFC 5424-compliant messages which include a BOM, an optional
+want to produce :rfc:`5424`-compliant messages which include a BOM, an optional
 pure-ASCII sequence before it and arbitrary Unicode after it, encoded using
 UTF-8, then you need to do the following:
 
@@ -1607,7 +1724,7 @@ UTF-8, then you need to do the following:
 
 The formatted message *will* be encoded using UTF-8 encoding by
 ``SysLogHandler``. If you follow the above rules, you should be able to produce
-RFC 5424-compliant messages. If you don't, logging may not complain, but your
+:rfc:`5424`-compliant messages. If you don't, logging may not complain, but your
 messages will not be RFC 5424-compliant, and your syslog daemon may complain.
 
 
@@ -1615,7 +1732,7 @@ Implementing structured logging
 -------------------------------
 
 Although most logging messages are intended for reading by humans, and thus not
-readily machine-parseable, there might be cirumstances where you want to output
+readily machine-parseable, there might be circumstances where you want to output
 messages in a structured format which *is* capable of being parsed by a program
 (without needing complex regular expressions to parse the log message). This is
 straightforward to achieve using the logging package. There are a number of
@@ -1638,7 +1755,9 @@ which uses JSON to serialise the event in a machine-parseable manner::
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     logging.info(_('message 1', foo='bar', bar='baz', num=123, fnum=123.456))
 
-If the above script is run, it prints::
+If the above script is run, it prints:
+
+.. code-block:: none
 
     message 1 >>> {"fnum": 123.456, "num": 123, "bar": "baz", "foo": "bar"}
 
@@ -1680,12 +1799,14 @@ as in the following complete example::
 
     def main():
         logging.basicConfig(level=logging.INFO, format='%(message)s')
-        logging.info(_('message 1', set_value=set([1, 2, 3]), snowman='\u2603'))
+        logging.info(_('message 1', set_value={1, 2, 3}, snowman='\u2603'))
 
     if __name__ == '__main__':
         main()
 
-When the above script is run, it prints::
+When the above script is run, it prints:
+
+.. code-block:: none
 
     message 1 >>> {"snowman": "\u2603", "set_value": [1, 2, 3]}
 
@@ -1794,7 +1915,9 @@ script, ``chowntest.py``::
     logger = logging.getLogger('mylogger')
     logger.debug('A debug message')
 
-To run this, you will probably need to run as ``root``::
+To run this, you will probably need to run as ``root``:
+
+.. code-block:: shell-session
 
     $ sudo python3.3 chowntest.py
     $ cat chowntest.log
@@ -2013,7 +2136,9 @@ most obvious, but you can provide any callable which returns a
 
 This example shows how you can pass configuration data to the callable which
 constructs the instance, in the form of keyword parameters. When run, the above
-script will print::
+script will print:
+
+.. code-block:: none
 
     changed: hello
 
@@ -2052,7 +2177,7 @@ class, as shown in the following example::
             Format an exception so that it prints on a single line.
             """
             result = super(OneLineExceptionFormatter, self).formatException(exc_info)
-            return repr(result) # or format into one line however you want to
+            return repr(result)  # or format into one line however you want to
 
         def format(self, record):
             s = super(OneLineExceptionFormatter, self).format(record)
@@ -2080,7 +2205,9 @@ class, as shown in the following example::
     if __name__ == '__main__':
         main()
 
-When run, this produces a file with exactly two lines::
+When run, this produces a file with exactly two lines:
+
+.. code-block:: none
 
     28/01/2015 07:21:23|INFO|Sample message|
     28/01/2015 07:21:23|ERROR|ZeroDivisionError: integer division or modulo by zero|'Traceback (most recent call last):\n  File "logtest7.py", line 30, in main\n    x = 1 / 0\nZeroDivisionError: integer division or modulo by zero'|
@@ -2095,8 +2222,8 @@ Speaking logging messages
 -------------------------
 
 There might be situations when it is desirable to have logging messages rendered
-in an audible rather than a visible format. This is easy to do if you have text-
-to-speech (TTS) functionality available in your system, even if it doesn't have
+in an audible rather than a visible format. This is easy to do if you have
+text-to-speech (TTS) functionality available in your system, even if it doesn't have
 a Python binding. Most TTS systems have a command line program you can run, and
 this can be invoked from a handler using :mod:`subprocess`. It's assumed here
 that TTS command line programs won't expect to interact with users or take a
@@ -2142,3 +2269,714 @@ The above approach can, of course, be adapted to other TTS systems and even
 other systems altogether which can process messages via external programs run
 from a command line.
 
+
+.. _buffered-logging:
+
+Buffering logging messages and outputting them conditionally
+------------------------------------------------------------
+
+There might be situations where you want to log messages in a temporary area
+and only output them if a certain condition occurs. For example, you may want to
+start logging debug events in a function, and if the function completes without
+errors, you don't want to clutter the log with the collected debug information,
+but if there is an error, you want all the debug information to be output as well
+as the error.
+
+Here is an example which shows how you could do this using a decorator for your
+functions where you want logging to behave this way. It makes use of the
+:class:`logging.handlers.MemoryHandler`, which allows buffering of logged events
+until some condition occurs, at which point the buffered events are ``flushed``
+- passed to another handler (the ``target`` handler) for processing. By default,
+the ``MemoryHandler`` flushed when its buffer gets filled up or an event whose
+level is greater than or equal to a specified threshold is seen. You can use this
+recipe with a more specialised subclass of ``MemoryHandler`` if you want custom
+flushing behavior.
+
+The example script has a simple function, ``foo``, which just cycles through
+all the logging levels, writing to ``sys.stderr`` to say what level it's about
+to log at, and then actually logging a message at that level. You can pass a
+parameter to ``foo`` which, if true, will log at ERROR and CRITICAL levels -
+otherwise, it only logs at DEBUG, INFO and WARNING levels.
+
+The script just arranges to decorate ``foo`` with a decorator which will do the
+conditional logging that's required. The decorator takes a logger as a parameter
+and attaches a memory handler for the duration of the call to the decorated
+function. The decorator can be additionally parameterised using a target handler,
+a level at which flushing should occur, and a capacity for the buffer (number of
+records buffered). These default to a :class:`~logging.StreamHandler` which
+writes to ``sys.stderr``, ``logging.ERROR`` and ``100`` respectively.
+
+Here's the script::
+
+    import logging
+    from logging.handlers import MemoryHandler
+    import sys
+
+    logger = logging.getLogger(__name__)
+    logger.addHandler(logging.NullHandler())
+
+    def log_if_errors(logger, target_handler=None, flush_level=None, capacity=None):
+        if target_handler is None:
+            target_handler = logging.StreamHandler()
+        if flush_level is None:
+            flush_level = logging.ERROR
+        if capacity is None:
+            capacity = 100
+        handler = MemoryHandler(capacity, flushLevel=flush_level, target=target_handler)
+
+        def decorator(fn):
+            def wrapper(*args, **kwargs):
+                logger.addHandler(handler)
+                try:
+                    return fn(*args, **kwargs)
+                except Exception:
+                    logger.exception('call failed')
+                    raise
+                finally:
+                    super(MemoryHandler, handler).flush()
+                    logger.removeHandler(handler)
+            return wrapper
+
+        return decorator
+
+    def write_line(s):
+        sys.stderr.write('%s\n' % s)
+
+    def foo(fail=False):
+        write_line('about to log at DEBUG ...')
+        logger.debug('Actually logged at DEBUG')
+        write_line('about to log at INFO ...')
+        logger.info('Actually logged at INFO')
+        write_line('about to log at WARNING ...')
+        logger.warning('Actually logged at WARNING')
+        if fail:
+            write_line('about to log at ERROR ...')
+            logger.error('Actually logged at ERROR')
+            write_line('about to log at CRITICAL ...')
+            logger.critical('Actually logged at CRITICAL')
+        return fail
+
+    decorated_foo = log_if_errors(logger)(foo)
+
+    if __name__ == '__main__':
+        logger.setLevel(logging.DEBUG)
+        write_line('Calling undecorated foo with False')
+        assert not foo(False)
+        write_line('Calling undecorated foo with True')
+        assert foo(True)
+        write_line('Calling decorated foo with False')
+        assert not decorated_foo(False)
+        write_line('Calling decorated foo with True')
+        assert decorated_foo(True)
+
+When this script is run, the following output should be observed:
+
+.. code-block:: none
+
+    Calling undecorated foo with False
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    Calling undecorated foo with True
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    about to log at ERROR ...
+    about to log at CRITICAL ...
+    Calling decorated foo with False
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    Calling decorated foo with True
+    about to log at DEBUG ...
+    about to log at INFO ...
+    about to log at WARNING ...
+    about to log at ERROR ...
+    Actually logged at DEBUG
+    Actually logged at INFO
+    Actually logged at WARNING
+    Actually logged at ERROR
+    about to log at CRITICAL ...
+    Actually logged at CRITICAL
+
+As you can see, actual logging output only occurs when an event is logged whose
+severity is ERROR or greater, but in that case, any previous events at lower
+severities are also logged.
+
+You can of course use the conventional means of decoration::
+
+    @log_if_errors(logger)
+    def foo(fail=False):
+        ...
+
+
+.. _utc-formatting:
+
+Formatting times using UTC (GMT) via configuration
+--------------------------------------------------
+
+Sometimes you want to format times using UTC, which can be done using a class
+such as `UTCFormatter`, shown below::
+
+    import logging
+    import time
+
+    class UTCFormatter(logging.Formatter):
+        converter = time.gmtime
+
+and you can then use the ``UTCFormatter`` in your code instead of
+:class:`~logging.Formatter`. If you want to do that via configuration, you can
+use the :func:`~logging.config.dictConfig` API with an approach illustrated by
+the following complete example::
+
+    import logging
+    import logging.config
+    import time
+
+    class UTCFormatter(logging.Formatter):
+        converter = time.gmtime
+
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'utc': {
+                '()': UTCFormatter,
+                'format': '%(asctime)s %(message)s',
+            },
+            'local': {
+                'format': '%(asctime)s %(message)s',
+            }
+        },
+        'handlers': {
+            'console1': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'utc',
+            },
+            'console2': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'local',
+            },
+        },
+        'root': {
+            'handlers': ['console1', 'console2'],
+       }
+    }
+
+    if __name__ == '__main__':
+        logging.config.dictConfig(LOGGING)
+        logging.warning('The local time is %s', time.asctime())
+
+When this script is run, it should print something like:
+
+.. code-block:: none
+
+    2015-10-17 12:53:29,501 The local time is Sat Oct 17 13:53:29 2015
+    2015-10-17 13:53:29,501 The local time is Sat Oct 17 13:53:29 2015
+
+showing how the time is formatted both as local time and UTC, one for each
+handler.
+
+
+.. _context-manager:
+
+Using a context manager for selective logging
+---------------------------------------------
+
+There are times when it would be useful to temporarily change the logging
+configuration and revert it back after doing something. For this, a context
+manager is the most obvious way of saving and restoring the logging context.
+Here is a simple example of such a context manager, which allows you to
+optionally change the logging level and add a logging handler purely in the
+scope of the context manager::
+
+    import logging
+    import sys
+
+    class LoggingContext(object):
+        def __init__(self, logger, level=None, handler=None, close=True):
+            self.logger = logger
+            self.level = level
+            self.handler = handler
+            self.close = close
+
+        def __enter__(self):
+            if self.level is not None:
+                self.old_level = self.logger.level
+                self.logger.setLevel(self.level)
+            if self.handler:
+                self.logger.addHandler(self.handler)
+
+        def __exit__(self, et, ev, tb):
+            if self.level is not None:
+                self.logger.setLevel(self.old_level)
+            if self.handler:
+                self.logger.removeHandler(self.handler)
+            if self.handler and self.close:
+                self.handler.close()
+            # implicit return of None => don't swallow exceptions
+
+If you specify a level value, the logger's level is set to that value in the
+scope of the with block covered by the context manager. If you specify a
+handler, it is added to the logger on entry to the block and removed on exit
+from the block. You can also ask the manager to close the handler for you on
+block exit - you could do this if you don't need the handler any more.
+
+To illustrate how it works, we can add the following block of code to the
+above::
+
+    if __name__ == '__main__':
+        logger = logging.getLogger('foo')
+        logger.addHandler(logging.StreamHandler())
+        logger.setLevel(logging.INFO)
+        logger.info('1. This should appear just once on stderr.')
+        logger.debug('2. This should not appear.')
+        with LoggingContext(logger, level=logging.DEBUG):
+            logger.debug('3. This should appear once on stderr.')
+        logger.debug('4. This should not appear.')
+        h = logging.StreamHandler(sys.stdout)
+        with LoggingContext(logger, level=logging.DEBUG, handler=h, close=True):
+            logger.debug('5. This should appear twice - once on stderr and once on stdout.')
+        logger.info('6. This should appear just once on stderr.')
+        logger.debug('7. This should not appear.')
+
+We initially set the logger's level to ``INFO``, so message #1 appears and
+message #2 doesn't. We then change the level to ``DEBUG`` temporarily in the
+following ``with`` block, and so message #3 appears. After the block exits, the
+logger's level is restored to ``INFO`` and so message #4 doesn't appear. In the
+next ``with`` block, we set the level to ``DEBUG`` again but also add a handler
+writing to ``sys.stdout``. Thus, message #5 appears twice on the console (once
+via ``stderr`` and once via ``stdout``). After the ``with`` statement's
+completion, the status is as it was before so message #6 appears (like message
+#1) whereas message #7 doesn't (just like message #2).
+
+If we run the resulting script, the result is as follows:
+
+.. code-block:: shell-session
+
+    $ python logctx.py
+    1. This should appear just once on stderr.
+    3. This should appear once on stderr.
+    5. This should appear twice - once on stderr and once on stdout.
+    5. This should appear twice - once on stderr and once on stdout.
+    6. This should appear just once on stderr.
+
+If we run it again, but pipe ``stderr`` to ``/dev/null``, we see the following,
+which is the only message written to ``stdout``:
+
+.. code-block:: shell-session
+
+    $ python logctx.py 2>/dev/null
+    5. This should appear twice - once on stderr and once on stdout.
+
+Once again, but piping ``stdout`` to ``/dev/null``, we get:
+
+.. code-block:: shell-session
+
+    $ python logctx.py >/dev/null
+    1. This should appear just once on stderr.
+    3. This should appear once on stderr.
+    5. This should appear twice - once on stderr and once on stdout.
+    6. This should appear just once on stderr.
+
+In this case, the message #5 printed to ``stdout`` doesn't appear, as expected.
+
+Of course, the approach described here can be generalised, for example to attach
+logging filters temporarily. Note that the above code works in Python 2 as well
+as Python 3.
+
+
+.. _starter-template:
+
+A CLI application starter template
+----------------------------------
+
+Here's an example which shows how you can:
+
+* Use a logging level based on command-line arguments
+* Dispatch to multiple subcommands in separate files, all logging at the same
+  level in a consistent way
+* Make use of simple, minimal configuration
+
+Suppose we have a command-line application whose job is to stop, start or
+restart some services. This could be organised for the purposes of illustration
+as a file ``app.py`` that is the main script for the application, with individual
+commands implemented in ``start.py``, ``stop.py`` and ``restart.py``. Suppose
+further that we want to control the verbosity of the application via a
+command-line argument, defaulting to ``logging.INFO``. Here's one way that
+``app.py`` could be written::
+
+    import argparse
+    import importlib
+    import logging
+    import os
+    import sys
+
+    def main(args=None):
+        scriptname = os.path.basename(__file__)
+        parser = argparse.ArgumentParser(scriptname)
+        levels = ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
+        parser.add_argument('--log-level', default='INFO', choices=levels)
+        subparsers = parser.add_subparsers(dest='command',
+                                           help='Available commands:')
+        start_cmd = subparsers.add_parser('start', help='Start a service')
+        start_cmd.add_argument('name', metavar='NAME',
+                               help='Name of service to start')
+        stop_cmd = subparsers.add_parser('stop',
+                                         help='Stop one or more services')
+        stop_cmd.add_argument('names', metavar='NAME', nargs='+',
+                              help='Name of service to stop')
+        restart_cmd = subparsers.add_parser('restart',
+                                            help='Restart one or more services')
+        restart_cmd.add_argument('names', metavar='NAME', nargs='+',
+                                 help='Name of service to restart')
+        options = parser.parse_args()
+        # the code to dispatch commands could all be in this file. For the purposes
+        # of illustration only, we implement each command in a separate module.
+        try:
+            mod = importlib.import_module(options.command)
+            cmd = getattr(mod, 'command')
+        except (ImportError, AttributeError):
+            print('Unable to find the code for command \'%s\'' % options.command)
+            return 1
+        # Could get fancy here and load configuration from file or dictionary
+        logging.basicConfig(level=options.log_level,
+                            format='%(levelname)s %(name)s %(message)s')
+        cmd(options)
+
+    if __name__ == '__main__':
+        sys.exit(main())
+
+And the ``start``, ``stop`` and ``restart`` commands can be implemented in
+separate modules, like so for starting::
+
+    # start.py
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    def command(options):
+        logger.debug('About to start %s', options.name)
+        # actually do the command processing here ...
+        logger.info('Started the \'%s\' service.', options.name)
+
+and thus for stopping::
+
+    # stop.py
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    def command(options):
+        n = len(options.names)
+        if n == 1:
+            plural = ''
+            services = '\'%s\'' % options.names[0]
+        else:
+            plural = 's'
+            services = ', '.join('\'%s\'' % name for name in options.names)
+            i = services.rfind(', ')
+            services = services[:i] + ' and ' + services[i + 2:]
+        logger.debug('About to stop %s', services)
+        # actually do the command processing here ...
+        logger.info('Stopped the %s service%s.', services, plural)
+
+and similarly for restarting::
+
+    # restart.py
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    def command(options):
+        n = len(options.names)
+        if n == 1:
+            plural = ''
+            services = '\'%s\'' % options.names[0]
+        else:
+            plural = 's'
+            services = ', '.join('\'%s\'' % name for name in options.names)
+            i = services.rfind(', ')
+            services = services[:i] + ' and ' + services[i + 2:]
+        logger.debug('About to restart %s', services)
+        # actually do the command processing here ...
+        logger.info('Restarted the %s service%s.', services, plural)
+
+If we run this application with the default log level, we get output like this:
+
+.. code-block:: shell-session
+
+    $ python app.py start foo
+    INFO start Started the 'foo' service.
+
+    $ python app.py stop foo bar
+    INFO stop Stopped the 'foo' and 'bar' services.
+
+    $ python app.py restart foo bar baz
+    INFO restart Restarted the 'foo', 'bar' and 'baz' services.
+
+The first word is the logging level, and the second word is the module or
+package name of the place where the event was logged.
+
+If we change the logging level, then we can change the information sent to the
+log. For example, if we want more information:
+
+.. code-block:: shell-session
+
+    $ python app.py --log-level DEBUG start foo
+    DEBUG start About to start foo
+    INFO start Started the 'foo' service.
+
+    $ python app.py --log-level DEBUG stop foo bar
+    DEBUG stop About to stop 'foo' and 'bar'
+    INFO stop Stopped the 'foo' and 'bar' services.
+
+    $ python app.py --log-level DEBUG restart foo bar baz
+    DEBUG restart About to restart 'foo', 'bar' and 'baz'
+    INFO restart Restarted the 'foo', 'bar' and 'baz' services.
+
+And if we want less:
+
+.. code-block:: shell-session
+
+    $ python app.py --log-level WARNING start foo
+    $ python app.py --log-level WARNING stop foo bar
+    $ python app.py --log-level WARNING restart foo bar baz
+
+In this case, the commands don't print anything to the console, since nothing
+at ``WARNING`` level or above is logged by them.
+
+.. _qt-gui:
+
+A Qt GUI for logging
+--------------------
+
+A question that comes up from time to time is about how to log to a GUI
+application. The `Qt <https://www.qt.io/>`_ framework is a popular
+cross-platform UI framework with Python bindings using `PySide2
+<https://pypi.org/project/PySide2/>`_ or `PyQt5
+<https://pypi.org/project/PyQt5/>`_ libraries.
+
+The following example shows how to log to a Qt GUI. This introduces a simple
+``QtHandler`` class which takes a callable, which should be a slot in the main
+thread that does GUI updates. A worker thread is also created to show how you
+can log to the GUI from both the UI itself (via a button for manual logging)
+as well as a worker thread doing work in the background (here, just logging
+messages at random levels with random short delays in between).
+
+The worker thread is implemented using Qt's ``QThread`` class rather than the
+:mod:`threading` module, as there are circumstances where one has to use
+``QThread``, which offers better integration with other ``Qt`` components.
+
+The code should work with recent releases of either ``PySide2`` or ``PyQt5``.
+You should be able to adapt the approach to earlier versions of Qt. Please
+refer to the comments in the code snippet for more detailed information.
+
+.. code-block:: python3
+
+    import datetime
+    import logging
+    import random
+    import sys
+    import time
+
+    # Deal with minor differences between PySide2 and PyQt5
+    try:
+        from PySide2 import QtCore, QtGui, QtWidgets
+        Signal = QtCore.Signal
+        Slot = QtCore.Slot
+    except ImportError:
+        from PyQt5 import QtCore, QtGui, QtWidgets
+        Signal = QtCore.pyqtSignal
+        Slot = QtCore.pyqtSlot
+
+
+    logger = logging.getLogger(__name__)
+
+
+    #
+    # Signals need to be contained in a QObject or subclass in order to be correctly
+    # initialized.
+    #
+    class Signaller(QtCore.QObject):
+        signal = Signal(str, logging.LogRecord)
+
+    #
+    # Output to a Qt GUI is only supposed to happen on the main thread. So, this
+    # handler is designed to take a slot function which is set up to run in the main
+    # thread. In this example, the function takes a string argument which is a
+    # formatted log message, and the log record which generated it. The formatted
+    # string is just a convenience - you could format a string for output any way
+    # you like in the slot function itself.
+    #
+    # You specify the slot function to do whatever GUI updates you want. The handler
+    # doesn't know or care about specific UI elements.
+    #
+    class QtHandler(logging.Handler):
+        def __init__(self, slotfunc, *args, **kwargs):
+            super(QtHandler, self).__init__(*args, **kwargs)
+            self.signaller = Signaller()
+            self.signaller.signal.connect(slotfunc)
+
+        def emit(self, record):
+            s = self.format(record)
+            self.signaller.signal.emit(s, record)
+
+    #
+    # This example uses QThreads, which means that the threads at the Python level
+    # are named something like "Dummy-1". The function below gets the Qt name of the
+    # current thread.
+    #
+    def ctname():
+        return QtCore.QThread.currentThread().objectName()
+
+
+    #
+    # Used to generate random levels for logging.
+    #
+    LEVELS = (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR,
+              logging.CRITICAL)
+
+    #
+    # This worker class represents work that is done in a thread separate to the
+    # main thread. The way the thread is kicked off to do work is via a button press
+    # that connects to a slot in the worker.
+    #
+    # Because the default threadName value in the LogRecord isn't much use, we add
+    # a qThreadName which contains the QThread name as computed above, and pass that
+    # value in an "extra" dictionary which is used to update the LogRecord with the
+    # QThread name.
+    #
+    # This example worker just outputs messages sequentially, interspersed with
+    # random delays of the order of a few seconds.
+    #
+    class Worker(QtCore.QObject):
+        @Slot()
+        def start(self):
+            extra = {'qThreadName': ctname() }
+            logger.debug('Started work', extra=extra)
+            i = 1
+            # Let the thread run until interrupted. This allows reasonably clean
+            # thread termination.
+            while not QtCore.QThread.currentThread().isInterruptionRequested():
+                delay = 0.5 + random.random() * 2
+                time.sleep(delay)
+                level = random.choice(LEVELS)
+                logger.log(level, 'Message after delay of %3.1f: %d', delay, i, extra=extra)
+                i += 1
+
+    #
+    # Implement a simple UI for this cookbook example. This contains:
+    #
+    # * A read-only text edit window which holds formatted log messages
+    # * A button to start work and log stuff in a separate thread
+    # * A button to log something from the main thread
+    # * A button to clear the log window
+    #
+    class Window(QtWidgets.QWidget):
+
+        COLORS = {
+            logging.DEBUG: 'black',
+            logging.INFO: 'blue',
+            logging.WARNING: 'orange',
+            logging.ERROR: 'red',
+            logging.CRITICAL: 'purple',
+        }
+
+        def __init__(self, app):
+            super(Window, self).__init__()
+            self.app = app
+            self.textedit = te = QtWidgets.QPlainTextEdit(self)
+            # Set whatever the default monospace font is for the platform
+            f = QtGui.QFont('nosuchfont')
+            f.setStyleHint(f.Monospace)
+            te.setFont(f)
+            te.setReadOnly(True)
+            PB = QtWidgets.QPushButton
+            self.work_button = PB('Start background work', self)
+            self.log_button = PB('Log a message at a random level', self)
+            self.clear_button = PB('Clear log window', self)
+            self.handler = h = QtHandler(self.update_status)
+            # Remember to use qThreadName rather than threadName in the format string.
+            fs = '%(asctime)s %(qThreadName)-12s %(levelname)-8s %(message)s'
+            formatter = logging.Formatter(fs)
+            h.setFormatter(formatter)
+            logger.addHandler(h)
+            # Set up to terminate the QThread when we exit
+            app.aboutToQuit.connect(self.force_quit)
+
+            # Lay out all the widgets
+            layout = QtWidgets.QVBoxLayout(self)
+            layout.addWidget(te)
+            layout.addWidget(self.work_button)
+            layout.addWidget(self.log_button)
+            layout.addWidget(self.clear_button)
+            self.setFixedSize(900, 400)
+
+            # Connect the non-worker slots and signals
+            self.log_button.clicked.connect(self.manual_update)
+            self.clear_button.clicked.connect(self.clear_display)
+
+            # Start a new worker thread and connect the slots for the worker
+            self.start_thread()
+            self.work_button.clicked.connect(self.worker.start)
+            # Once started, the button should be disabled
+            self.work_button.clicked.connect(lambda : self.work_button.setEnabled(False))
+
+        def start_thread(self):
+            self.worker = Worker()
+            self.worker_thread = QtCore.QThread()
+            self.worker.setObjectName('Worker')
+            self.worker_thread.setObjectName('WorkerThread')  # for qThreadName
+            self.worker.moveToThread(self.worker_thread)
+            # This will start an event loop in the worker thread
+            self.worker_thread.start()
+
+        def kill_thread(self):
+            # Just tell the worker to stop, then tell it to quit and wait for that
+            # to happen
+            self.worker_thread.requestInterruption()
+            if self.worker_thread.isRunning():
+                self.worker_thread.quit()
+                self.worker_thread.wait()
+            else:
+                print('worker has already exited.')
+
+        def force_quit(self):
+            # For use when the window is closed
+            if self.worker_thread.isRunning():
+                self.kill_thread()
+
+        # The functions below update the UI and run in the main thread because
+        # that's where the slots are set up
+
+        @Slot(str, logging.LogRecord)
+        def update_status(self, status, record):
+            color = self.COLORS.get(record.levelno, 'black')
+            s = '<pre><font color="%s">%s</font></pre>' % (color, status)
+            self.textedit.appendHtml(s)
+
+        @Slot()
+        def manual_update(self):
+            # This function uses the formatted message passed in, but also uses
+            # information from the record to format the message in an appropriate
+            # color according to its severity (level).
+            level = random.choice(LEVELS)
+            extra = {'qThreadName': ctname() }
+            logger.log(level, 'Manually logged!', extra=extra)
+
+        @Slot()
+        def clear_display(self):
+            self.textedit.clear()
+
+
+    def main():
+        QtCore.QThread.currentThread().setObjectName('MainThread')
+        logging.getLogger().setLevel(logging.DEBUG)
+        app = QtWidgets.QApplication(sys.argv)
+        example = Window(app)
+        example.show()
+        sys.exit(app.exec_())
+
+    if __name__=='__main__':
+        main()

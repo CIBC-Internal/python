@@ -3,6 +3,7 @@
 
 .. module:: token
    :synopsis: Constants representing terminal nodes of the parse tree.
+
 .. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
 
 **Source code:** :source:`Lib/token.py`
@@ -28,17 +29,17 @@ functions.  The functions mirror definitions in the Python C header files.
 
 .. function:: ISTERMINAL(x)
 
-   Return true for terminal token values.
+   Return ``True`` for terminal token values.
 
 
 .. function:: ISNONTERMINAL(x)
 
-   Return true for non-terminal token values.
+   Return ``True`` for non-terminal token values.
 
 
 .. function:: ISEOF(x)
 
-   Return true if *x* is the marker indicating the end of input.
+   Return ``True`` if *x* is the marker indicating the end of input.
 
 
 The token constants are:
@@ -93,6 +94,7 @@ The token constants are:
           DOUBLESLASH
           DOUBLESLASHEQUAL
           AT
+          ATEQUAL
           RARROW
           ELLIPSIS
           OP
@@ -101,9 +103,35 @@ The token constants are:
           NT_OFFSET
 
 
-.. seealso::
+The following token type values aren't used by the C tokenizer but are needed for
+the :mod:`tokenize` module.
 
-   Module :mod:`parser`
-      The second example for the :mod:`parser` module shows how to use the
-      :mod:`symbol` module.
+.. data:: COMMENT
 
+   Token value used to indicate a comment.
+
+
+.. data:: NL
+
+   Token value used to indicate a non-terminating newline.  The
+   :data:`NEWLINE` token indicates the end of a logical line of Python code;
+   ``NL`` tokens are generated when a logical line of code is continued over
+   multiple physical lines.
+
+
+.. data:: ENCODING
+
+   Token value that indicates the encoding used to decode the source bytes
+   into text. The first token returned by :func:`tokenize.tokenize` will
+   always be an ``ENCODING`` token.
+
+
+.. versionchanged:: 3.5
+   Added :data:`AWAIT` and :data:`ASYNC` tokens.
+
+.. versionchanged:: 3.7
+   Added :data:`COMMENT`, :data:`NL` and :data:`ENCODING` tokens.
+
+.. versionchanged:: 3.7
+   Removed :data:`AWAIT` and :data:`ASYNC` tokens. "async" and "await" are
+   now tokenized as :data:`NAME` tokens.
