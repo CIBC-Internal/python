@@ -1,5 +1,7 @@
 # Python test set -- part 5, built-in exceptions
 
+import copy
+import gc
 import os
 import sys
 import unittest
@@ -7,9 +9,12 @@ import pickle
 import weakref
 import errno
 
-from test.support import (TESTFN, captured_output, check_impl_detail,
-                          check_warnings, cpython_only, gc_collect, run_unittest,
-                          no_tracing, unlink)
+from test.support import (TESTFN, captured_stderr, check_impl_detail,
+                          check_warnings, cpython_only, gc_collect,
+                          no_tracing, unlink, import_module, script_helper,
+                          SuppressCrashReport)
+from test import support
+
 
 class NaiveException(Exception):
     def __init__(self, x):
@@ -19,6 +24,10 @@ class SlottedNaiveException(Exception):
     __slots__ = ('x',)
     def __init__(self, x):
         self.x = x
+
+class BrokenStrException(Exception):
+    def __str__(self):
+        raise Exception("str() is broken")
 
 # XXX This is not really enough, each *operation* should be tested!
 
@@ -84,6 +93,7 @@ class ExceptionTests(unittest.TestCase):
             x += x  # this simply shouldn't blow up
 
         self.raise_catch(RuntimeError, "RuntimeError")
+        self.raise_catch(RecursionError, "RecursionError")
 
         self.raise_catch(SyntaxError, "SyntaxError")
         try: exec('/\n')
@@ -117,6 +127,8 @@ class ExceptionTests(unittest.TestCase):
         try: x = 1/0
         except Exception as e: pass
 
+        self.raise_catch(StopAsyncIteration, "StopAsyncIteration")
+
     def testSyntaxErrorMessage(self):
         # make sure the right exception message is raised for each of
         # these code fragments
@@ -130,15 +142,6 @@ class ExceptionTests(unittest.TestCase):
             else:
                 self.fail("failed to get expected SyntaxError")
 
-        s = '''while 1:
-            try:
-                pass
-            finally:
-                continue'''
-
-        if not sys.platform.startswith('java'):
-            ckmsg(s, "'continue' not supported inside 'finally' clause")
-
         s = '''if 1:
         try:
             continue
@@ -148,18 +151,97 @@ class ExceptionTests(unittest.TestCase):
         ckmsg(s, "'continue' not properly in loop")
         ckmsg("continue\n", "'continue' not properly in loop")
 
+    def testSyntaxErrorMissingParens(self):
+        def ckmsg(src, msg, exception=SyntaxError):
+            try:
+                compile(src, '<fragment>', 'exec')
+            except exception as e:
+                if e.msg != msg:
+                    self.fail("expected %s, got %s" % (msg, e.msg))
+            else:
+                self.fail("failed to get expected SyntaxError")
+
+        s = '''print "old style"'''
+        ckmsg(s, "Missing parentheses in call to 'print'. "
+                 "Did you mean print(\"old style\")?")
+
+        s = '''print "old style",'''
+        ckmsg(s, "Missing parentheses in call to 'print'. "
+                 "Did you mean print(\"old style\", end=\" \")?")
+
+        s = '''exec "old style"'''
+        ckmsg(s, "Missing parentheses in call to 'exec'")
+
+        # should not apply to subclasses, see issue #31161
+        s = '''if True:\nprint "No indent"'''
+        ckmsg(s, "expected an indented block", IndentationError)
+
+        s = '''if True:\n        print()\n\texec "mixed tabs and spaces"'''
+        ckmsg(s, "inconsistent use of tabs and spaces in indentation", TabError)
+
     def testSyntaxErrorOffset(self):
-        def check(src, lineno, offset):
+        def check(src, lineno, offset, encoding='utf-8'):
             with self.assertRaises(SyntaxError) as cm:
                 compile(src, '<fragment>', 'exec')
             self.assertEqual(cm.exception.lineno, lineno)
             self.assertEqual(cm.exception.offset, offset)
+            if cm.exception.text is not None:
+                if not isinstance(src, str):
+                    src = src.decode(encoding, 'replace')
+                line = src.split('\n')[lineno-1]
+                self.assertEqual(cm.exception.text.rstrip('\n'), line)
 
         check('def fact(x):\n\treturn x!\n', 2, 10)
         check('1 +\n', 1, 4)
         check('def spam():\n  print(1)\n print(2)', 3, 10)
         check('Python = "Python" +', 1, 20)
         check('Python = "\u1e54\xfd\u0163\u0125\xf2\xf1" +', 1, 20)
+        check(b'# -*- coding: cp1251 -*-\nPython = "\xcf\xb3\xf2\xee\xed" +',
+              2, 19, encoding='cp1251')
+        check(b'Python = "\xcf\xb3\xf2\xee\xed" +', 1, 18)
+        check('x = "a', 1, 7)
+        check('lambda x: x = 2', 1, 1)
+
+        # Errors thrown by compile.c
+        check('class foo:return 1', 1, 11)
+        check('def f():\n  continue', 2, 3)
+        check('def f():\n  break', 2, 3)
+        check('try:\n  pass\nexcept:\n  pass\nexcept ValueError:\n  pass', 2, 3)
+
+        # Errors thrown by tokenizer.c
+        check('(0x+1)', 1, 3)
+        check('x = 0xI', 1, 6)
+        check('0010 + 2', 1, 4)
+        check('x = 32e-+4', 1, 8)
+        check('x = 0o9', 1, 6)
+        check('\u03b1 = 0xI', 1, 6)
+        check(b'\xce\xb1 = 0xI', 1, 6)
+        check(b'# -*- coding: iso8859-7 -*-\n\xe1 = 0xI', 2, 6,
+              encoding='iso8859-7')
+
+        # Errors thrown by symtable.c
+        check('x = [(yield i) for i in range(3)]', 1, 5)
+        check('def f():\n  from _ import *', 1, 1)
+        check('def f(x, x):\n  pass', 1, 1)
+        check('def f(x):\n  nonlocal x', 2, 3)
+        check('def f(x):\n  x = 1\n  global x', 3, 3)
+        check('nonlocal x', 1, 1)
+        check('def f():\n  global x\n  nonlocal x', 2, 3)
+
+        # Errors thrown by ast.c
+        check('for 1 in []: pass', 1, 5)
+        check('def f(*):\n  pass', 1, 7)
+        check('[*x for x in xs]', 1, 2)
+        check('def f():\n  x, y: int', 2, 3)
+        check('(yield i) = 2', 1, 1)
+        check('foo(x for x in range(10), 100)', 1, 5)
+        check('foo(1=2)', 1, 5)
+
+        # Errors thrown by future.c
+        check('from __future__ import doesnt_exist', 1, 1)
+        check('from __future__ import braces', 1, 1)
+        check('x=1\nfrom __future__ import division', 2, 1)
+
 
     @cpython_only
     def testSettingException(self):
@@ -230,6 +312,7 @@ class ExceptionTests(unittest.TestCase):
             self.assertEqual(w.winerror, 3)
             self.assertEqual(w.strerror, 'foo')
             self.assertEqual(w.filename, 'bar')
+            self.assertEqual(w.filename2, None)
             self.assertEqual(str(w), "[WinError 3] foo: 'bar'")
             # Unknown win error becomes EINVAL (22)
             w = OSError(0, 'foo', None, 1001)
@@ -237,6 +320,7 @@ class ExceptionTests(unittest.TestCase):
             self.assertEqual(w.winerror, 1001)
             self.assertEqual(w.strerror, 'foo')
             self.assertEqual(w.filename, None)
+            self.assertEqual(w.filename2, None)
             self.assertEqual(str(w), "[WinError 1001] foo")
             # Non-numeric "errno"
             w = OSError('bar', 'foo')
@@ -244,6 +328,17 @@ class ExceptionTests(unittest.TestCase):
             self.assertEqual(w.winerror, None)
             self.assertEqual(w.strerror, 'foo')
             self.assertEqual(w.filename, None)
+            self.assertEqual(w.filename2, None)
+
+    @unittest.skipUnless(sys.platform == 'win32',
+                         'test specific to Windows')
+    def test_windows_message(self):
+        """Should fill in unknown error code in Windows error message"""
+        ctypes = import_module('ctypes')
+        # this error code has no message, Python formats it as hexadecimal
+        code = 3765269347
+        with self.assertRaisesRegex(OSError, 'Windows Error 0x%x' % code):
+            ctypes.pythonapi.PyErr_SetFromWindowsErr(code)
 
     def testAttributes(self):
         # test that exception attributes are happy
@@ -258,13 +353,15 @@ class ExceptionTests(unittest.TestCase):
             (SystemExit, ('foo',),
                 {'args' : ('foo',), 'code' : 'foo'}),
             (OSError, ('foo',),
-                {'args' : ('foo',), 'filename' : None,
+                {'args' : ('foo',), 'filename' : None, 'filename2' : None,
                  'errno' : None, 'strerror' : None}),
             (OSError, ('foo', 'bar'),
-                {'args' : ('foo', 'bar'), 'filename' : None,
+                {'args' : ('foo', 'bar'),
+                 'filename' : None, 'filename2' : None,
                  'errno' : 'foo', 'strerror' : 'bar'}),
             (OSError, ('foo', 'bar', 'baz'),
-                {'args' : ('foo', 'bar'), 'filename' : 'baz',
+                {'args' : ('foo', 'bar'),
+                 'filename' : 'baz', 'filename2' : None,
                  'errno' : 'foo', 'strerror' : 'bar'}),
             (OSError, ('foo', 'bar', 'baz', None, 'quux'),
                 {'args' : ('foo', 'bar'), 'filename' : 'baz', 'filename2': 'quux'}),
@@ -274,7 +371,8 @@ class ExceptionTests(unittest.TestCase):
                  'filename' : 'filenameStr'}),
             (OSError, (1, 'strErrorStr', 'filenameStr'),
                 {'args' : (1, 'strErrorStr'), 'errno' : 1,
-                 'strerror' : 'strErrorStr', 'filename' : 'filenameStr'}),
+                 'strerror' : 'strErrorStr',
+                 'filename' : 'filenameStr', 'filename2' : None}),
             (SyntaxError, (), {'msg' : None, 'text' : None,
                 'filename' : None, 'lineno' : None, 'offset' : None,
                 'print_file_and_line' : None}),
@@ -330,7 +428,8 @@ class ExceptionTests(unittest.TestCase):
                 (WindowsError, (1, 'strErrorStr', 'filenameStr'),
                     {'args' : (1, 'strErrorStr'),
                      'strerror' : 'strErrorStr', 'winerror' : None,
-                     'errno' : 1, 'filename' : 'filenameStr'})
+                     'errno' : 1,
+                     'filename' : 'filenameStr', 'filename2' : None})
             )
         except NameError:
             pass
@@ -464,14 +563,14 @@ class ExceptionTests(unittest.TestCase):
     def testInfiniteRecursion(self):
         def f():
             return f()
-        self.assertRaises(RuntimeError, f)
+        self.assertRaises(RecursionError, f)
 
         def g():
             try:
                 return g()
             except ValueError:
                 return -1
-        self.assertRaises(RuntimeError, g)
+        self.assertRaises(RecursionError, g)
 
     def test_str(self):
         # Make sure both instances and classes have a str representation.
@@ -513,7 +612,7 @@ class ExceptionTests(unittest.TestCase):
             pass
         obj = None
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
         # Qualified "except" without "as"
         obj = MyObj()
@@ -524,7 +623,7 @@ class ExceptionTests(unittest.TestCase):
             pass
         obj = None
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
         # Bare "except"
         obj = MyObj()
@@ -535,7 +634,7 @@ class ExceptionTests(unittest.TestCase):
             pass
         obj = None
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
         # "except" with premature block leave
         obj = MyObj()
@@ -547,7 +646,7 @@ class ExceptionTests(unittest.TestCase):
                 break
         obj = None
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
         # "except" block raising another exception
         obj = MyObj()
@@ -568,7 +667,7 @@ class ExceptionTests(unittest.TestCase):
             # guarantee no ref cycles on CPython (don't gc_collect)
             if check_impl_detail(cpython=False):
                 gc_collect()
-            self.assertTrue(obj is None, "%s" % obj)
+            self.assertIsNone(obj)
 
         # Some complicated construct
         obj = MyObj()
@@ -587,7 +686,7 @@ class ExceptionTests(unittest.TestCase):
         if check_impl_detail(cpython=False):
             gc_collect()
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
         # Inside an exception-silencing "with" block
         class Context:
@@ -603,7 +702,7 @@ class ExceptionTests(unittest.TestCase):
         if check_impl_detail(cpython=False):
             gc_collect()
         obj = wr()
-        self.assertTrue(obj is None, "%s" % obj)
+        self.assertIsNone(obj)
 
     def test_exception_target_in_nested_scope(self):
         # issue 4617: This used to raise a SyntaxError
@@ -661,6 +760,52 @@ class ExceptionTests(unittest.TestCase):
             pass
         self.assertEqual(sys.exc_info(), (None, None, None))
 
+    def test_generator_leaking3(self):
+        # See issue #23353.  When gen.throw() is called, the caller's
+        # exception state should be save and restored.
+        def g():
+            try:
+                yield
+            except ZeroDivisionError:
+                yield sys.exc_info()[1]
+        it = g()
+        next(it)
+        try:
+            1/0
+        except ZeroDivisionError as e:
+            self.assertIs(sys.exc_info()[1], e)
+            gen_exc = it.throw(e)
+            self.assertIs(sys.exc_info()[1], e)
+            self.assertIs(gen_exc, e)
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
+    def test_generator_leaking4(self):
+        # See issue #23353.  When an exception is raised by a generator,
+        # the caller's exception state should still be restored.
+        def g():
+            try:
+                1/0
+            except ZeroDivisionError:
+                yield sys.exc_info()[0]
+                raise
+        it = g()
+        try:
+            raise TypeError
+        except TypeError:
+            # The caller's exception state (TypeError) is temporarily
+            # saved in the generator.
+            tp = next(it)
+        self.assertIs(tp, ZeroDivisionError)
+        try:
+            next(it)
+            # We can't check it immediately, but while next() returns
+            # with an exception, it shouldn't have restored the old
+            # exception state (TypeError).
+        except ZeroDivisionError as e:
+            self.assertIs(sys.exc_info()[1], e)
+        # We used to find TypeError here.
+        self.assertEqual(sys.exc_info(), (None, None, None))
+
     def test_generator_doesnt_retain_old_exc(self):
         def g():
             self.assertIsInstance(sys.exc_info()[1], RuntimeError)
@@ -709,7 +854,7 @@ class ExceptionTests(unittest.TestCase):
         testfunc(g)
         g = obj = None
         obj = wr()
-        self.assertIs(obj, None)
+        self.assertIsNone(obj)
 
     def test_generator_throw_cleanup_exc_state(self):
         def do_throw(g):
@@ -816,7 +961,7 @@ class ExceptionTests(unittest.TestCase):
         class MyException(Exception, metaclass=Meta):
             pass
 
-        with captured_output("stderr") as stderr:
+        with captured_stderr() as stderr:
             try:
                 raise KeyError()
             except MyException as e:
@@ -831,12 +976,111 @@ class ExceptionTests(unittest.TestCase):
         def g():
             try:
                 return g()
-            except RuntimeError:
+            except RecursionError:
                 return sys.exc_info()
         e, v, tb = g()
-        self.assertTrue(isinstance(v, RuntimeError), type(v))
+        self.assertIsInstance(v, RecursionError, type(v))
         self.assertIn("maximum recursion depth exceeded", str(v))
 
+    @cpython_only
+    def test_recursion_normalizing_exception(self):
+        # Issue #22898.
+        # Test that a RecursionError is raised when tstate->recursion_depth is
+        # equal to recursion_limit in PyErr_NormalizeException() and check
+        # that a ResourceWarning is printed.
+        # Prior to #22898, the recursivity of PyErr_NormalizeException() was
+        # controlled by tstate->recursion_depth and a PyExc_RecursionErrorInst
+        # singleton was being used in that case, that held traceback data and
+        # locals indefinitely and would cause a segfault in _PyExc_Fini() upon
+        # finalization of these locals.
+        code = """if 1:
+            import sys
+            from _testcapi import get_recursion_depth
+
+            class MyException(Exception): pass
+
+            def setrecursionlimit(depth):
+                while 1:
+                    try:
+                        sys.setrecursionlimit(depth)
+                        return depth
+                    except RecursionError:
+                        # sys.setrecursionlimit() raises a RecursionError if
+                        # the new recursion limit is too low (issue #25274).
+                        depth += 1
+
+            def recurse(cnt):
+                cnt -= 1
+                if cnt:
+                    recurse(cnt)
+                else:
+                    generator.throw(MyException)
+
+            def gen():
+                f = open(%a, mode='rb', buffering=0)
+                yield
+
+            generator = gen()
+            next(generator)
+            recursionlimit = sys.getrecursionlimit()
+            depth = get_recursion_depth()
+            try:
+                # Upon the last recursive invocation of recurse(),
+                # tstate->recursion_depth is equal to (recursion_limit - 1)
+                # and is equal to recursion_limit when _gen_throw() calls
+                # PyErr_NormalizeException().
+                recurse(setrecursionlimit(depth + 2) - depth - 1)
+            finally:
+                sys.setrecursionlimit(recursionlimit)
+                print('Done.')
+        """ % __file__
+        rc, out, err = script_helper.assert_python_failure("-Wd", "-c", code)
+        # Check that the program does not fail with SIGABRT.
+        self.assertEqual(rc, 1)
+        self.assertIn(b'RecursionError', err)
+        self.assertIn(b'ResourceWarning', err)
+        self.assertIn(b'Done.', out)
+
+    @cpython_only
+    def test_recursion_normalizing_infinite_exception(self):
+        # Issue #30697. Test that a RecursionError is raised when
+        # PyErr_NormalizeException() maximum recursion depth has been
+        # exceeded.
+        code = """if 1:
+            import _testcapi
+            try:
+                raise _testcapi.RecursingInfinitelyError
+            finally:
+                print('Done.')
+        """
+        rc, out, err = script_helper.assert_python_failure("-c", code)
+        self.assertEqual(rc, 1)
+        self.assertIn(b'RecursionError: maximum recursion depth exceeded '
+                      b'while normalizing an exception', err)
+        self.assertIn(b'Done.', out)
+
+    @cpython_only
+    def test_recursion_normalizing_with_no_memory(self):
+        # Issue #30697. Test that in the abort that occurs when there is no
+        # memory left and the size of the Python frames stack is greater than
+        # the size of the list of preallocated MemoryError instances, the
+        # Fatal Python error message mentions MemoryError.
+        code = """if 1:
+            import _testcapi
+            class C(): pass
+            def recurse(cnt):
+                cnt -= 1
+                if cnt:
+                    recurse(cnt)
+                else:
+                    _testcapi.set_nomemory(0)
+                    C()
+            recurse(16)
+        """
+        with SuppressCrashReport():
+            rc, out, err = script_helper.assert_python_failure("-c", code)
+            self.assertIn(b'Fatal Python error: Cannot recover from '
+                          b'MemoryErrors while normalizing exceptions.', err)
 
     @cpython_only
     def test_MemoryError(self):
@@ -933,10 +1177,10 @@ class ExceptionTests(unittest.TestCase):
         # We cannot use assertRaises since it manually deletes the traceback
         try:
             inner()
-        except RuntimeError as e:
+        except RecursionError as e:
             self.assertNotEqual(wr(), None)
         else:
-            self.fail("RuntimeError not raised")
+            self.fail("RecursionError not raised")
         self.assertEqual(wr(), None)
 
     def test_errno_ENOTDIR(self):
@@ -945,6 +1189,144 @@ class ExceptionTests(unittest.TestCase):
             os.listdir(__file__)
         self.assertEqual(cm.exception.errno, errno.ENOTDIR, cm.exception)
 
+    def test_unraisable(self):
+        # Issue #22836: PyErr_WriteUnraisable() should give sensible reports
+        class BrokenDel:
+            def __del__(self):
+                exc = ValueError("del is broken")
+                # The following line is included in the traceback report:
+                raise exc
+
+        obj = BrokenDel()
+        with support.catch_unraisable_exception() as cm:
+            del obj
+
+            self.assertEqual(cm.unraisable.object, BrokenDel.__del__)
+            self.assertIsNotNone(cm.unraisable.exc_traceback)
+
+    def test_unhandled(self):
+        # Check for sensible reporting of unhandled exceptions
+        for exc_type in (ValueError, BrokenStrException):
+            with self.subTest(exc_type):
+                try:
+                    exc = exc_type("test message")
+                    # The following line is included in the traceback report:
+                    raise exc
+                except exc_type:
+                    with captured_stderr() as stderr:
+                        sys.__excepthook__(*sys.exc_info())
+                report = stderr.getvalue()
+                self.assertIn("test_exceptions.py", report)
+                self.assertIn("raise exc", report)
+                self.assertIn(exc_type.__name__, report)
+                if exc_type is BrokenStrException:
+                    self.assertIn("<exception str() failed>", report)
+                else:
+                    self.assertIn("test message", report)
+                self.assertTrue(report.endswith("\n"))
+
+    @cpython_only
+    def test_memory_error_in_PyErr_PrintEx(self):
+        code = """if 1:
+            import _testcapi
+            class C(): pass
+            _testcapi.set_nomemory(0, %d)
+            C()
+        """
+
+        # Issue #30817: Abort in PyErr_PrintEx() when no memory.
+        # Span a large range of tests as the CPython code always evolves with
+        # changes that add or remove memory allocations.
+        for i in range(1, 20):
+            rc, out, err = script_helper.assert_python_failure("-c", code % i)
+            self.assertIn(rc, (1, 120))
+            self.assertIn(b'MemoryError', err)
+
+    def test_yield_in_nested_try_excepts(self):
+        #Issue #25612
+        class MainError(Exception):
+            pass
+
+        class SubError(Exception):
+            pass
+
+        def main():
+            try:
+                raise MainError()
+            except MainError:
+                try:
+                    yield
+                except SubError:
+                    pass
+                raise
+
+        coro = main()
+        coro.send(None)
+        with self.assertRaises(MainError):
+            coro.throw(SubError())
+
+    def test_generator_doesnt_retain_old_exc2(self):
+        #Issue 28884#msg282532
+        def g():
+            try:
+                raise ValueError
+            except ValueError:
+                yield 1
+            self.assertEqual(sys.exc_info(), (None, None, None))
+            yield 2
+
+        gen = g()
+
+        try:
+            raise IndexError
+        except IndexError:
+            self.assertEqual(next(gen), 1)
+        self.assertEqual(next(gen), 2)
+
+    def test_raise_in_generator(self):
+        #Issue 25612#msg304117
+        def g():
+            yield 1
+            raise
+            yield 2
+
+        with self.assertRaises(ZeroDivisionError):
+            i = g()
+            try:
+                1/0
+            except:
+                next(i)
+                next(i)
+
+    def test_memory_error_subclasses(self):
+        # bpo-41654: MemoryError instances use a freelist of objects that are
+        # linked using the 'dict' attribute when they are inactive/dead.
+        # Subclasses of MemoryError should not participate in the freelist
+        # schema. This test creates a MemoryError object and keeps it alive
+        # (therefore advancing the freelist) and then it creates and destroys a
+        # subclass object. Finally, it checks that creating a new MemoryError
+        # succeeds, proving that the freelist is not corrupted.
+
+        class TestException(MemoryError):
+            pass
+
+        try:
+            raise MemoryError
+        except MemoryError as exc:
+            inst = exc
+
+        try:
+            raise TestException
+        except Exception:
+            pass
+
+        for _ in range(10):
+            try:
+                raise MemoryError
+            except MemoryError as exc:
+                pass
+
+            gc_collect()
 
 class ImportErrorTests(unittest.TestCase):
 
@@ -966,12 +1348,61 @@ class ImportErrorTests(unittest.TestCase):
         self.assertEqual(exc.name, 'somename')
         self.assertEqual(exc.path, 'somepath')
 
+        msg = "'invalid' is an invalid keyword argument for ImportError"
+        with self.assertRaisesRegex(TypeError, msg):
+            ImportError('test', invalid='keyword')
+
+        with self.assertRaisesRegex(TypeError, msg):
+            ImportError('test', name='name', invalid='keyword')
+
+        with self.assertRaisesRegex(TypeError, msg):
+            ImportError('test', path='path', invalid='keyword')
+
+        with self.assertRaisesRegex(TypeError, msg):
+            ImportError(invalid='keyword')
+
+        with self.assertRaisesRegex(TypeError, msg):
+            ImportError('test', invalid='keyword', another=True)
+
+    def test_reset_attributes(self):
+        exc = ImportError('test', name='name', path='path')
+        self.assertEqual(exc.args, ('test',))
+        self.assertEqual(exc.msg, 'test')
+        self.assertEqual(exc.name, 'name')
+        self.assertEqual(exc.path, 'path')
+
+        # Reset not specified attributes
+        exc.__init__()
+        self.assertEqual(exc.args, ())
+        self.assertEqual(exc.msg, None)
+        self.assertEqual(exc.name, None)
+        self.assertEqual(exc.path, None)
+
     def test_non_str_argument(self):
         # Issue #15778
         with check_warnings(('', BytesWarning), quiet=True):
             arg = b'abc'
             exc = ImportError(arg)
             self.assertEqual(str(arg), str(exc))
+
+    def test_copy_pickle(self):
+        for kwargs in (dict(),
+                       dict(name='somename'),
+                       dict(path='somepath'),
+                       dict(name='somename', path='somepath')):
+            orig = ImportError('test', **kwargs)
+            for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+                exc = pickle.loads(pickle.dumps(orig, proto))
+                self.assertEqual(exc.args, ('test',))
+                self.assertEqual(exc.msg, 'test')
+                self.assertEqual(exc.name, orig.name)
+                self.assertEqual(exc.path, orig.path)
+            for c in copy.copy, copy.deepcopy:
+                exc = c(orig)
+                self.assertEqual(exc.args, ('test',))
+                self.assertEqual(exc.msg, 'test')
+                self.assertEqual(exc.name, orig.name)
+                self.assertEqual(exc.path, orig.path)
 
 
 if __name__ == '__main__':

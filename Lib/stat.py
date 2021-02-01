@@ -40,6 +40,10 @@ S_IFREG  = 0o100000  # regular file
 S_IFIFO  = 0o010000  # fifo (named pipe)
 S_IFLNK  = 0o120000  # symbolic link
 S_IFSOCK = 0o140000  # socket file
+# Fallbacks for uncommon platform-specific constants
+S_IFDOOR = 0
+S_IFPORT = 0
+S_IFWHT = 0
 
 # Functions to test for each file type
 
@@ -70,6 +74,18 @@ def S_ISLNK(mode):
 def S_ISSOCK(mode):
     """Return True if mode is from a socket."""
     return S_IFMT(mode) == S_IFSOCK
+
+def S_ISDOOR(mode):
+    """Return True if mode is from a door."""
+    return False
+
+def S_ISPORT(mode):
+    """Return True if mode is from an event port."""
+    return False
+
+def S_ISWHT(mode):
+    """Return True if mode is from a whiteout."""
+    return False
 
 # Names for permission bits
 
@@ -111,6 +127,7 @@ SF_SNAPSHOT  = 0x00200000  # file is a snapshot file
 
 _filemode_table = (
     ((S_IFLNK,         "l"),
+     (S_IFSOCK,        "s"),  # Must appear before IFREG and IFDIR as IFSOCK == IFREG | IFDIR
      (S_IFREG,         "-"),
      (S_IFBLK,         "b"),
      (S_IFDIR,         "d"),
@@ -147,6 +164,29 @@ def filemode(mode):
         else:
             perm.append("-")
     return "".join(perm)
+
+
+# Windows FILE_ATTRIBUTE constants for interpreting os.stat()'s
+# "st_file_attributes" member
+
+FILE_ATTRIBUTE_ARCHIVE = 32
+FILE_ATTRIBUTE_COMPRESSED = 2048
+FILE_ATTRIBUTE_DEVICE = 64
+FILE_ATTRIBUTE_DIRECTORY = 16
+FILE_ATTRIBUTE_ENCRYPTED = 16384
+FILE_ATTRIBUTE_HIDDEN = 2
+FILE_ATTRIBUTE_INTEGRITY_STREAM = 32768
+FILE_ATTRIBUTE_NORMAL = 128
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 8192
+FILE_ATTRIBUTE_NO_SCRUB_DATA = 131072
+FILE_ATTRIBUTE_OFFLINE = 4096
+FILE_ATTRIBUTE_READONLY = 1
+FILE_ATTRIBUTE_REPARSE_POINT = 1024
+FILE_ATTRIBUTE_SPARSE_FILE = 512
+FILE_ATTRIBUTE_SYSTEM = 4
+FILE_ATTRIBUTE_TEMPORARY = 256
+FILE_ATTRIBUTE_VIRTUAL = 65536
+
 
 # If available, use C implementation
 try:

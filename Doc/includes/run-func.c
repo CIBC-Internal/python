@@ -1,9 +1,10 @@
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 int
 main(int argc, char *argv[])
 {
-    PyObject *pName, *pModule, *pDict, *pFunc;
+    PyObject *pName, *pModule, *pFunc;
     PyObject *pArgs, *pValue;
     int i;
 
@@ -13,7 +14,7 @@ main(int argc, char *argv[])
     }
 
     Py_Initialize();
-    pName = PyUnicode_FromString(argv[1]);
+    pName = PyUnicode_DecodeFSDefault(argv[1]);
     /* Error checking of pName left out */
 
     pModule = PyImport_Import(pName);
@@ -63,6 +64,8 @@ main(int argc, char *argv[])
         fprintf(stderr, "Failed to load \"%s\"\n", argv[1]);
         return 1;
     }
-    Py_Finalize();
+    if (Py_FinalizeEx() < 0) {
+        return 120;
+    }
     return 0;
 }

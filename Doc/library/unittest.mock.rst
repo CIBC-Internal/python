@@ -4,10 +4,15 @@
 
 .. module:: unittest.mock
    :synopsis: Mock object library.
+
 .. moduleauthor:: Michael Foord <michael@python.org>
 .. currentmodule:: unittest.mock
 
 .. versionadded:: 3.3
+
+**Source code:** :source:`Lib/unittest/mock.py`
+
+--------------
 
 :mod:`unittest.mock` is a library for testing in Python. It allows you to
 replace parts of your system under test with mock objects and make assertions
@@ -30,13 +35,27 @@ is based on the 'action -> assertion' pattern instead of 'record -> replay'
 used by many mocking frameworks.
 
 There is a backport of :mod:`unittest.mock` for earlier versions of Python,
-available as `mock on PyPI <https://pypi.python.org/pypi/mock>`_.
-
-**Source code:** :source:`Lib/unittest/mock.py`
+available as `mock on PyPI <https://pypi.org/project/mock>`_.
 
 
 Quick Guide
 -----------
+
+.. testsetup::
+
+    class ProductionClass:
+        def method(self, a, b, c):
+            pass
+
+    class SomeClass:
+        @staticmethod
+        def static_method(args):
+            return args
+
+        @classmethod
+        def class_method(cls, args):
+            return args
+
 
 :class:`Mock` and :class:`MagicMock` objects create all attributes and
 methods as you access them and store details of how they have been used. You
@@ -77,7 +96,7 @@ that don't exist on the spec will fail with an :exc:`AttributeError`.
 
 The :func:`patch` decorator / context manager makes it easy to mock classes or
 objects in a module under test. The object you specify will be replaced with a
-mock (or other object) during the test and restored when the test ends:
+mock (or other object) during the test and restored when the test ends::
 
     >>> from unittest.mock import patch
     >>> @patch('module.ClassName2')
@@ -95,7 +114,7 @@ mock (or other object) during the test and restored when the test ends:
 .. note::
 
    When you nest patch decorators the mocks are passed in to the decorated
-   function in the same order they applied (the normal *python* order that
+   function in the same order they applied (the normal *Python* order that
    decorators are applied). This means from the bottom up, so in the example
    above the mock for ``module.ClassName1`` is passed in first.
 
@@ -180,72 +199,86 @@ the ``__call__`` method.
 The Mock Class
 --------------
 
+.. testsetup::
 
-`Mock` is a flexible mock object intended to replace the use of stubs and
+    import asyncio
+    import inspect
+    import unittest
+    from unittest.mock import sentinel, DEFAULT, ANY
+    from unittest.mock import patch, call, Mock, MagicMock, PropertyMock, AsyncMock
+    from unittest.mock import mock_open
+
+:class:`Mock` is a flexible mock object intended to replace the use of stubs and
 test doubles throughout your code. Mocks are callable and create attributes as
 new mocks when you access them [#]_. Accessing the same attribute will always
 return the same mock. Mocks record how you use them, allowing you to make
 assertions about what your code has done to them.
 
-:class:`MagicMock` is a subclass of `Mock` with all the magic methods
+:class:`MagicMock` is a subclass of :class:`Mock` with all the magic methods
 pre-created and ready to use. There are also non-callable variants, useful
 when you are mocking out objects that aren't callable:
 :class:`NonCallableMock` and :class:`NonCallableMagicMock`
 
 The :func:`patch` decorators makes it easy to temporarily replace classes
-in a particular module with a `Mock` object. By default `patch` will create
-a `MagicMock` for you. You can specify an alternative class of `Mock` using
-the `new_callable` argument to `patch`.
+in a particular module with a :class:`Mock` object. By default :func:`patch` will create
+a :class:`MagicMock` for you. You can specify an alternative class of :class:`Mock` using
+the *new_callable* argument to :func:`patch`.
 
 
-.. class:: Mock(spec=None, side_effect=None, return_value=DEFAULT, wraps=None, name=None, spec_set=None, **kwargs)
+.. class:: Mock(spec=None, side_effect=None, return_value=DEFAULT, wraps=None, name=None, spec_set=None, unsafe=False, **kwargs)
 
-    Create a new `Mock` object. `Mock` takes several optional arguments
+    Create a new :class:`Mock` object. :class:`Mock` takes several optional arguments
     that specify the behaviour of the Mock object:
 
-    * `spec`: This can be either a list of strings or an existing object (a
+    * *spec*: This can be either a list of strings or an existing object (a
       class or instance) that acts as the specification for the mock object. If
       you pass in an object then a list of strings is formed by calling dir on
       the object (excluding unsupported magic attributes and methods).
-      Accessing any attribute not in this list will raise an `AttributeError`.
+      Accessing any attribute not in this list will raise an :exc:`AttributeError`.
 
-      If `spec` is an object (rather than a list of strings) then
+      If *spec* is an object (rather than a list of strings) then
       :attr:`~instance.__class__` returns the class of the spec object. This
-      allows mocks to pass `isinstance` tests.
+      allows mocks to pass :func:`isinstance` tests.
 
-    * `spec_set`: A stricter variant of `spec`. If used, attempting to *set*
+    * *spec_set*: A stricter variant of *spec*. If used, attempting to *set*
       or get an attribute on the mock that isn't on the object passed as
-      `spec_set` will raise an `AttributeError`.
+      *spec_set* will raise an :exc:`AttributeError`.
 
-    * `side_effect`: A function to be called whenever the Mock is called. See
+    * *side_effect*: A function to be called whenever the Mock is called. See
       the :attr:`~Mock.side_effect` attribute. Useful for raising exceptions or
       dynamically changing return values. The function is called with the same
       arguments as the mock, and unless it returns :data:`DEFAULT`, the return
       value of this function is used as the return value.
 
-      Alternatively `side_effect` can be an exception class or instance. In
+      Alternatively *side_effect* can be an exception class or instance. In
       this case the exception will be raised when the mock is called.
 
-      If `side_effect` is an iterable then each call to the mock will return
+      If *side_effect* is an iterable then each call to the mock will return
       the next value from the iterable.
 
-      A `side_effect` can be cleared by setting it to `None`.
+      A *side_effect* can be cleared by setting it to ``None``.
 
-    * `return_value`: The value returned when the mock is called. By default
+    * *return_value*: The value returned when the mock is called. By default
       this is a new Mock (created on first access). See the
       :attr:`return_value` attribute.
 
-    * `wraps`: Item for the mock object to wrap. If `wraps` is not None then
+    * *unsafe*: By default if any attribute starts with *assert* or
+      *assret* will raise an :exc:`AttributeError`. Passing ``unsafe=True``
+      will allow access to these attributes.
+
+      .. versionadded:: 3.5
+
+    * *wraps*: Item for the mock object to wrap. If *wraps* is not ``None`` then
       calling the Mock will pass the call through to the wrapped object
       (returning the real result). Attribute access on the mock will return a
       Mock object that wraps the corresponding attribute of the wrapped
       object (so attempting to access an attribute that doesn't exist will
-      raise an `AttributeError`).
+      raise an :exc:`AttributeError`).
 
-      If the mock has an explicit `return_value` set then calls are not passed
-      to the wrapped object and the `return_value` is returned instead.
+      If the mock has an explicit *return_value* set then calls are not passed
+      to the wrapped object and the *return_value* is returned instead.
 
-    * `name`: If the mock has a name then it will be used in the repr of the
+    * *name*: If the mock has a name then it will be used in the repr of the
       mock. This can be useful for debugging. The name is propagated to child
       mocks.
 
@@ -253,11 +286,39 @@ the `new_callable` argument to `patch`.
     used to set attributes on the mock after it is created. See the
     :meth:`configure_mock` method for details.
 
+    .. method:: assert_called()
+
+        Assert that the mock was called at least once.
+
+            >>> mock = Mock()
+            >>> mock.method()
+            <Mock name='mock.method()' id='...'>
+            >>> mock.method.assert_called()
+
+        .. versionadded:: 3.6
+
+    .. method:: assert_called_once()
+
+        Assert that the mock was called exactly once.
+
+            >>> mock = Mock()
+            >>> mock.method()
+            <Mock name='mock.method()' id='...'>
+            >>> mock.method.assert_called_once()
+            >>> mock.method()
+            <Mock name='mock.method()' id='...'>
+            >>> mock.method.assert_called_once()
+            Traceback (most recent call last):
+            ...
+            AssertionError: Expected 'method' to have been called once. Called 2 times.
+
+        .. versionadded:: 3.6
+
 
     .. method:: assert_called_with(*args, **kwargs)
 
-        This method is a convenient way of asserting that calls are made in a
-        particular way:
+        This method is a convenient way of asserting that the last call has been
+        made in a particular way:
 
             >>> mock = Mock()
             >>> mock.method(1, 2, 3, test='wow')
@@ -266,14 +327,14 @@ the `new_callable` argument to `patch`.
 
     .. method:: assert_called_once_with(*args, **kwargs)
 
-       Assert that the mock was called exactly once and with the specified
-       arguments.
+       Assert that the mock was called exactly once and that that call was
+       with the specified arguments.
 
             >>> mock = Mock(return_value=None)
             >>> mock('foo', bar='baz')
             >>> mock.assert_called_once_with('foo', bar='baz')
-            >>> mock('foo', bar='baz')
-            >>> mock.assert_called_once_with('foo', bar='baz')
+            >>> mock('other', bar='values')
+            >>> mock.assert_called_once_with('other', bar='values')
             Traceback (most recent call last):
               ...
             AssertionError: Expected 'mock' to be called once. Called 2 times.
@@ -285,7 +346,8 @@ the `new_callable` argument to `patch`.
 
         The assert passes if the mock has *ever* been called, unlike
         :meth:`assert_called_with` and :meth:`assert_called_once_with` that
-        only pass if the call is the most recent one.
+        only pass if the call is the most recent one, and in the case of
+        :meth:`assert_called_once_with` it must also be the only call.
 
             >>> mock = Mock(return_value=None)
             >>> mock(1, 2, arg='thing')
@@ -298,7 +360,7 @@ the `new_callable` argument to `patch`.
         assert the mock has been called with the specified calls.
         The :attr:`mock_calls` list is checked for the calls.
 
-        If *any_order* is false (the default) then the calls must be
+        If *any_order* is false then the calls must be
         sequential. There can be extra calls before or after the
         specified calls.
 
@@ -315,8 +377,22 @@ the `new_callable` argument to `patch`.
             >>> calls = [call(4), call(2), call(3)]
             >>> mock.assert_has_calls(calls, any_order=True)
 
+    .. method:: assert_not_called()
 
-    .. method:: reset_mock()
+        Assert the mock was never called.
+
+            >>> m = Mock()
+            >>> m.hello.assert_not_called()
+            >>> obj = m.hello()
+            >>> m.hello.assert_not_called()
+            Traceback (most recent call last):
+              ...
+            AssertionError: Expected 'hello' to not have been called. Called 1 times.
+
+        .. versionadded:: 3.5
+
+
+    .. method:: reset_mock(*, return_value=False, side_effect=False)
 
         The reset_mock method resets all the call attributes on a mock object:
 
@@ -328,11 +404,19 @@ the `new_callable` argument to `patch`.
             >>> mock.called
             False
 
+        .. versionchanged:: 3.6
+           Added two keyword only argument to the reset_mock function.
+
         This can be useful where you want to make a series of assertions that
         reuse the same object. Note that :meth:`reset_mock` *doesn't* clear the
         return value, :attr:`side_effect` or any child attributes you have
-        set using normal assignment. Child mocks and the return value mock
+        set using normal assignment by default. In case you want to reset
+        *return_value* or :attr:`side_effect`, then pass the corresponding
+        parameter as ``True``. Child mocks and the return value mock
         (if any) are reset as well.
+
+        .. note:: *return_value*, and :attr:`side_effect` are keyword only
+                  argument.
 
 
     .. method:: mock_add_spec(spec, spec_set=False)
@@ -430,7 +514,6 @@ the `new_callable` argument to `patch`.
             >>> mock.call_count
             2
 
-
     .. attribute:: return_value
 
         Set this to configure the value returned by calling the mock:
@@ -527,12 +610,14 @@ the `new_callable` argument to `patch`.
 
         This is either ``None`` (if the mock hasn't been called), or the
         arguments that the mock was last called with. This will be in the
-        form of a tuple: the first member is any ordered arguments the mock
-        was called with (or an empty tuple) and the second member is any
-        keyword arguments (or an empty dictionary).
+        form of a tuple: the first member, which can also be accessed through
+        the ``args`` property, is any ordered arguments the mock was
+        called with (or an empty tuple) and the second member, which can
+        also be accessed through the ``kwargs`` property, is any keyword
+        arguments (or an empty dictionary).
 
             >>> mock = Mock(return_value=None)
-            >>> print mock.call_args
+            >>> print(mock.call_args)
             None
             >>> mock()
             >>> mock.call_args
@@ -544,15 +629,26 @@ the `new_callable` argument to `patch`.
             call(3, 4)
             >>> mock.call_args == ((3, 4),)
             True
+            >>> mock.call_args.args
+            (3, 4)
+            >>> mock.call_args.kwargs
+            {}
             >>> mock(3, 4, 5, key='fish', next='w00t!')
             >>> mock.call_args
             call(3, 4, 5, key='fish', next='w00t!')
+            >>> mock.call_args.args
+            (3, 4, 5)
+            >>> mock.call_args.kwargs
+            {'key': 'fish', 'next': 'w00t!'}
 
         :attr:`call_args`, along with members of the lists :attr:`call_args_list`,
         :attr:`method_calls` and :attr:`mock_calls` are :data:`call` objects.
         These are tuples, so they can be unpacked to get at the individual
         arguments and make more complex assertions. See
         :ref:`calls as tuples <calls-as-tuples>`.
+
+        .. versionchanged:: 3.8
+           Added ``args`` and ``kwargs`` properties.
 
 
     .. attribute:: call_args_list
@@ -620,6 +716,19 @@ the `new_callable` argument to `patch`.
         unpacked as tuples to get at the individual arguments. See
         :ref:`calls as tuples <calls-as-tuples>`.
 
+        .. note::
+
+            The way :attr:`mock_calls` are recorded means that where nested
+            calls are made, the parameters of ancestor calls are not recorded
+            and so will always compare equal:
+
+                >>> mock = MagicMock()
+                >>> mock.top(a=3).bottom()
+                <MagicMock name='mock.top().bottom()' id='...'>
+                >>> mock.mock_calls
+                [call.top(a=3), call.top().bottom()]
+                >>> mock.mock_calls[-1] == call.top(a=-1).bottom()
+                True
 
     .. attribute:: __class__
 
@@ -714,7 +823,7 @@ apply to method calls on the mock object.
    so you can specify a return value when it is fetched.
 
    Fetching a :class:`PropertyMock` instance from an object calls the mock, with
-   no args. Setting it calls the mock with the value being set.
+   no args. Setting it calls the mock with the value being set. ::
 
         >>> class Foo:
         ...     @property
@@ -727,7 +836,7 @@ apply to method calls on the mock object.
         >>> with patch('__main__.Foo.foo', new_callable=PropertyMock) as mock_foo:
         ...     mock_foo.return_value = 'mockity-mock'
         ...     this_foo = Foo()
-        ...     print this_foo.foo
+        ...     print(this_foo.foo)
         ...     this_foo.foo = 6
         ...
         mockity-mock
@@ -744,6 +853,248 @@ object::
     >>> m.foo
     3
     >>> p.assert_called_once_with()
+
+
+.. class:: AsyncMock(spec=None, side_effect=None, return_value=DEFAULT, wraps=None, name=None, spec_set=None, unsafe=False, **kwargs)
+
+  An asynchronous version of :class:`Mock`. The :class:`AsyncMock` object will
+  behave so the object is recognized as an async function, and the result of a
+  call is an awaitable.
+
+    >>> mock = AsyncMock()
+    >>> asyncio.iscoroutinefunction(mock)
+    True
+    >>> inspect.isawaitable(mock())  # doctest: +SKIP
+    True
+
+  The result of ``mock()`` is an async function which will have the outcome
+  of ``side_effect`` or ``return_value`` after it has been awaited:
+
+  - if ``side_effect`` is a function, the async function will return the
+    result of that function,
+  - if ``side_effect`` is an exception, the async function will raise the
+    exception,
+  - if ``side_effect`` is an iterable, the async function will return the
+    next value of the iterable, however, if the sequence of result is
+    exhausted, ``StopAsyncIteration`` is raised immediately,
+  - if ``side_effect`` is not defined, the async function will return the
+    value defined by ``return_value``, hence, by default, the async function
+    returns a new :class:`AsyncMock` object.
+
+
+  Setting the *spec* of a :class:`Mock` or :class:`MagicMock` to an async function
+  will result in a coroutine object being returned after calling.
+
+    >>> async def async_func(): pass
+    ...
+    >>> mock = MagicMock(async_func)
+    >>> mock
+    <MagicMock spec='function' id='...'>
+    >>> mock()  # doctest: +SKIP
+    <coroutine object AsyncMockMixin._mock_call at ...>
+
+
+  Setting the *spec* of a :class:`Mock`, :class:`MagicMock`, or :class:`AsyncMock`
+  to a class with asynchronous and synchronous functions will automatically
+  detect the synchronous functions and set them as :class:`MagicMock` (if the
+  parent mock is :class:`AsyncMock` or :class:`MagicMock`) or :class:`Mock` (if
+  the parent mock is :class:`Mock`). All asynchronous functions will be
+  :class:`AsyncMock`.
+
+  >>> class ExampleClass:
+  ...     def sync_foo():
+  ...         pass
+  ...     async def async_foo():
+  ...         pass
+  ...
+  >>> a_mock = AsyncMock(ExampleClass)
+  >>> a_mock.sync_foo
+  <MagicMock name='mock.sync_foo' id='...'>
+  >>> a_mock.async_foo
+  <AsyncMock name='mock.async_foo' id='...'>
+  >>> mock = Mock(ExampleClass)
+  >>> mock.sync_foo
+  <Mock name='mock.sync_foo' id='...'>
+  >>> mock.async_foo
+  <AsyncMock name='mock.async_foo' id='...'>
+
+  .. versionadded:: 3.8
+
+  .. method:: assert_awaited()
+
+      Assert that the mock was awaited at least once. Note that this is separate
+      from the object having been called, the ``await`` keyword must be used:
+
+          >>> mock = AsyncMock()
+          >>> async def main(coroutine_mock):
+          ...     await coroutine_mock
+          ...
+          >>> coroutine_mock = mock()
+          >>> mock.called
+          True
+          >>> mock.assert_awaited()
+          Traceback (most recent call last):
+          ...
+          AssertionError: Expected mock to have been awaited.
+          >>> asyncio.run(main(coroutine_mock))
+          >>> mock.assert_awaited()
+
+  .. method:: assert_awaited_once()
+
+      Assert that the mock was awaited exactly once.
+
+        >>> mock = AsyncMock()
+        >>> async def main():
+        ...     await mock()
+        ...
+        >>> asyncio.run(main())
+        >>> mock.assert_awaited_once()
+        >>> asyncio.run(main())
+        >>> mock.method.assert_awaited_once()
+        Traceback (most recent call last):
+        ...
+        AssertionError: Expected mock to have been awaited once. Awaited 2 times.
+
+  .. method:: assert_awaited_with(*args, **kwargs)
+
+      Assert that the last await was with the specified arguments.
+
+        >>> mock = AsyncMock()
+        >>> async def main(*args, **kwargs):
+        ...     await mock(*args, **kwargs)
+        ...
+        >>> asyncio.run(main('foo', bar='bar'))
+        >>> mock.assert_awaited_with('foo', bar='bar')
+        >>> mock.assert_awaited_with('other')
+        Traceback (most recent call last):
+        ...
+        AssertionError: expected call not found.
+        Expected: mock('other')
+        Actual: mock('foo', bar='bar')
+
+  .. method:: assert_awaited_once_with(*args, **kwargs)
+
+      Assert that the mock was awaited exactly once and with the specified
+      arguments.
+
+        >>> mock = AsyncMock()
+        >>> async def main(*args, **kwargs):
+        ...     await mock(*args, **kwargs)
+        ...
+        >>> asyncio.run(main('foo', bar='bar'))
+        >>> mock.assert_awaited_once_with('foo', bar='bar')
+        >>> asyncio.run(main('foo', bar='bar'))
+        >>> mock.assert_awaited_once_with('foo', bar='bar')
+        Traceback (most recent call last):
+        ...
+        AssertionError: Expected mock to have been awaited once. Awaited 2 times.
+
+  .. method:: assert_any_await(*args, **kwargs)
+
+      Assert the mock has ever been awaited with the specified arguments.
+
+        >>> mock = AsyncMock()
+        >>> async def main(*args, **kwargs):
+        ...     await mock(*args, **kwargs)
+        ...
+        >>> asyncio.run(main('foo', bar='bar'))
+        >>> asyncio.run(main('hello'))
+        >>> mock.assert_any_await('foo', bar='bar')
+        >>> mock.assert_any_await('other')
+        Traceback (most recent call last):
+        ...
+        AssertionError: mock('other') await not found
+
+  .. method:: assert_has_awaits(calls, any_order=False)
+
+      Assert the mock has been awaited with the specified calls.
+      The :attr:`await_args_list` list is checked for the awaits.
+
+      If *any_order* is false then the awaits must be
+      sequential. There can be extra calls before or after the
+      specified awaits.
+
+      If *any_order* is true then the awaits can be in any order, but
+      they must all appear in :attr:`await_args_list`.
+
+        >>> mock = AsyncMock()
+        >>> async def main(*args, **kwargs):
+        ...     await mock(*args, **kwargs)
+        ...
+        >>> calls = [call("foo"), call("bar")]
+        >>> mock.assert_has_awaits(calls)
+        Traceback (most recent call last):
+        ...
+        AssertionError: Awaits not found.
+        Expected: [call('foo'), call('bar')]
+        Actual: []
+        >>> asyncio.run(main('foo'))
+        >>> asyncio.run(main('bar'))
+        >>> mock.assert_has_awaits(calls)
+
+  .. method:: assert_not_awaited()
+
+    Assert that the mock was never awaited.
+
+        >>> mock = AsyncMock()
+        >>> mock.assert_not_awaited()
+
+  .. method:: reset_mock(*args, **kwargs)
+
+    See :func:`Mock.reset_mock`. Also sets :attr:`await_count` to 0,
+    :attr:`await_args` to None, and clears the :attr:`await_args_list`.
+
+  .. attribute:: await_count
+
+    An integer keeping track of how many times the mock object has been awaited.
+
+      >>> mock = AsyncMock()
+      >>> async def main():
+      ...     await mock()
+      ...
+      >>> asyncio.run(main())
+      >>> mock.await_count
+      1
+      >>> asyncio.run(main())
+      >>> mock.await_count
+      2
+
+  .. attribute:: await_args
+
+    This is either ``None`` (if the mock hasn’t been awaited), or the arguments that
+    the mock was last awaited with. Functions the same as :attr:`Mock.call_args`.
+
+      >>> mock = AsyncMock()
+      >>> async def main(*args):
+      ...     await mock(*args)
+      ...
+      >>> mock.await_args
+      >>> asyncio.run(main('foo'))
+      >>> mock.await_args
+      call('foo')
+      >>> asyncio.run(main('bar'))
+      >>> mock.await_args
+      call('bar')
+
+
+  .. attribute:: await_args_list
+
+    This is a list of all the awaits made to the mock object in sequence (so the
+    length of the list is the number of times it has been awaited). Before any
+    awaits have been made it is an empty list.
+
+      >>> mock = AsyncMock()
+      >>> async def main(*args):
+      ...     await mock(*args)
+      ...
+      >>> mock.await_args_list
+      []
+      >>> asyncio.run(main('foo'))
+      >>> mock.await_args_list
+      [call('foo')]
+      >>> asyncio.run(main('bar'))
+      >>> mock.await_args_list
+      [call('foo'), call('bar')]
 
 
 Calling
@@ -941,7 +1292,7 @@ the "parenting" if for some reason you don't want it to happen.
 
 Mocks created for you by :func:`patch` are automatically given names. To
 attach mocks that have names to a parent you use the :meth:`~Mock.attach_mock`
-method:
+method::
 
     >>> thing1 = object()
     >>> thing2 = object()
@@ -989,8 +1340,10 @@ patch
     is patched with a *new* object. When the function/with statement exits
     the patch is undone.
 
-    If *new* is omitted, then the target is replaced with a
-    :class:`MagicMock`. If :func:`patch` is used as a decorator and *new* is
+    If *new* is omitted, then the target is replaced with an
+    :class:`AsyncMock` if the patched object is an async function or
+    a :class:`MagicMock` otherwise.
+    If :func:`patch` is used as a decorator and *new* is
     omitted, the created mock is passed in as an extra argument to the
     decorated function. If :func:`patch` is used as a context manager the created
     mock is returned by the context manager.
@@ -1008,8 +1361,8 @@ patch
     patch to pass in the object being mocked as the spec/spec_set object.
 
     *new_callable* allows you to specify a different class, or callable object,
-    that will be called to create the *new* object. By default :class:`MagicMock` is
-    used.
+    that will be called to create the *new* object. By default :class:`AsyncMock`
+    is used for async functions and :class:`MagicMock` for the rest.
 
     A more powerful form of *spec* is *autospec*. If you set ``autospec=True``
     then the mock will be created with a spec from the object being replaced.
@@ -1024,34 +1377,40 @@ patch
     Instead of ``autospec=True`` you can pass ``autospec=some_object`` to use an
     arbitrary object as the spec instead of the one being replaced.
 
-    By default :func:`patch` will fail to replace attributes that don't exist. If
-    you pass in ``create=True``, and the attribute doesn't exist, patch will
-    create the attribute for you when the patched function is called, and
-    delete it again afterwards. This is useful for writing tests against
-    attributes that your production code creates at runtime. It is off by
-    default because it can be dangerous. With it switched on you can write
-    passing tests against APIs that don't actually exist!
+    By default :func:`patch` will fail to replace attributes that don't exist.
+    If you pass in ``create=True``, and the attribute doesn't exist, patch will
+    create the attribute for you when the patched function is called, and delete
+    it again after the patched function has exited. This is useful for writing
+    tests against attributes that your production code creates at runtime. It is
+    off by default because it can be dangerous. With it switched on you can
+    write passing tests against APIs that don't actually exist!
 
-    Patch can be used as a `TestCase` class decorator. It works by
+    .. note::
+
+        .. versionchanged:: 3.5
+           If you are patching builtins in a module then you don't
+           need to pass ``create=True``, it will be added by default.
+
+    Patch can be used as a :class:`TestCase` class decorator. It works by
     decorating each test method in the class. This reduces the boilerplate
-    code when your test methods share a common patchings set. `patch` finds
-    tests by looking for method names that start with `patch.TEST_PREFIX`.
-    By default this is `test`, which matches the way `unittest` finds tests.
-    You can specify an alternative prefix by setting `patch.TEST_PREFIX`.
+    code when your test methods share a common patchings set. :func:`patch` finds
+    tests by looking for method names that start with ``patch.TEST_PREFIX``.
+    By default this is ``'test'``, which matches the way :mod:`unittest` finds tests.
+    You can specify an alternative prefix by setting ``patch.TEST_PREFIX``.
 
     Patch can be used as a context manager, with the with statement. Here the
     patching applies to the indented block after the with statement. If you
     use "as" then the patched object will be bound to the name after the
-    "as"; very useful if `patch` is creating a mock object for you.
+    "as"; very useful if :func:`patch` is creating a mock object for you.
 
-    `patch` takes arbitrary keyword arguments. These will be passed to
-    the `Mock` (or `new_callable`) on construction.
+    :func:`patch` takes arbitrary keyword arguments. These will be passed to
+    the :class:`Mock` (or *new_callable*) on construction.
 
-    `patch.dict(...)`, `patch.multiple(...)` and `patch.object(...)` are
+    ``patch.dict(...)``, ``patch.multiple(...)`` and ``patch.object(...)`` are
     available for alternate use-cases.
 
-`patch` as function decorator, creating the mock for you and passing it into
-the decorated function:
+:func:`patch` as function decorator, creating the mock for you and passing it into
+the decorated function::
 
     >>> @patch('__main__.SomeClass')
     ... def function(normal_argument, mock_class):
@@ -1069,7 +1428,7 @@ If the class is instantiated multiple times you could use
 can set the *return_value* to be anything you want.
 
 To configure return values on methods of *instances* on the patched class
-you must do this on the :attr:`return_value`. For example:
+you must do this on the :attr:`return_value`. For example::
 
     >>> class Class:
     ...     def method(self):
@@ -1083,7 +1442,7 @@ you must do this on the :attr:`return_value`. For example:
     ...
 
 If you use *spec* or *spec_set* and :func:`patch` is replacing a *class*, then the
-return value of the created mock will have the same spec.
+return value of the created mock will have the same spec. ::
 
     >>> Original = Class
     >>> patcher = patch('__main__.Class', spec=True)
@@ -1094,7 +1453,7 @@ return value of the created mock will have the same spec.
 
 The *new_callable* argument is useful where you want to use an alternative
 class to the default :class:`MagicMock` for the created mock. For example, if
-you wanted a :class:`NonCallableMock` to be used:
+you wanted a :class:`NonCallableMock` to be used::
 
     >>> thing = object()
     >>> with patch('__main__.thing', new_callable=NonCallableMock) as mock_thing:
@@ -1105,11 +1464,11 @@ you wanted a :class:`NonCallableMock` to be used:
       ...
     TypeError: 'NonCallableMock' object is not callable
 
-Another use case might be to replace an object with a :class:`io.StringIO` instance:
+Another use case might be to replace an object with an :class:`io.StringIO` instance::
 
     >>> from io import StringIO
     >>> def foo():
-    ...     print 'Something'
+    ...     print('Something')
     ...
     >>> @patch('sys.stdout', new_callable=StringIO)
     ... def test(mock_stdout):
@@ -1121,7 +1480,7 @@ Another use case might be to replace an object with a :class:`io.StringIO` insta
 When :func:`patch` is creating a mock for you, it is common that the first thing
 you need to do is to configure the mock. Some of that configuration can be done
 in the call to patch. Any arbitrary keywords you pass into the call will be
-used to set attributes on the created mock:
+used to set attributes on the created mock::
 
     >>> patcher = patch('__main__.thing', first='one', second='two')
     >>> mock_thing = patcher.start()
@@ -1134,7 +1493,7 @@ As well as attributes on the created mock attributes, like the
 :attr:`~Mock.return_value` and :attr:`~Mock.side_effect`, of child mocks can
 also be configured. These aren't syntactically valid to pass in directly as
 keyword arguments, but a dictionary with these as keys can still be expanded
-into a :func:`patch` call using ``**``:
+into a :func:`patch` call using ``**``::
 
     >>> config = {'method.return_value': 3, 'other.side_effect': KeyError}
     >>> patcher = patch('__main__.thing', **config)
@@ -1145,6 +1504,31 @@ into a :func:`patch` call using ``**``:
     Traceback (most recent call last):
       ...
     KeyError
+
+By default, attempting to patch a function in a module (or a method or an
+attribute in a class) that does not exist will fail with :exc:`AttributeError`::
+
+    >>> @patch('sys.non_existing_attribute', 42)
+    ... def test():
+    ...     assert sys.non_existing_attribute == 42
+    ...
+    >>> test()
+    Traceback (most recent call last):
+      ...
+    AttributeError: <module 'sys' (built-in)> does not have the attribute 'non_existing'
+
+but adding ``create=True`` in the call to :func:`patch` will make the previous example
+work as expected::
+
+    >>> @patch('sys.non_existing_attribute', 42, create=True)
+    ... def test(mock_stdout):
+    ...     assert sys.non_existing_attribute == 42
+    ...
+    >>> test()
+
+.. versionchanged:: 3.8
+
+    :func:`patch` now returns an :class:`AsyncMock` if the target is an async function.
 
 
 patch.object
@@ -1207,23 +1591,53 @@ patch.dict
     :func:`patch.dict` can also be called with arbitrary keyword arguments to set
     values in the dictionary.
 
-    :func:`patch.dict` can be used as a context manager, decorator or class
-    decorator. When used as a class decorator :func:`patch.dict` honours
-    ``patch.TEST_PREFIX`` for choosing which methods to wrap.
+    .. versionchanged:: 3.8
+
+        :func:`patch.dict` now returns the patched dictionary when used as a context
+        manager.
+
+:func:`patch.dict` can be used as a context manager, decorator or class
+decorator:
+
+    >>> foo = {}
+    >>> @patch.dict(foo, {'newkey': 'newvalue'})
+    ... def test():
+    ...     assert foo == {'newkey': 'newvalue'}
+    >>> test()
+    >>> assert foo == {}
+
+When used as a class decorator :func:`patch.dict` honours
+``patch.TEST_PREFIX`` (default to ``'test'``) for choosing which methods to wrap:
+
+    >>> import os
+    >>> import unittest
+    >>> from unittest.mock import patch
+    >>> @patch.dict('os.environ', {'newkey': 'newvalue'})
+    ... class TestSample(unittest.TestCase):
+    ...     def test_sample(self):
+    ...         self.assertEqual(os.environ['newkey'], 'newvalue')
+
+If you want to use a different prefix for your test, you can inform the
+patchers of the different prefix by setting ``patch.TEST_PREFIX``. For
+more details about how to change the value of see :ref:`test-prefix`.
 
 :func:`patch.dict` can be used to add members to a dictionary, or simply let a test
 change a dictionary, and ensure the dictionary is restored when the test
 ends.
 
     >>> foo = {}
-    >>> with patch.dict(foo, {'newkey': 'newvalue'}):
+    >>> with patch.dict(foo, {'newkey': 'newvalue'}) as patched_foo:
     ...     assert foo == {'newkey': 'newvalue'}
+    ...     assert patched_foo == {'newkey': 'newvalue'}
+    ...     # You can add, update or delete keys of foo (or patched_foo, it's the same dict)
+    ...     patched_foo['spam'] = 'eggs'
     ...
     >>> assert foo == {}
+    >>> assert patched_foo == {}
 
     >>> import os
     >>> with patch.dict('os.environ', {'newkey': 'newvalue'}):
-    ...     print os.environ['newkey']
+    ...     print(os.environ['newkey'])
     ...
     newvalue
     >>> assert 'newkey' not in os.environ
@@ -1293,7 +1707,7 @@ patch.multiple
 
 If you want :func:`patch.multiple` to create mocks for you, then you can use
 :data:`DEFAULT` as the value. If you use :func:`patch.multiple` as a decorator
-then the created mocks are passed into the decorated function by keyword.
+then the created mocks are passed into the decorated function by keyword. ::
 
     >>> thing = object()
     >>> other = object()
@@ -1306,7 +1720,7 @@ then the created mocks are passed into the decorated function by keyword.
     >>> test_function()
 
 :func:`patch.multiple` can be nested with other ``patch`` decorators, but put arguments
-passed by keyword *after* any of the standard arguments created by :func:`patch`:
+passed by keyword *after* any of the standard arguments created by :func:`patch`::
 
     >>> @patch('sys.exit')
     ... @patch.multiple('__main__', thing=DEFAULT, other=DEFAULT)
@@ -1318,7 +1732,7 @@ passed by keyword *after* any of the standard arguments created by :func:`patch`
     >>> test_function()
 
 If :func:`patch.multiple` is used as a context manager, the value returned by the
-context manger is a dictionary where created mocks are keyed by name:
+context manager is a dictionary where created mocks are keyed by name::
 
     >>> with patch.multiple('__main__', thing=DEFAULT, other=DEFAULT) as values:
     ...     assert 'other' in repr(values['other'])
@@ -1342,7 +1756,7 @@ normal and keep a reference to the returned ``patcher`` object. You can then
 call :meth:`start` to put the patch in place and :meth:`stop` to undo it.
 
 If you are using :func:`patch` to create a mock for you then it will be returned by
-the call to ``patcher.start``.
+the call to ``patcher.start``. ::
 
     >>> patcher = patch('package.module.ClassName')
     >>> from package import module
@@ -1356,9 +1770,9 @@ the call to ``patcher.start``.
 
 
 A typical use case for this might be for doing multiple patches in the ``setUp``
-method of a :class:`TestCase`:
+method of a :class:`TestCase`::
 
-    >>> class MyTest(TestCase):
+    >>> class MyTest(unittest.TestCase):
     ...     def setUp(self):
     ...         self.patcher1 = patch('package.module.Class1')
     ...         self.patcher2 = patch('package.module.Class2')
@@ -1380,9 +1794,9 @@ method of a :class:`TestCase`:
     If you use this technique you must ensure that the patching is "undone" by
     calling ``stop``. This can be fiddlier than you might think, because if an
     exception is raised in the ``setUp`` then ``tearDown`` is not called.
-    :meth:`unittest.TestCase.addCleanup` makes this easier:
+    :meth:`unittest.TestCase.addCleanup` makes this easier::
 
-        >>> class MyTest(TestCase):
+        >>> class MyTest(unittest.TestCase):
         ...     def setUp(self):
         ...         patcher = patch('package.module.Class')
         ...         self.MockClass = patcher.start()
@@ -1392,16 +1806,34 @@ method of a :class:`TestCase`:
         ...         assert package.module.Class is self.MockClass
         ...
 
-    As an added bonus you no longer need to keep a reference to the `patcher`
+    As an added bonus you no longer need to keep a reference to the ``patcher``
     object.
 
 It is also possible to stop all patches which have been started by using
-`patch.stopall`.
+:func:`patch.stopall`.
 
 .. function:: patch.stopall
 
-    Stop all active patches. Only stops patches started with `start`.
+    Stop all active patches. Only stops patches started with ``start``.
 
+
+.. _patch-builtins:
+
+patch builtins
+~~~~~~~~~~~~~~
+You can patch any builtins within a module. The following example patches
+builtin :func:`ord`::
+
+    >>> @patch('__main__.ord')
+    ... def test(mock_ord):
+    ...     mock_ord.return_value = 101
+    ...     print(ord('c'))
+    ...
+    >>> test()
+    101
+
+
+.. _test-prefix:
 
 TEST_PREFIX
 ~~~~~~~~~~~
@@ -1412,7 +1844,7 @@ start with ``'test'`` as being test methods. This is the same way that the
 :class:`unittest.TestLoader` finds test methods by default.
 
 It is possible that you want to use a different prefix for your tests. You can
-inform the patchers of the different prefix by setting ``patch.TEST_PREFIX``:
+inform the patchers of the different prefix by setting ``patch.TEST_PREFIX``::
 
     >>> patch.TEST_PREFIX = 'foo'
     >>> value = 3
@@ -1420,9 +1852,9 @@ inform the patchers of the different prefix by setting ``patch.TEST_PREFIX``:
     >>> @patch('__main__.value', 'not three')
     ... class Thing:
     ...     def foo_one(self):
-    ...         print value
+    ...         print(value)
     ...     def foo_two(self):
-    ...         print value
+    ...         print(value)
     ...
     >>>
     >>> Thing().foo_one()
@@ -1490,8 +1922,8 @@ do then it imports ``SomeClass`` from module a. If we use :func:`patch` to mock 
 reference to the *real* ``SomeClass`` and it looks like our patching had no
 effect.
 
-The key is to patch out ``SomeClass`` where it is used (or where it is looked up
-). In this case ``some_function`` will actually look up ``SomeClass`` in module b,
+The key is to patch out ``SomeClass`` where it is used (or where it is looked up).
+In this case ``some_function`` will actually look up ``SomeClass`` in module b,
 where we have imported it. The patching should look like::
 
     @patch('b.SomeClass')
@@ -1578,23 +2010,31 @@ The full list of supported magic methods is:
 
 * ``__hash__``, ``__sizeof__``, ``__repr__`` and ``__str__``
 * ``__dir__``, ``__format__`` and ``__subclasses__``
-* ``__floor__``, ``__trunc__`` and ``__ceil__``
-* Comparisons: ``__cmp__``, ``__lt__``, ``__gt__``, ``__le__``, ``__ge__``,
+* ``__round__``, ``__floor__``, ``__trunc__`` and ``__ceil__``
+* Comparisons: ``__lt__``, ``__gt__``, ``__le__``, ``__ge__``,
   ``__eq__`` and ``__ne__``
 * Container methods: ``__getitem__``, ``__setitem__``, ``__delitem__``,
-  ``__contains__``, ``__len__``, ``__iter__``, ``__getslice__``,
-  ``__setslice__``, ``__reversed__`` and ``__missing__``
-* Context manager: ``__enter__`` and ``__exit__``
+  ``__contains__``, ``__len__``, ``__iter__``, ``__reversed__``
+  and ``__missing__``
+* Context manager: ``__enter__``, ``__exit__``, ``__aenter__`` and ``__aexit__``
 * Unary numeric methods: ``__neg__``, ``__pos__`` and ``__invert__``
 * The numeric methods (including right hand and in-place variants):
-  ``__add__``, ``__sub__``, ``__mul__``, ``__div__``,
+  ``__add__``, ``__sub__``, ``__mul__``, ``__matmul__``, ``__div__``, ``__truediv__``,
   ``__floordiv__``, ``__mod__``, ``__divmod__``, ``__lshift__``,
   ``__rshift__``, ``__and__``, ``__xor__``, ``__or__``, and ``__pow__``
-* Numeric conversion methods: ``__complex__``, ``__int__``, ``__float__``,
-  ``__index__`` and ``__coerce__``
+* Numeric conversion methods: ``__complex__``, ``__int__``, ``__float__``
+  and ``__index__``
 * Descriptor methods: ``__get__``, ``__set__`` and ``__delete__``
 * Pickling: ``__reduce__``, ``__reduce_ex__``, ``__getinitargs__``,
   ``__getnewargs__``, ``__getstate__`` and ``__setstate__``
+* File system path representation: ``__fspath__``
+* Asynchronous iteration methods: ``__aiter__`` and ``__anext__``
+
+.. versionchanged:: 3.8
+   Added support for :func:`os.PathLike.__fspath__`.
+
+.. versionchanged:: 3.8
+   Added support for ``__aenter__``, ``__aexit__``, ``__aiter__`` and ``__anext__``.
 
 
 The following methods exist but are *not* supported as they are either in use
@@ -1649,19 +2089,20 @@ to change the default.
 
 Methods and their defaults:
 
-* ``__lt__``: NotImplemented
-* ``__gt__``: NotImplemented
-* ``__le__``: NotImplemented
-* ``__ge__``: NotImplemented
-* ``__int__``: 1
-* ``__contains__``: False
-* ``__len__``: 1
-* ``__iter__``: iter([])
-* ``__exit__``: False
-* ``__complex__``: 1j
-* ``__float__``: 1.0
-* ``__bool__``: True
-* ``__index__``: 1
+* ``__lt__``: ``NotImplemented``
+* ``__gt__``: ``NotImplemented``
+* ``__le__``: ``NotImplemented``
+* ``__ge__``: ``NotImplemented``
+* ``__int__``: ``1``
+* ``__contains__``: ``False``
+* ``__len__``: ``0``
+* ``__iter__``: ``iter([])``
+* ``__exit__``: ``False``
+* ``__aexit__``: ``False``
+* ``__complex__``: ``1j``
+* ``__float__``: ``1.0``
+* ``__bool__``: ``True``
+* ``__index__``: ``1``
 * ``__hash__``: default hash for the mock
 * ``__str__``: default str for the mock
 * ``__sizeof__``: default sizeof for the mock
@@ -1743,12 +2184,16 @@ sentinel
 
 .. data:: sentinel
 
-    The ``sentinel`` object provides a convenient way of providing unique
-    objects for your tests.
+   The ``sentinel`` object provides a convenient way of providing unique
+   objects for your tests.
 
-    Attributes are created on demand when you access them by name. Accessing
-    the same attribute will always return the same object. The objects
-    returned have a sensible repr so that test failure messages are readable.
+   Attributes are created on demand when you access them by name. Accessing
+   the same attribute will always return the same object. The objects
+   returned have a sensible repr so that test failure messages are readable.
+
+   .. versionchanged:: 3.7
+      The ``sentinel`` attributes now preserve their identity when they are
+      :mod:`copied <copy>` or :mod:`pickled <pickle>`.
 
 Sometimes when testing you need to test that a specific object is passed as an
 argument to another method, or returned. It can be common to create named
@@ -1841,14 +2286,13 @@ arguments are a dictionary:
     >>> m = MagicMock(return_value=None)
     >>> m(1, 2, 3, arg='one', arg2='two')
     >>> kall = m.call_args
-    >>> args, kwargs = kall
-    >>> args
+    >>> kall.args
     (1, 2, 3)
-    >>> kwargs
-    {'arg2': 'two', 'arg': 'one'}
-    >>> args is kall[0]
+    >>> kall.kwargs
+    {'arg': 'one', 'arg2': 'two'}
+    >>> kall.args is kall[0]
     True
-    >>> kwargs is kall[1]
+    >>> kall.kwargs is kall[1]
     True
 
     >>> m = MagicMock()
@@ -1861,7 +2305,7 @@ arguments are a dictionary:
     >>> args
     (4, 5, 6)
     >>> kwargs
-    {'arg2': 'three', 'arg': 'two'}
+    {'arg': 'two', 'arg2': 'three'}
     >>> name is m.mock_calls[0][0]
     True
 
@@ -1891,6 +2335,12 @@ create_autospec
 
 See :ref:`auto-speccing` for examples of how to use auto-speccing with
 :func:`create_autospec` and the *autospec* argument to :func:`patch`.
+
+
+.. versionchanged:: 3.8
+
+    :func:`create_autospec` now returns an :class:`AsyncMock` if the target is
+    an async function.
 
 
 ANY
@@ -1941,11 +2391,17 @@ If the mock was created with a *spec* (or *autospec* of course) then all the
 attributes from the original are shown, even if they haven't been accessed
 yet:
 
+.. doctest::
+    :options: +ELLIPSIS,+NORMALIZE_WHITESPACE
+
     >>> dir(Mock())
     ['assert_any_call',
+     'assert_called',
+     'assert_called_once',
      'assert_called_once_with',
      'assert_called_with',
      'assert_has_calls',
+     'assert_not_called',
      'attach_mock',
      ...
     >>> from urllib import request
@@ -1961,6 +2417,9 @@ mocked) underscore and double underscore prefixed attributes have been
 filtered from the result of calling :func:`dir` on a :class:`Mock`. If you dislike this
 behaviour you can switch it off by setting the module level switch
 :data:`FILTER_DIR`:
+
+.. doctest::
+    :options: +ELLIPSIS,+NORMALIZE_WHITESPACE
 
     >>> from unittest import mock
     >>> mock.FILTER_DIR = False
@@ -1984,20 +2443,34 @@ mock_open
 
 .. function:: mock_open(mock=None, read_data=None)
 
-    A helper function to create a mock to replace the use of :func:`open`. It works
-    for :func:`open` called directly or used as a context manager.
+   A helper function to create a mock to replace the use of :func:`open`. It works
+   for :func:`open` called directly or used as a context manager.
 
-    The *mock* argument is the mock object to configure. If ``None`` (the
-    default) then a :class:`MagicMock` will be created for you, with the API limited
-    to methods or attributes available on standard file handles.
+   The *mock* argument is the mock object to configure. If ``None`` (the
+   default) then a :class:`MagicMock` will be created for you, with the API limited
+   to methods or attributes available on standard file handles.
 
-    *read_data* is a string for the :meth:`~io.IOBase.read`,
-    :meth:`~io.IOBase.readline`, and :meth:`~io.IOBase.readlines` methods
-    of the file handle to return.  Calls to those methods will take data from
-    *read_data* until it is depleted.  The mock of these methods is pretty
-    simplistic.  If you need more control over the data that you are feeding to
-    the tested code you will need to customize this mock for yourself.
-    *read_data* is an empty string by default.
+   *read_data* is a string for the :meth:`~io.IOBase.read`,
+   :meth:`~io.IOBase.readline`, and :meth:`~io.IOBase.readlines` methods
+   of the file handle to return.  Calls to those methods will take data from
+   *read_data* until it is depleted.  The mock of these methods is pretty
+   simplistic: every time the *mock* is called, the *read_data* is rewound to
+   the start.  If you need more control over the data that you are feeding to
+   the tested code you will need to customize this mock for yourself.  When that
+   is insufficient, one of the in-memory filesystem packages on `PyPI
+   <https://pypi.org>`_ can offer a realistic filesystem for testing.
+
+   .. versionchanged:: 3.4
+      Added :meth:`~io.IOBase.readline` and :meth:`~io.IOBase.readlines` support.
+      The mock of :meth:`~io.IOBase.read` changed to consume *read_data* rather
+      than returning it on each call.
+
+   .. versionchanged:: 3.5
+      *read_data* is now reset on each call to the *mock*.
+
+   .. versionchanged:: 3.8
+      Added :meth:`__iter__` to implementation so that iteration (such as in for
+      loops) correctly consumes *read_data*.
 
 Using :func:`open` as a context manager is a great way to ensure your file handles
 are closed properly and is becoming common::
@@ -2010,10 +2483,10 @@ The issue is that even if you mock out the call to :func:`open` it is the
 :meth:`__exit__` called).
 
 Mocking context managers with a :class:`MagicMock` is common enough and fiddly
-enough that a helper function is useful.
+enough that a helper function is useful. ::
 
     >>> m = mock_open()
-    >>> with patch('__main__.open', m, create=True):
+    >>> with patch('__main__.open', m):
     ...     with open('foo', 'w') as h:
     ...         h.write('some stuff')
     ...
@@ -2026,9 +2499,9 @@ enough that a helper function is useful.
     >>> handle = m()
     >>> handle.write.assert_called_once_with('some stuff')
 
-And for reading files:
+And for reading files::
 
-    >>> with patch('__main__.open', mock_open(read_data='bibble'), create=True) as m:
+    >>> with patch('__main__.open', mock_open(read_data='bibble')) as m:
     ...     with open('foo') as h:
     ...         result = h.read()
     ...
@@ -2119,7 +2592,7 @@ accessed) you can use it with very complex or deeply nested objects (like
 modules that import modules that import modules) without a big performance
 hit.
 
-Here's an example of it in use:
+Here's an example of it in use::
 
     >>> from urllib import request
     >>> patcher = patch('__main__.request', autospec=True)
@@ -2131,7 +2604,7 @@ Here's an example of it in use:
 
 You can see that :class:`request.Request` has a spec. :class:`request.Request` takes two
 arguments in the constructor (one of which is *self*). Here's what happens if
-we try to call it incorrectly:
+we try to call it incorrectly::
 
     >>> req = request.Request()
     Traceback (most recent call last):
@@ -2139,7 +2612,7 @@ we try to call it incorrectly:
     TypeError: <lambda>() takes at least 2 arguments (1 given)
 
 The spec also applies to instantiated classes (i.e. the return value of
-specced mocks):
+specced mocks)::
 
     >>> req = request.Request('foo')
     >>> req
@@ -2147,7 +2620,7 @@ specced mocks):
 
 :class:`Request` objects are not callable, so the return value of instantiating our
 mocked out :class:`request.Request` is a non-callable mock. With the spec in place
-any typos in our asserts will raise the correct error:
+any typos in our asserts will raise the correct error::
 
     >>> req.add_header('spam', 'eggs')
     <MagicMock name='request.Request().add_header()' id='...'>
@@ -2181,7 +2654,7 @@ objects so that introspection is safe [#]_.
 A more serious problem is that it is common for instance attributes to be
 created in the :meth:`__init__` method and not to exist on the class at all.
 *autospec* can't know about any dynamically created attributes and restricts
-the api to visible attributes.
+the api to visible attributes. ::
 
     >>> class Something:
     ...   def __init__(self):
@@ -2199,7 +2672,7 @@ There are a few different ways of resolving this problem. The easiest, but
 not necessarily the least annoying, way is to simply set the required
 attributes on the mock after creation. Just because *autospec* doesn't allow
 you to fetch attributes that don't exist on the spec it doesn't prevent you
-setting them:
+setting them::
 
     >>> with patch('__main__.Something', autospec=True):
     ...   thing = Something()
@@ -2250,7 +2723,7 @@ spec rather than the class. The other is to create a subclass of the
 production class and add the defaults to the subclass without affecting the
 production class. Both of these require you to use an alternative object as
 the spec. Thankfully :func:`patch` supports this - you can simply pass the
-alternative object as the *autospec* argument:
+alternative object as the *autospec* argument::
 
     >>> class Something:
     ...   def __init__(self):
@@ -2269,3 +2742,29 @@ alternative object as the *autospec* argument:
    a mocked class to create a mock instance *does not* create a real instance.
    It is only attribute lookups - along with calls to :func:`dir` - that are done.
 
+Sealing mocks
+~~~~~~~~~~~~~
+
+
+.. testsetup::
+
+    from unittest.mock import seal
+
+.. function:: seal(mock)
+
+    Seal will disable the automatic creation of mocks when accessing an attribute of
+    the mock being sealed or any of its attributes that are already mocks recursively.
+
+    If a mock instance with a name or a spec is assigned to an attribute
+    it won't be considered in the sealing chain. This allows one to prevent seal from
+    fixing part of the mock object. ::
+
+        >>> mock = Mock()
+        >>> mock.submock.attribute1 = 2
+        >>> mock.not_submock = mock.Mock(name="sample_name")
+        >>> seal(mock)
+        >>> mock.new_attribute  # This will raise AttributeError.
+        >>> mock.submock.attribute2  # This will raise AttributeError.
+        >>> mock.not_submock.attribute2  # This won't raise.
+
+    .. versionadded:: 3.7

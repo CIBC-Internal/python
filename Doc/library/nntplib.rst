@@ -4,12 +4,11 @@
 .. module:: nntplib
    :synopsis: NNTP protocol client (requires sockets).
 
+**Source code:** :source:`Lib/nntplib.py`
 
 .. index::
    pair: NNTP; protocol
    single: Network News Transfer Protocol
-
-**Source code:** :source:`Lib/nntplib.py`
 
 --------------
 
@@ -21,7 +20,7 @@ as well as the older :rfc:`977` and :rfc:`2980`.
 Here are two small examples of how it can be used.  To list some statistics
 about a newsgroup and print the subjects of the last 10 articles::
 
-   >>> s = nntplib.NNTP('news.gmane.org')
+   >>> s = nntplib.NNTP('news.gmane.io')
    >>> resp, count, first, last, name = s.group('gmane.comp.python.committers')
    >>> print('Group', name, 'has', count, 'articles, range', first, 'to', last)
    Group gmane.comp.python.committers has 1096 articles, range 1 to 1096
@@ -45,7 +44,7 @@ about a newsgroup and print the subjects of the last 10 articles::
 To post an article from a binary file (this assumes that the article has valid
 headers, and that you have right to post on the particular newsgroup)::
 
-   >>> s = nntplib.NNTP('news.gmane.org')
+   >>> s = nntplib.NNTP('news.gmane.io')
    >>> f = open('article.txt', 'rb')
    >>> s.post(f)
    '240 Article posted successfully.'
@@ -69,17 +68,24 @@ The module itself defines the following classes:
    connecting to an NNTP server on the local machine and intend to call
    reader-specific commands, such as ``group``.  If you get unexpected
    :exc:`NNTPPermanentError`\ s, you might need to set *readermode*.
-   :class:`NNTP` class supports the :keyword:`with` statement to
+   The :class:`NNTP` class supports the :keyword:`with` statement to
    unconditionally consume :exc:`OSError` exceptions and to close the NNTP
-   connection when done. Here is a sample on how using it:
+   connection when done, e.g.:
 
     >>> from nntplib import NNTP
-    >>> with NNTP('news.gmane.org') as n:
+    >>> with NNTP('news.gmane.io') as n:
     ...     n.group('gmane.comp.python.committers')
-    ...
+    ... # doctest: +SKIP
     ('211 1755 1 1755 gmane.comp.python.committers', 1755, 1, 1755, 'gmane.comp.python.committers')
     >>>
 
+   .. audit-event:: nntplib.connect self,host,port nntplib.NNTP
+
+   .. audit-event:: nntplib.putline self,line nntplib.NNTP
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``nntplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
 
    .. versionchanged:: 3.2
       *usenetrc* is now ``False`` by default.
@@ -100,6 +106,14 @@ The module itself defines the following classes:
    Note that SSL-on-563 is discouraged per :rfc:`4642`, in favor of
    STARTTLS as described below.  However, some servers only support the
    former.
+
+   .. audit-event:: nntplib.connect self,host,port nntplib.NNTP_SSL
+
+   .. audit-event:: nntplib.putline self,line nntplib.NNTP_SSL
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``nntplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
 
    .. versionadded:: 3.2
 
@@ -211,7 +225,7 @@ tuples or objects that the method normally returns will be empty.
    of values. On legacy servers which don't understand the ``CAPABILITIES``
    command, an empty dictionary is returned instead.
 
-      >>> s = NNTP('news.gmane.org')
+      >>> s = NNTP('news.gmane.io')
       >>> 'POST' in s.getcapabilities()
       True
 
@@ -221,7 +235,7 @@ tuples or objects that the method normally returns will be empty.
 .. method:: NNTP.login(user=None, password=None, usenetrc=True)
 
    Send ``AUTHINFO`` commands with the user name and password.  If *user*
-   and *password* are None and *usenetrc* is true, credentials from
+   and *password* are ``None`` and *usenetrc* is true, credentials from
    ``~/.netrc`` will be used if possible.
 
    Unless intentionally delayed, login is normally performed during the
@@ -233,10 +247,10 @@ tuples or objects that the method normally returns will be empty.
    .. versionadded:: 3.2
 
 
-.. method:: NNTP.starttls(ssl_context=None)
+.. method:: NNTP.starttls(context=None)
 
    Send a ``STARTTLS`` command.  This will enable encryption on the NNTP
-   connection.  The *ssl_context* argument is optional and should be a
+   connection.  The *context* argument is optional and should be a
    :class:`ssl.SSLContext` object.  Please read :ref:`ssl-security` for best
    practices.
 
@@ -262,9 +276,9 @@ tuples or objects that the method normally returns will be empty.
 
       >>> from datetime import date, timedelta
       >>> resp, groups = s.newgroups(date.today() - timedelta(days=3))
-      >>> len(groups)
+      >>> len(groups) # doctest: +SKIP
       85
-      >>> groups[0]
+      >>> groups[0] # doctest: +SKIP
       GroupInfo(group='gmane.network.tor.devel', last='4', first='1', flag='m')
 
 
@@ -313,9 +327,9 @@ tuples or objects that the method normally returns will be empty.
    is a dictionary mapping group names to textual descriptions.
 
       >>> resp, descs = s.descriptions('gmane.comp.python.*')
-      >>> len(descs)
+      >>> len(descs) # doctest: +SKIP
       295
-      >>> descs.popitem()
+      >>> descs.popitem() # doctest: +SKIP
       ('gmane.comp.python.bio.general', 'BioPython discussion list (Moderated)')
 
 
@@ -341,7 +355,7 @@ tuples or objects that the method normally returns will be empty.
 
 .. method:: NNTP.over(message_spec, *, file=None)
 
-   Send a ``OVER`` command, or a ``XOVER`` command on legacy servers.
+   Send an ``OVER`` command, or an ``XOVER`` command on legacy servers.
    *message_spec* can be either a string representing a message id, or
    a ``(first, last)`` tuple of numbers indicating a range of articles in
    the current group, or a ``(first, None)`` tuple indicating a range of
@@ -543,7 +557,7 @@ them have been superseded by newer commands in :rfc:`3977`.
       is supplied, then the returned *list* is an empty list. This is an optional NNTP
       extension, and may not be supported by all servers.
 
-      RFC2980 says "It is suggested that this extension be deprecated".  Use
+      :rfc:`2980` says "It is suggested that this extension be deprecated".  Use
       :meth:`descriptions` or :meth:`description` instead.
 
 

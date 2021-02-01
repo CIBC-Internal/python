@@ -241,16 +241,11 @@ class Charset:
         self.output_codec = CODEC_MAP.get(self.output_charset,
                                           self.output_charset)
 
-    def __str__(self):
+    def __repr__(self):
         return self.input_charset.lower()
-
-    __repr__ = __str__
 
     def __eq__(self, other):
         return str(self) == str(other).lower()
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def get_body_encoding(self):
         """Return the content-transfer-encoding used for body encoding.

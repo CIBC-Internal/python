@@ -1,8 +1,28 @@
-/* Memoryview object implementation */
+/*
+ * Memoryview object implementation
+ * --------------------------------
+ *
+ *   This implementation is a complete rewrite contributed by Stefan Krah in
+ *   Python 3.3.  Substantial credit goes to Antoine Pitrou (who had already
+ *   fortified and rewritten the previous implementation) and Nick Coghlan
+ *   (who came up with the idea of the ManagedBuffer) for analyzing the complex
+ *   ownership rules.
+ *
+ */
 
 #include "Python.h"
+#include "pycore_object.h"
+#include "pycore_pymem.h"
+#include "pycore_pystate.h"
+#include "pystrhex.h"
 #include <stddef.h>
 
+/*[clinic input]
+class memoryview "PyMemoryViewObject *" "&PyMemoryView_Type"
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=e2e49d2192835219]*/
+
+#include "clinic/memoryobject.c.h"
 
 /****************************************************************************/
 /*                           ManagedBuffer Object                           */
@@ -48,9 +68,6 @@
 */
 
 
-#define XSTRINGIZE(v) #v
-#define STRINGIZE(v) XSTRINGIZE(v)
-
 #define CHECK_MBUF_RELEASED(mbuf) \
     if (((_PyManagedBufferObject *)mbuf)->flags&_Py_MANAGED_BUFFER_RELEASED) { \
         PyErr_SetString(PyExc_ValueError,                                      \
@@ -59,7 +76,7 @@
     }
 
 
-Py_LOCAL_INLINE(_PyManagedBufferObject *)
+static inline _PyManagedBufferObject *
 mbuf_alloc(void)
 {
     _PyManagedBufferObject *mbuf;
@@ -140,10 +157,10 @@ PyTypeObject _PyManagedBuffer_Type = {
     sizeof(_PyManagedBufferObject),
     0,
     (destructor)mbuf_dealloc,                /* tp_dealloc */
-    0,                                       /* tp_print */
+    0,                                       /* tp_vectorcall_offset */
     0,                                       /* tp_getattr */
     0,                                       /* tp_setattr */
-    0,                                       /* tp_reserved */
+    0,                                       /* tp_as_async */
     0,                                       /* tp_repr */
     0,                                       /* tp_as_number */
     0,                                       /* tp_as_sequence */
@@ -195,10 +212,10 @@ PyTypeObject _PyManagedBuffer_Type = {
 #define VIEW_ADDR(mv) (&((PyMemoryViewObject *)mv)->view)
 
 /* Check for the presence of suboffsets in the first dimension. */
-#define HAVE_PTR(suboffsets) (suboffsets && suboffsets[0] >= 0)
+#define HAVE_PTR(suboffsets, dim) (suboffsets && suboffsets[dim] >= 0)
 /* Adjust ptr if suboffsets are present. */
-#define ADJUST_PTR(ptr, suboffsets) \
-    (HAVE_PTR(suboffsets) ? *((char**)ptr) + suboffsets[0] : ptr)
+#define ADJUST_PTR(ptr, suboffsets, dim) \
+    (HAVE_PTR(suboffsets, dim) ? *((char**)ptr) + suboffsets[dim] : ptr)
 
 /* Memoryview buffer properties */
 #define MV_C_CONTIGUOUS(flags) (flags&(_Py_MEMORYVIEW_SCALAR|_Py_MEMORYVIEW_C))
@@ -223,7 +240,7 @@ PyTypeObject _PyManagedBuffer_Type = {
 
 
 PyDoc_STRVAR(memory_doc,
-"memoryview(object)\n\
+"memoryview(object)\n--\n\
 \n\
 Create a new memoryview object which references the given object.");
 
@@ -245,7 +262,7 @@ Create a new memoryview object which references the given object.");
 #define HAVE_SUBOFFSETS_IN_LAST_DIM(view) \
     (view->suboffsets && view->suboffsets[dest->ndim-1] >= 0)
 
-Py_LOCAL_INLINE(int)
+static inline int
 last_dim_is_contiguous(const Py_buffer *dest, const Py_buffer *src)
 {
     assert(dest->ndim > 0 && src->ndim > 0);
@@ -261,7 +278,7 @@ last_dim_is_contiguous(const Py_buffer *dest, const Py_buffer *src)
    assignments, where the lvalue is already known to have a single character
    format. This is a performance hack that could be rewritten (if properly
    benchmarked). */
-Py_LOCAL_INLINE(int)
+static inline int
 equiv_format(const Py_buffer *dest, const Py_buffer *src)
 {
     const char *dfmt, *sfmt;
@@ -281,7 +298,7 @@ equiv_format(const Py_buffer *dest, const Py_buffer *src)
 /* Two shapes are equivalent if they are either equal or identical up
    to a zero element at the same position. For example, in NumPy arrays
    the shapes [1, 0, 5] and [1, 0, 7] are equivalent. */
-Py_LOCAL_INLINE(int)
+static inline int
 equiv_shape(const Py_buffer *dest, const Py_buffer *src)
 {
     int i;
@@ -335,11 +352,11 @@ copy_base(const Py_ssize_t *shape, Py_ssize_t itemsize,
         char *p;
         Py_ssize_t i;
         for (i=0, p=mem; i < shape[0]; p+=itemsize, sptr+=sstrides[0], i++) {
-            char *xsptr = ADJUST_PTR(sptr, ssuboffsets);
+            char *xsptr = ADJUST_PTR(sptr, ssuboffsets, 0);
             memcpy(p, xsptr, itemsize);
         }
         for (i=0, p=mem; i < shape[0]; p+=itemsize, dptr+=dstrides[0], i++) {
-            char *xdptr = ADJUST_PTR(dptr, dsuboffsets);
+            char *xdptr = ADJUST_PTR(dptr, dsuboffsets, 0);
             memcpy(xdptr, p, itemsize);
         }
     }
@@ -367,8 +384,8 @@ copy_rec(const Py_ssize_t *shape, Py_ssize_t ndim, Py_ssize_t itemsize,
     }
 
     for (i = 0; i < shape[0]; dptr+=dstrides[0], sptr+=sstrides[0], i++) {
-        char *xdptr = ADJUST_PTR(dptr, dsuboffsets);
-        char *xsptr = ADJUST_PTR(sptr, ssuboffsets);
+        char *xdptr = ADJUST_PTR(dptr, dsuboffsets, 0);
+        char *xsptr = ADJUST_PTR(sptr, ssuboffsets, 0);
 
         copy_rec(shape+1, ndim-1, itemsize,
                  xdptr, dstrides+1, dsuboffsets ? dsuboffsets+1 : NULL,
@@ -440,7 +457,7 @@ copy_buffer(Py_buffer *dest, Py_buffer *src)
 }
 
 /* Initialize strides for a C-contiguous array. */
-Py_LOCAL_INLINE(void)
+static inline void
 init_strides_from_shape(Py_buffer *view)
 {
     Py_ssize_t i;
@@ -453,7 +470,7 @@ init_strides_from_shape(Py_buffer *view)
 }
 
 /* Initialize strides for a Fortran-contiguous array. */
-Py_LOCAL_INLINE(void)
+static inline void
 init_fortran_strides_from_shape(Py_buffer *view)
 {
     Py_ssize_t i;
@@ -515,7 +532,7 @@ buffer_to_contiguous(char *mem, Py_buffer *src, char order)
 /****************************************************************************/
 
 /* Initialize values that are shared with the managed buffer. */
-Py_LOCAL_INLINE(void)
+static inline void
 init_shared_values(Py_buffer *dest, const Py_buffer *src)
 {
     dest->obj = src->obj;
@@ -555,7 +572,7 @@ init_shape_strides(Py_buffer *dest, const Py_buffer *src)
     }
 }
 
-Py_LOCAL_INLINE(void)
+static inline void
 init_suboffsets(Py_buffer *dest, const Py_buffer *src)
 {
     Py_ssize_t i;
@@ -569,7 +586,7 @@ init_suboffsets(Py_buffer *dest, const Py_buffer *src)
 }
 
 /* len = product(shape) * itemsize */
-Py_LOCAL_INLINE(void)
+static inline void
 init_len(Py_buffer *view)
 {
     Py_ssize_t i, len;
@@ -616,7 +633,7 @@ init_flags(PyMemoryViewObject *mv)
 
 /* Allocate a new memoryview and perform basic initialization. New memoryviews
    are exclusively created through the mbuf_add functions. */
-Py_LOCAL_INLINE(PyMemoryViewObject *)
+static inline PyMemoryViewObject *
 memory_alloc(int ndim)
 {
     PyMemoryViewObject *mv;
@@ -660,7 +677,7 @@ mbuf_add_view(_PyManagedBufferObject *mbuf, const Py_buffer *src)
     if (src->ndim > PyBUF_MAX_NDIM) {
         PyErr_SetString(PyExc_ValueError,
             "memoryview: number of dimensions must not exceed "
-            STRINGIZE(PyBUF_MAX_NDIM));
+            Py_STRINGIFY(PyBUF_MAX_NDIM));
         return NULL;
     }
 
@@ -795,7 +812,7 @@ PyMemoryView_FromObject(PyObject *v)
     }
 
     PyErr_Format(PyExc_TypeError,
-        "memoryview: %.200s object does not have the buffer interface",
+        "memoryview: a bytes-like object is required, not '%.200s'",
         Py_TYPE(v)->tp_name);
     return NULL;
 }
@@ -895,7 +912,7 @@ memory_from_contiguous_copy(Py_buffer *src, char order)
    The logical structure of the input and output buffers is the same
    (i.e. tolist(input) == tolist(output)), but the physical layout in
    memory can be explicitly chosen.
- 
+
    As usual, if buffertype=PyBUF_WRITE, the exporter's buffer must be writable,
    otherwise it may be writable or read-only.
 
@@ -1101,7 +1118,7 @@ memory_exit(PyObject *self, PyObject *args)
 
 #define IS_BYTE_FORMAT(f) (f == 'b' || f == 'B' || f == 'c')
 
-Py_LOCAL_INLINE(Py_ssize_t)
+static inline Py_ssize_t
 get_native_fmtchar(char *result, const char *fmt)
 {
     Py_ssize_t size = -1;
@@ -1113,17 +1130,11 @@ get_native_fmtchar(char *result, const char *fmt)
     case 'h': case 'H': size = sizeof(short); break;
     case 'i': case 'I': size = sizeof(int); break;
     case 'l': case 'L': size = sizeof(long); break;
-    #ifdef HAVE_LONG_LONG
-    case 'q': case 'Q': size = sizeof(PY_LONG_LONG); break;
-    #endif
+    case 'q': case 'Q': size = sizeof(long long); break;
     case 'n': case 'N': size = sizeof(Py_ssize_t); break;
     case 'f': size = sizeof(float); break;
     case 'd': size = sizeof(double); break;
-    #ifdef HAVE_C99_BOOL
     case '?': size = sizeof(_Bool); break;
-    #else
-    case '?': size = sizeof(char); break;
-    #endif
     case 'P': size = sizeof(void *); break;
     }
 
@@ -1135,7 +1146,7 @@ get_native_fmtchar(char *result, const char *fmt)
     return -1;
 }
 
-Py_LOCAL_INLINE(char *)
+static inline const char *
 get_native_fmtstr(const char *fmt)
 {
     int at = 0;
@@ -1160,19 +1171,13 @@ get_native_fmtstr(const char *fmt)
     case 'I': RETURN("I");
     case 'l': RETURN("l");
     case 'L': RETURN("L");
-    #ifdef HAVE_LONG_LONG
     case 'q': RETURN("q");
     case 'Q': RETURN("Q");
-    #endif
     case 'n': RETURN("n");
     case 'N': RETURN("N");
     case 'f': RETURN("f");
     case 'd': RETURN("d");
-    #ifdef HAVE_C99_BOOL
     case '?': RETURN("?");
-    #else
-    case '?': RETURN("?");
-    #endif
     case 'P': RETURN("P");
     }
 
@@ -1199,13 +1204,6 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
     assert(view->strides == mv->ob_array + view->ndim);
     assert(view->suboffsets == mv->ob_array + 2*view->ndim);
 
-    if (get_native_fmtchar(&srcchar, view->format) < 0) {
-        PyErr_SetString(PyExc_ValueError,
-            "memoryview: source format must be a native single character "
-            "format prefixed with an optional '@'");
-        return ret;
-    }
-
     asciifmt = PyUnicode_AsASCIIString(format);
     if (asciifmt == NULL)
         return ret;
@@ -1218,7 +1216,8 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
         goto out;
     }
 
-    if (!IS_BYTE_FORMAT(srcchar) && !IS_BYTE_FORMAT(destchar)) {
+    if ((get_native_fmtchar(&srcchar, view->format) < 0 ||
+         !IS_BYTE_FORMAT(srcchar)) && !IS_BYTE_FORMAT(destchar)) {
         PyErr_SetString(PyExc_TypeError,
             "memoryview: cannot cast between two non-byte formats");
         goto out;
@@ -1229,7 +1228,7 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
         goto out;
     }
 
-    view->format = get_native_fmtstr(PyBytes_AS_STRING(asciifmt));
+    view->format = (char *)get_native_fmtstr(PyBytes_AS_STRING(asciifmt));
     if (view->format == NULL) {
         /* NOT_REACHED: get_native_fmtchar() already validates the format. */
         PyErr_SetString(PyExc_RuntimeError,
@@ -1244,7 +1243,7 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
     view->suboffsets = NULL;
 
     init_flags(mv);
- 
+
     ret = 0;
 
 out:
@@ -1389,7 +1388,7 @@ memory_cast(PyMemoryViewObject *self, PyObject *args, PyObject *kwds)
         if (ndim > PyBUF_MAX_NDIM) {
             PyErr_SetString(PyExc_ValueError,
                 "memoryview: number of dimensions must not exceed "
-                STRINGIZE(PyBUF_MAX_NDIM));
+                Py_STRINGIFY(PyBUF_MAX_NDIM));
             return NULL;
         }
         if (self->view.ndim != 1 && ndim != 1) {
@@ -1414,6 +1413,20 @@ memory_cast(PyMemoryViewObject *self, PyObject *args, PyObject *kwds)
 error:
     Py_DECREF(mv);
     return NULL;
+}
+
+static PyObject *
+memory_toreadonly(PyMemoryViewObject *self, PyObject *noargs)
+{
+    CHECK_RELEASED(self);
+    /* Even if self is already readonly, we still need to create a new
+     * object for .release() to work correctly.
+     */
+    self = (PyMemoryViewObject *) mbuf_add_view(self->mbuf, &self->view);
+    if (self != NULL) {
+        self->view.readonly = 1;
+    };
+    return (PyObject *) self;
 }
 
 
@@ -1589,12 +1602,11 @@ pylong_as_lu(PyObject *item)
     return lu;
 }
 
-#ifdef HAVE_LONG_LONG
-static PY_LONG_LONG
+static long long
 pylong_as_lld(PyObject *item)
 {
     PyObject *tmp;
-    PY_LONG_LONG lld;
+    long long lld;
 
     tmp = PyNumber_Index(item);
     if (tmp == NULL)
@@ -1605,21 +1617,20 @@ pylong_as_lld(PyObject *item)
     return lld;
 }
 
-static unsigned PY_LONG_LONG
+static unsigned long long
 pylong_as_llu(PyObject *item)
 {
     PyObject *tmp;
-    unsigned PY_LONG_LONG llu;
+    unsigned long long llu;
 
     tmp = PyNumber_Index(item);
     if (tmp == NULL)
-        return (unsigned PY_LONG_LONG)-1;
+        return (unsigned long long)-1;
 
     llu = PyLong_AsUnsignedLongLong(tmp);
     Py_DECREF(tmp);
     return llu;
 }
-#endif
 
 static Py_ssize_t
 pylong_as_zd(PyObject *item)
@@ -1664,13 +1675,13 @@ pylong_as_zu(PyObject *item)
 /* Unpack a single item. 'fmt' can be any native format character in struct
    module syntax. This function is very sensitive to small changes. With this
    layout gcc automatically generates a fast jump table. */
-Py_LOCAL_INLINE(PyObject *)
+static inline PyObject *
 unpack_single(const char *ptr, const char *fmt)
 {
-    unsigned PY_LONG_LONG llu;
+    unsigned long long llu;
     unsigned long lu;
     size_t zu;
-    PY_LONG_LONG lld;
+    long long lld;
     long ld;
     Py_ssize_t zd;
     double d;
@@ -1680,18 +1691,14 @@ unpack_single(const char *ptr, const char *fmt)
     switch (fmt[0]) {
 
     /* signed integers and fast path for 'B' */
-    case 'B': uc = *((unsigned char *)ptr); goto convert_uc;
-    case 'b': ld =   *((signed char *)ptr); goto convert_ld;
+    case 'B': uc = *((const unsigned char *)ptr); goto convert_uc;
+    case 'b': ld =   *((const signed char *)ptr); goto convert_ld;
     case 'h': UNPACK_SINGLE(ld, ptr, short); goto convert_ld;
     case 'i': UNPACK_SINGLE(ld, ptr, int); goto convert_ld;
     case 'l': UNPACK_SINGLE(ld, ptr, long); goto convert_ld;
 
     /* boolean */
-    #ifdef HAVE_C99_BOOL
     case '?': UNPACK_SINGLE(ld, ptr, _Bool); goto convert_bool;
-    #else
-    case '?': UNPACK_SINGLE(ld, ptr, char); goto convert_bool;
-    #endif
 
     /* unsigned integers */
     case 'H': UNPACK_SINGLE(lu, ptr, unsigned short); goto convert_lu;
@@ -1699,10 +1706,8 @@ unpack_single(const char *ptr, const char *fmt)
     case 'L': UNPACK_SINGLE(lu, ptr, unsigned long); goto convert_lu;
 
     /* native 64-bit */
-    #ifdef HAVE_LONG_LONG
-    case 'q': UNPACK_SINGLE(lld, ptr, PY_LONG_LONG); goto convert_lld;
-    case 'Q': UNPACK_SINGLE(llu, ptr, unsigned PY_LONG_LONG); goto convert_llu;
-    #endif
+    case 'q': UNPACK_SINGLE(lld, ptr, long long); goto convert_lld;
+    case 'Q': UNPACK_SINGLE(llu, ptr, unsigned long long); goto convert_llu;
 
     /* ssize_t and size_t */
     case 'n': UNPACK_SINGLE(zd, ptr, Py_ssize_t); goto convert_zd;
@@ -1763,10 +1768,10 @@ err_format:
 static int
 pack_single(char *ptr, PyObject *item, const char *fmt)
 {
-    unsigned PY_LONG_LONG llu;
+    unsigned long long llu;
     unsigned long lu;
     size_t zu;
-    PY_LONG_LONG lld;
+    long long lld;
     long ld;
     Py_ssize_t zd;
     double d;
@@ -1814,20 +1819,18 @@ pack_single(char *ptr, PyObject *item, const char *fmt)
         break;
 
     /* native 64-bit */
-    #ifdef HAVE_LONG_LONG
     case 'q':
         lld = pylong_as_lld(item);
         if (lld == -1 && PyErr_Occurred())
             goto err_occurred;
-        PACK_SINGLE(ptr, lld, PY_LONG_LONG);
+        PACK_SINGLE(ptr, lld, long long);
         break;
     case 'Q':
         llu = pylong_as_llu(item);
-        if (llu == (unsigned PY_LONG_LONG)-1 && PyErr_Occurred())
+        if (llu == (unsigned long long)-1 && PyErr_Occurred())
             goto err_occurred;
-        PACK_SINGLE(ptr, llu, unsigned PY_LONG_LONG);
+        PACK_SINGLE(ptr, llu, unsigned long long);
         break;
-    #endif
 
     /* ssize_t and size_t */
     case 'n':
@@ -1861,11 +1864,7 @@ pack_single(char *ptr, PyObject *item, const char *fmt)
         ld = PyObject_IsTrue(item);
         if (ld < 0)
             return -1; /* preserve original error */
-    #ifdef HAVE_C99_BOOL
         PACK_SINGLE(ptr, ld, _Bool);
-    #else
-        PACK_SINGLE(ptr, ld, char);
-    #endif
          break;
 
     /* bytes object */
@@ -2032,7 +2031,7 @@ struct_unpack_single(const char *ptr, struct unpacker *x)
 /****************************************************************************/
 
 /* allow explicit form of native format */
-Py_LOCAL_INLINE(const char *)
+static inline const char *
 adjust_fmt(const Py_buffer *view)
 {
     const char *fmt;
@@ -2060,7 +2059,7 @@ tolist_base(const char *ptr, const Py_ssize_t *shape,
         return NULL;
 
     for (i = 0; i < shape[0]; ptr+=strides[0], i++) {
-        const char *xptr = ADJUST_PTR(ptr, suboffsets);
+        const char *xptr = ADJUST_PTR(ptr, suboffsets, 0);
         item = unpack_single(xptr, fmt);
         if (item == NULL) {
             Py_DECREF(lst);
@@ -2094,7 +2093,7 @@ tolist_rec(const char *ptr, Py_ssize_t ndim, const Py_ssize_t *shape,
         return NULL;
 
     for (i = 0; i < shape[0]; ptr+=strides[0], i++) {
-        const char *xptr = ADJUST_PTR(ptr, suboffsets);
+        const char *xptr = ADJUST_PTR(ptr, suboffsets, 0);
         item = tolist_rec(xptr, ndim-1, shape+1,
                           strides+1, suboffsets ? suboffsets+1 : NULL,
                           fmt);
@@ -2137,27 +2136,99 @@ memory_tolist(PyMemoryViewObject *mv, PyObject *noargs)
 }
 
 static PyObject *
-memory_tobytes(PyMemoryViewObject *self, PyObject *dummy)
+memory_tobytes(PyMemoryViewObject *self, PyObject *args, PyObject *kwds)
 {
+    static char *kwlist[] = {"order", NULL};
     Py_buffer *src = VIEW_ADDR(self);
-    PyObject *bytes = NULL;
+    char *order = NULL;
+    char ord = 'C';
+    PyObject *bytes;
 
     CHECK_RELEASED(self);
 
-    if (MV_C_CONTIGUOUS(self->flags)) {
-        return PyBytes_FromStringAndSize(src->buf, src->len);
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|z", kwlist, &order)) {
+        return NULL;
+    }
+
+    if (order) {
+        if (strcmp(order, "F") == 0) {
+            ord = 'F';
+        }
+        else if (strcmp(order, "A") == 0) {
+            ord = 'A';
+        }
+        else if (strcmp(order, "C") != 0) {
+            PyErr_SetString(PyExc_ValueError,
+                "order must be 'C', 'F' or 'A'");
+            return NULL;
+        }
     }
 
     bytes = PyBytes_FromStringAndSize(NULL, src->len);
     if (bytes == NULL)
         return NULL;
 
-    if (buffer_to_contiguous(PyBytes_AS_STRING(bytes), src, 'C') < 0) {
+    if (PyBuffer_ToContiguous(PyBytes_AS_STRING(bytes), src, src->len, ord) < 0) {
         Py_DECREF(bytes);
         return NULL;
     }
 
     return bytes;
+}
+
+/*[clinic input]
+memoryview.hex
+
+    sep: object = NULL
+        An optional single character or byte to separate hex bytes.
+    bytes_per_sep: int = 1
+        How many bytes between separators.  Positive values count from the
+        right, negative values count from the left.
+
+Return the data in the buffer as a str of hexadecimal numbers.
+
+Example:
+>>> value = memoryview(b'\xb9\x01\xef')
+>>> value.hex()
+'b901ef'
+>>> value.hex(':')
+'b9:01:ef'
+>>> value.hex(':', 2)
+'b9:01ef'
+>>> value.hex(':', -2)
+'b901:ef'
+[clinic start generated code]*/
+
+static PyObject *
+memoryview_hex_impl(PyMemoryViewObject *self, PyObject *sep,
+                    int bytes_per_sep)
+/*[clinic end generated code: output=430ca760f94f3ca7 input=539f6a3a5fb56946]*/
+{
+    Py_buffer *src = VIEW_ADDR(self);
+    PyObject *bytes;
+    PyObject *ret;
+
+    CHECK_RELEASED(self);
+
+    if (MV_C_CONTIGUOUS(self->flags)) {
+        return _Py_strhex_with_sep(src->buf, src->len, sep, bytes_per_sep);
+    }
+
+    bytes = PyBytes_FromStringAndSize(NULL, src->len);
+    if (bytes == NULL)
+        return NULL;
+
+    if (PyBuffer_ToContiguous(PyBytes_AS_STRING(bytes), src, src->len, 'C') < 0) {
+        Py_DECREF(bytes);
+        return NULL;
+    }
+
+    ret = _Py_strhex_with_sep(
+            PyBytes_AS_STRING(bytes), PyBytes_GET_SIZE(bytes),
+            sep, bytes_per_sep);
+    Py_DECREF(bytes);
+
+    return ret;
 }
 
 static PyObject *
@@ -2174,30 +2245,63 @@ memory_repr(PyMemoryViewObject *self)
 /*                          Indexing and slicing                          */
 /**************************************************************************/
 
-/* Get the pointer to the item at index. */
 static char *
-ptr_from_index(Py_buffer *view, Py_ssize_t index)
+lookup_dimension(Py_buffer *view, char *ptr, int dim, Py_ssize_t index)
 {
-    char *ptr;
-    Py_ssize_t nitems; /* items in the first dimension */
+    Py_ssize_t nitems; /* items in the given dimension */
 
     assert(view->shape);
     assert(view->strides);
 
-    nitems = view->shape[0];
+    nitems = view->shape[dim];
     if (index < 0) {
         index += nitems;
     }
     if (index < 0 || index >= nitems) {
-        PyErr_SetString(PyExc_IndexError, "index out of bounds");
+        PyErr_Format(PyExc_IndexError,
+                     "index out of bounds on dimension %d", dim + 1);
         return NULL;
     }
 
-    ptr = (char *)view->buf;
-    ptr += view->strides[0] * index;
+    ptr += view->strides[dim] * index;
 
-    ptr = ADJUST_PTR(ptr, view->suboffsets);
+    ptr = ADJUST_PTR(ptr, view->suboffsets, dim);
 
+    return ptr;
+}
+
+/* Get the pointer to the item at index. */
+static char *
+ptr_from_index(Py_buffer *view, Py_ssize_t index)
+{
+    char *ptr = (char *)view->buf;
+    return lookup_dimension(view, ptr, 0, index);
+}
+
+/* Get the pointer to the item at tuple. */
+static char *
+ptr_from_tuple(Py_buffer *view, PyObject *tup)
+{
+    char *ptr = (char *)view->buf;
+    Py_ssize_t dim, nindices = PyTuple_GET_SIZE(tup);
+
+    if (nindices > view->ndim) {
+        PyErr_Format(PyExc_TypeError,
+                     "cannot index %zd-dimension view with %zd-element tuple",
+                     view->ndim, nindices);
+        return NULL;
+    }
+
+    for (dim = 0; dim < nindices; dim++) {
+        Py_ssize_t index;
+        index = PyNumber_AsSsize_t(PyTuple_GET_ITEM(tup, dim),
+                                   PyExc_IndexError);
+        if (index == -1 && PyErr_Occurred())
+            return NULL;
+        ptr = lookup_dimension(view, ptr, (int)dim, index);
+        if (ptr == NULL)
+            return NULL;
+    }
     return ptr;
 }
 
@@ -2232,15 +2336,41 @@ memory_item(PyMemoryViewObject *self, Py_ssize_t index)
     return NULL;
 }
 
-Py_LOCAL_INLINE(int)
+/* Return the item at position *key* (a tuple of indices). */
+static PyObject *
+memory_item_multi(PyMemoryViewObject *self, PyObject *tup)
+{
+    Py_buffer *view = &(self->view);
+    const char *fmt;
+    Py_ssize_t nindices = PyTuple_GET_SIZE(tup);
+    char *ptr;
+
+    CHECK_RELEASED(self);
+
+    fmt = adjust_fmt(view);
+    if (fmt == NULL)
+        return NULL;
+
+    if (nindices < view->ndim) {
+        PyErr_SetString(PyExc_NotImplementedError,
+                        "sub-views are not implemented");
+        return NULL;
+    }
+    ptr = ptr_from_tuple(view, tup);
+    if (ptr == NULL)
+        return NULL;
+    return unpack_single(ptr, fmt);
+}
+
+static inline int
 init_slice(Py_buffer *base, PyObject *key, int dim)
 {
     Py_ssize_t start, stop, step, slicelength;
 
-    if (PySlice_GetIndicesEx(key, base->shape[dim],
-                             &start, &stop, &step, &slicelength) < 0) {
+    if (PySlice_Unpack(key, &start, &stop, &step) < 0) {
         return -1;
     }
+    slicelength = PySlice_AdjustIndices(base->shape[dim], &start, &stop, step);
 
 
     if (base->suboffsets == NULL || dim == 0) {
@@ -2280,6 +2410,22 @@ is_multislice(PyObject *key)
     return 1;
 }
 
+static Py_ssize_t
+is_multiindex(PyObject *key)
+{
+    Py_ssize_t size, i;
+
+    if (!PyTuple_Check(key))
+        return 0;
+    size = PyTuple_GET_SIZE(key);
+    for (i = 0; i < size; i++) {
+        PyObject *x = PyTuple_GET_ITEM(key, i);
+        if (!PyIndex_Check(x))
+            return 0;
+    }
+    return 1;
+}
+
 /* mv[obj] returns an object holding the data for one element if obj
    fully indexes the memoryview or another memoryview object if it
    does not.
@@ -2291,7 +2437,7 @@ memory_subscript(PyMemoryViewObject *self, PyObject *key)
 {
     Py_buffer *view;
     view = &(self->view);
-    
+
     CHECK_RELEASED(self);
 
     if (view->ndim == 0) {
@@ -2334,6 +2480,9 @@ memory_subscript(PyMemoryViewObject *self, PyObject *key)
         init_flags(sliced);
 
         return (PyObject *)sliced;
+    }
+    else if (is_multiindex(key)) {
+        return memory_item_multi(self, key);
     }
     else if (is_multislice(key)) {
         PyErr_SetString(PyExc_NotImplementedError,
@@ -2379,14 +2528,15 @@ memory_ass_sub(PyMemoryViewObject *self, PyObject *key, PyObject *value)
             return -1;
         }
     }
-    if (view->ndim != 1) {
-        PyErr_SetString(PyExc_NotImplementedError,
-            "memoryview assignments are currently restricted to ndim = 1");
-        return -1;
-    }
 
     if (PyIndex_Check(key)) {
-        Py_ssize_t index = PyNumber_AsSsize_t(key, PyExc_IndexError);
+        Py_ssize_t index;
+        if (1 < view->ndim) {
+            PyErr_SetString(PyExc_NotImplementedError,
+                            "sub-views are not implemented");
+            return -1;
+        }
+        index = PyNumber_AsSsize_t(key, PyExc_IndexError);
         if (index == -1 && PyErr_Occurred())
             return -1;
         ptr = ptr_from_index(view, index);
@@ -2421,7 +2571,19 @@ memory_ass_sub(PyMemoryViewObject *self, PyObject *key, PyObject *value)
         PyBuffer_Release(&src);
         return ret;
     }
-    else if (PySlice_Check(key) || is_multislice(key)) {
+    if (is_multiindex(key)) {
+        char *ptr;
+        if (PyTuple_GET_SIZE(key) < view->ndim) {
+            PyErr_SetString(PyExc_NotImplementedError,
+                            "sub-views are not implemented");
+            return -1;
+        }
+        ptr = ptr_from_tuple(view, key);
+        if (ptr == NULL)
+            return -1;
+        return pack_single(ptr, value, fmt);
+    }
+    if (PySlice_Check(key) || is_multislice(key)) {
         /* Call memory_subscript() to produce a sliced lvalue, then copy
            rvalue into lvalue. This is already implemented in _testbuffer.c. */
         PyErr_SetString(PyExc_NotImplementedError,
@@ -2522,7 +2684,7 @@ struct_unpack_cmp(const char *p, const char *q,
         equal = (x == y);                \
     } while (0)
 
-Py_LOCAL_INLINE(int)
+static inline int
 unpack_cmp(const char *p, const char *q, char fmt,
            struct unpacker *unpack_p, struct unpacker *unpack_q)
 {
@@ -2531,18 +2693,14 @@ unpack_cmp(const char *p, const char *q, char fmt,
     switch (fmt) {
 
     /* signed integers and fast path for 'B' */
-    case 'B': return *((unsigned char *)p) == *((unsigned char *)q);
-    case 'b': return *((signed char *)p) == *((signed char *)q);
+    case 'B': return *((const unsigned char *)p) == *((const unsigned char *)q);
+    case 'b': return *((const signed char *)p) == *((const signed char *)q);
     case 'h': CMP_SINGLE(p, q, short); return equal;
     case 'i': CMP_SINGLE(p, q, int); return equal;
     case 'l': CMP_SINGLE(p, q, long); return equal;
 
     /* boolean */
-    #ifdef HAVE_C99_BOOL
     case '?': CMP_SINGLE(p, q, _Bool); return equal;
-    #else
-    case '?': CMP_SINGLE(p, q, char); return equal;
-    #endif
 
     /* unsigned integers */
     case 'H': CMP_SINGLE(p, q, unsigned short); return equal;
@@ -2550,10 +2708,8 @@ unpack_cmp(const char *p, const char *q, char fmt,
     case 'L': CMP_SINGLE(p, q, unsigned long); return equal;
 
     /* native 64-bit */
-    #ifdef HAVE_LONG_LONG
-    case 'q': CMP_SINGLE(p, q, PY_LONG_LONG); return equal;
-    case 'Q': CMP_SINGLE(p, q, unsigned PY_LONG_LONG); return equal;
-    #endif
+    case 'q': CMP_SINGLE(p, q, long long); return equal;
+    case 'Q': CMP_SINGLE(p, q, unsigned long long); return equal;
 
     /* ssize_t and size_t */
     case 'n': CMP_SINGLE(p, q, Py_ssize_t); return equal;
@@ -2594,8 +2750,8 @@ cmp_base(const char *p, const char *q, const Py_ssize_t *shape,
     int equal;
 
     for (i = 0; i < shape[0]; p+=pstrides[0], q+=qstrides[0], i++) {
-        const char *xp = ADJUST_PTR(p, psuboffsets);
-        const char *xq = ADJUST_PTR(q, qsuboffsets);
+        const char *xp = ADJUST_PTR(p, psuboffsets, 0);
+        const char *xq = ADJUST_PTR(q, qsuboffsets, 0);
         equal = unpack_cmp(xp, xq, fmt, unpack_p, unpack_q);
         if (equal <= 0)
             return equal;
@@ -2629,8 +2785,8 @@ cmp_rec(const char *p, const char *q,
     }
 
     for (i = 0; i < shape[0]; p+=pstrides[0], q+=qstrides[0], i++) {
-        const char *xp = ADJUST_PTR(p, psuboffsets);
-        const char *xq = ADJUST_PTR(q, qsuboffsets);
+        const char *xp = ADJUST_PTR(p, psuboffsets, 0);
+        const char *xq = ADJUST_PTR(q, qsuboffsets, 0);
         equal = cmp_rec(xp, xq, ndim-1, shape+1,
                         pstrides+1, psuboffsets ? psuboffsets+1 : NULL,
                         qstrides+1, qsuboffsets ? qsuboffsets+1 : NULL,
@@ -2829,7 +2985,7 @@ _IntTupleFromSsizet(int len, Py_ssize_t *vals)
 }
 
 static PyObject *
-memory_obj_get(PyMemoryViewObject *self)
+memory_obj_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     Py_buffer *view = &self->view;
 
@@ -2842,56 +2998,56 @@ memory_obj_get(PyMemoryViewObject *self)
 }
 
 static PyObject *
-memory_nbytes_get(PyMemoryViewObject *self)
+memory_nbytes_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return PyLong_FromSsize_t(self->view.len);
 }
 
 static PyObject *
-memory_format_get(PyMemoryViewObject *self)
+memory_format_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return PyUnicode_FromString(self->view.format);
 }
 
 static PyObject *
-memory_itemsize_get(PyMemoryViewObject *self)
+memory_itemsize_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return PyLong_FromSsize_t(self->view.itemsize);
 }
 
 static PyObject *
-memory_shape_get(PyMemoryViewObject *self)
+memory_shape_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.shape);
 }
 
 static PyObject *
-memory_strides_get(PyMemoryViewObject *self)
+memory_strides_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.strides);
 }
 
 static PyObject *
-memory_suboffsets_get(PyMemoryViewObject *self)
+memory_suboffsets_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.suboffsets);
 }
 
 static PyObject *
-memory_readonly_get(PyMemoryViewObject *self)
+memory_readonly_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return PyBool_FromLong(self->view.readonly);
 }
 
 static PyObject *
-memory_ndim_get(PyMemoryViewObject *self)
+memory_ndim_get(PyMemoryViewObject *self, void *Py_UNUSED(ignored))
 {
     CHECK_RELEASED(self);
     return PyLong_FromLong(self->view.ndim);
@@ -2948,6 +3104,7 @@ PyDoc_STRVAR(memory_f_contiguous_doc,
 PyDoc_STRVAR(memory_contiguous_doc,
              "A bool indicating whether the memory is contiguous.");
 
+
 static PyGetSetDef memory_getsetlist[] = {
     {"obj",             (getter)memory_obj_get,        NULL, memory_obj_doc},
     {"nbytes",          (getter)memory_nbytes_get,     NULL, memory_nbytes_doc},
@@ -2965,27 +3122,37 @@ static PyGetSetDef memory_getsetlist[] = {
 };
 
 PyDoc_STRVAR(memory_release_doc,
-"M.release() -> None\n\
+"release($self, /)\n--\n\
 \n\
 Release the underlying buffer exposed by the memoryview object.");
 PyDoc_STRVAR(memory_tobytes_doc,
-"M.tobytes() -> bytes\n\
+"tobytes($self, /, order=None)\n--\n\
 \n\
-Return the data in the buffer as a byte string.");
+Return the data in the buffer as a byte string. Order can be {'C', 'F', 'A'}.\n\
+When order is 'C' or 'F', the data of the original array is converted to C or\n\
+Fortran order. For contiguous views, 'A' returns an exact copy of the physical\n\
+memory. In particular, in-memory Fortran order is preserved. For non-contiguous\n\
+views, the data is converted to C first. order=None is the same as order='C'.");
 PyDoc_STRVAR(memory_tolist_doc,
-"M.tolist() -> list\n\
+"tolist($self, /)\n--\n\
 \n\
 Return the data in the buffer as a list of elements.");
 PyDoc_STRVAR(memory_cast_doc,
-"M.cast(format[, shape]) -> memoryview\n\
+"cast($self, /, format, *, shape)\n--\n\
 \n\
 Cast a memoryview to a new format or shape.");
+PyDoc_STRVAR(memory_toreadonly_doc,
+"toreadonly($self, /)\n--\n\
+\n\
+Return a readonly version of the memoryview.");
 
 static PyMethodDef memory_methods[] = {
     {"release",     (PyCFunction)memory_release, METH_NOARGS, memory_release_doc},
-    {"tobytes",     (PyCFunction)memory_tobytes, METH_NOARGS, memory_tobytes_doc},
+    {"tobytes",     (PyCFunction)(void(*)(void))memory_tobytes, METH_VARARGS|METH_KEYWORDS, memory_tobytes_doc},
+    MEMORYVIEW_HEX_METHODDEF
     {"tolist",      (PyCFunction)memory_tolist, METH_NOARGS, memory_tolist_doc},
-    {"cast",        (PyCFunction)memory_cast, METH_VARARGS|METH_KEYWORDS, memory_cast_doc},
+    {"cast",        (PyCFunction)(void(*)(void))memory_cast, METH_VARARGS|METH_KEYWORDS, memory_cast_doc},
+    {"toreadonly",  (PyCFunction)memory_toreadonly, METH_NOARGS, memory_toreadonly_doc},
     {"__enter__",   memory_enter, METH_NOARGS, NULL},
     {"__exit__",    memory_exit, METH_VARARGS, NULL},
     {NULL,          NULL}
@@ -2998,10 +3165,10 @@ PyTypeObject PyMemoryView_Type = {
     offsetof(PyMemoryViewObject, ob_array),   /* tp_basicsize */
     sizeof(Py_ssize_t),                       /* tp_itemsize */
     (destructor)memory_dealloc,               /* tp_dealloc */
-    0,                                        /* tp_print */
+    0,                                        /* tp_vectorcall_offset */
     0,                                        /* tp_getattr */
     0,                                        /* tp_setattr */
-    0,                                        /* tp_reserved */
+    0,                                        /* tp_as_async */
     (reprfunc)memory_repr,                    /* tp_repr */
     0,                                        /* tp_as_number */
     &memory_as_sequence,                      /* tp_as_sequence */

@@ -3,6 +3,7 @@
 
 .. module:: shlex
    :synopsis: Simple lexical analysis for Unix shell-like languages.
+
 .. moduleauthor:: Eric S. Raymond <esr@snark.thyrsus.com>
 .. moduleauthor:: Gustavo Niemeyer <niemeyer@conectiva.com>
 .. sectionauthor:: Eric S. Raymond <esr@snark.thyrsus.com>
@@ -36,21 +37,37 @@ The :mod:`shlex` module defines the following functions:
       standard input.
 
 
+.. function:: join(split_command)
+
+   Concatenate the tokens of the list *split_command* and return a string.
+   This function is the inverse of :func:`split`.
+
+      >>> from shlex import join
+      >>> print(join(['echo', '-n', 'Multiple words']))
+      echo -n 'Multiple words'
+
+   The returned value is shell-escaped to protect against injection
+   vulnerabilities (see :func:`quote`).
+
+   .. versionadded:: 3.8
+
+
 .. function:: quote(s)
 
    Return a shell-escaped version of the string *s*.  The returned value is a
    string that can safely be used as one token in a shell command line, for
    cases where you cannot use a list.
 
-   This idiom would be unsafe::
+   This idiom would be unsafe:
 
       >>> filename = 'somefile; rm -rf ~'
       >>> command = 'ls -l {}'.format(filename)
       >>> print(command)  # executed by a shell: boom!
       ls -l somefile; rm -rf ~
 
-   :func:`quote` lets you plug the security hole::
+   :func:`quote` lets you plug the security hole:
 
+      >>> from shlex import quote
       >>> command = 'ls -l {}'.format(quote(filename))
       >>> print(command)
       ls -l 'somefile; rm -rf ~'
@@ -60,6 +77,7 @@ The :mod:`shlex` module defines the following functions:
 
    The quoting is compatible with UNIX shells and with :func:`split`:
 
+      >>> from shlex import split
       >>> remote_command = split(remote_command)
       >>> remote_command
       ['ssh', 'home', "ls -l 'somefile; rm -rf ~'"]
@@ -72,11 +90,11 @@ The :mod:`shlex` module defines the following functions:
 The :mod:`shlex` module defines the following class:
 
 
-.. class:: shlex(instream=None, infile=None, posix=False)
+.. class:: shlex(instream=None, infile=None, posix=False, punctuation_chars=False)
 
    A :class:`~shlex.shlex` instance or subclass instance is a lexical analyzer
    object.  The initialization argument, if present, specifies where to read
-   characters from. It must be a file-/stream-like object with
+   characters from.  It must be a file-/stream-like object with
    :meth:`~io.TextIOBase.read` and :meth:`~io.TextIOBase.readline` methods, or
    a string.  If no argument is given, input will be taken from ``sys.stdin``.
    The second optional argument is a filename string, which sets the initial
@@ -86,8 +104,21 @@ The :mod:`shlex` module defines the following class:
    when *posix* is not true (default), the :class:`~shlex.shlex` instance will
    operate in compatibility mode.  When operating in POSIX mode,
    :class:`~shlex.shlex` will try to be as close as possible to the POSIX shell
-   parsing rules.
+   parsing rules.  The *punctuation_chars* argument provides a way to make the
+   behaviour even closer to how real shells parse.  This can take a number of
+   values: the default value, ``False``, preserves the behaviour seen under
+   Python 3.5 and earlier.  If set to ``True``, then parsing of the characters
+   ``();<>|&`` is changed: any run of these characters (considered punctuation
+   characters) is returned as a single token.  If set to a non-empty string of
+   characters, those characters will be used as the punctuation characters.  Any
+   characters in the :attr:`wordchars` attribute that appear in
+   *punctuation_chars* will be removed from :attr:`wordchars`.  See
+   :ref:`improved-shell-compatibility` for more information. *punctuation_chars*
+   can be set only upon :class:`~shlex.shlex` instance creation and can't be
+   modified later.
 
+   .. versionchanged:: 3.6
+      The *punctuation_chars* parameter was added.
 
 .. seealso::
 
@@ -190,7 +221,14 @@ variables which either control lexical analysis or can be used for debugging:
 .. attribute:: shlex.wordchars
 
    The string of characters that will accumulate into multi-character tokens.  By
-   default, includes all ASCII alphanumerics and underscore.
+   default, includes all ASCII alphanumerics and underscore.  In POSIX mode, the
+   accented characters in the Latin-1 set are also included.  If
+   :attr:`punctuation_chars` is not empty, the characters ``~-./*?=``, which can
+   appear in filename specifications and command line parameters, will also be
+   included in this attribute, and any characters which appear in
+   ``punctuation_chars`` will be removed from ``wordchars`` if they are present
+   there. If :attr:`whitespace_split` is set to ``True``, this will have no
+   effect.
 
 
 .. attribute:: shlex.whitespace
@@ -221,9 +259,15 @@ variables which either control lexical analysis or can be used for debugging:
 
 .. attribute:: shlex.whitespace_split
 
-   If ``True``, tokens will only be split in whitespaces. This is useful, for
+   If ``True``, tokens will only be split in whitespaces.  This is useful, for
    example, for parsing command lines with :class:`~shlex.shlex`, getting
-   tokens in a similar way to shell arguments.
+   tokens in a similar way to shell arguments.  When used in combination with
+   :attr:`punctuation_chars`, tokens will be split on whitespace in addition to
+   those characters.
+
+   .. versionchanged:: 3.8
+      The :attr:`punctuation_chars` attribute was made compatible with the
+      :attr:`whitespace_split` attribute.
 
 
 .. attribute:: shlex.infile
@@ -244,9 +288,9 @@ variables which either control lexical analysis or can be used for debugging:
    This attribute is ``None`` by default.  If you assign a string to it, that
    string will be recognized as a lexical-level inclusion request similar to the
    ``source`` keyword in various shells.  That is, the immediately following token
-   will opened as a filename and input taken from that stream until EOF, at which
-   point the :meth:`~io.IOBase.close` method of that stream will be called and
-   the input source will again become the original input stream.  Source
+   will be opened as a filename and input will be taken from that stream until
+   EOF, at which point the :meth:`~io.IOBase.close` method of that stream will be
+   called and the input source will again become the original input stream.  Source
    requests may be stacked any number of levels deep.
 
 
@@ -271,6 +315,16 @@ variables which either control lexical analysis or can be used for debugging:
 
    Token used to determine end of file. This will be set to the empty string
    (``''``), in non-POSIX mode, and to ``None`` in POSIX mode.
+
+
+.. attribute:: shlex.punctuation_chars
+
+   A read-only property. Characters that will be considered punctuation. Runs of
+   punctuation characters will be returned as a single token. However, note that no
+   semantic validity checking will be performed: for example, '>>>' could be
+   returned as a token, even though it may not be recognised as such by shells.
+
+   .. versionadded:: 3.6
 
 
 .. _shlex-parsing-rules:
@@ -325,3 +379,68 @@ following parsing rules.
 * EOF is signaled with a :const:`None` value;
 
 * Quoted empty strings (``''``) are allowed.
+
+.. _improved-shell-compatibility:
+
+Improved Compatibility with Shells
+----------------------------------
+
+.. versionadded:: 3.6
+
+The :class:`shlex` class provides compatibility with the parsing performed by
+common Unix shells like ``bash``, ``dash``, and ``sh``.  To take advantage of
+this compatibility, specify the ``punctuation_chars`` argument in the
+constructor.  This defaults to ``False``, which preserves pre-3.6 behaviour.
+However, if it is set to ``True``, then parsing of the characters ``();<>|&``
+is changed: any run of these characters is returned as a single token.  While
+this is short of a full parser for shells (which would be out of scope for the
+standard library, given the multiplicity of shells out there), it does allow
+you to perform processing of command lines more easily than you could
+otherwise.  To illustrate, you can see the difference in the following snippet:
+
+.. doctest::
+   :options: +NORMALIZE_WHITESPACE
+
+    >>> import shlex
+    >>> text = "a && b; c && d || e; f >'abc'; (def \"ghi\")"
+    >>> s = shlex.shlex(text, posix=True)
+    >>> s.whitespace_split = True
+    >>> list(s)
+    ['a', '&&', 'b;', 'c', '&&', 'd', '||', 'e;', 'f', '>abc;', '(def', 'ghi)']
+    >>> s = shlex.shlex(text, posix=True, punctuation_chars=True)
+    >>> s.whitespace_split = True
+    >>> list(s)
+    ['a', '&&', 'b', ';', 'c', '&&', 'd', '||', 'e', ';', 'f', '>', 'abc', ';',
+    '(', 'def', 'ghi', ')']
+
+Of course, tokens will be returned which are not valid for shells, and you'll
+need to implement your own error checks on the returned tokens.
+
+Instead of passing ``True`` as the value for the punctuation_chars parameter,
+you can pass a string with specific characters, which will be used to determine
+which characters constitute punctuation. For example::
+
+    >>> import shlex
+    >>> s = shlex.shlex("a && b || c", punctuation_chars="|")
+    >>> list(s)
+    ['a', '&', '&', 'b', '||', 'c']
+
+.. note:: When ``punctuation_chars`` is specified, the :attr:`~shlex.wordchars`
+   attribute is augmented with the characters ``~-./*?=``.  That is because these
+   characters can appear in file names (including wildcards) and command-line
+   arguments (e.g. ``--color=auto``). Hence::
+
+      >>> import shlex
+      >>> s = shlex.shlex('~/a && b-c --color=auto || d *.py?',
+      ...                 punctuation_chars=True)
+      >>> list(s)
+      ['~/a', '&&', 'b-c', '--color=auto', '||', 'd', '*.py?']
+
+   However, to match the shell as closely as possible, it is recommended to
+   always use ``posix`` and :attr:`~shlex.whitespace_split` when using
+   :attr:`~shlex.punctuation_chars`, which will negate
+   :attr:`~shlex.wordchars` entirely.
+
+For best effect, ``punctuation_chars`` should be set in conjunction with
+``posix=True``. (Note that ``posix=False`` is the default for
+:class:`~shlex.shlex`.)
