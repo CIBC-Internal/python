@@ -17,12 +17,13 @@ What is Python?
 
 Python is an interpreted, interactive, object-oriented programming language.  It
 incorporates modules, exceptions, dynamic typing, very high level dynamic data
-types, and classes.  Python combines remarkable power with very clear syntax.
-It has interfaces to many system calls and libraries, as well as to various
-window systems, and is extensible in C or C++.  It is also usable as an
-extension language for applications that need a programmable interface.
-Finally, Python is portable: it runs on many Unix variants, on the Mac, and on
-Windows 2000 and later.
+types, and classes.  It supports multiple programming paradigms beyond
+object-oriented programming, such as procedural and functional programming.
+Python combines remarkable power with very clear syntax. It has interfaces to
+many system calls and libraries, as well as to various window systems, and is
+extensible in C or C++.  It is also usable as an extension language for
+applications that need a programmable interface. Finally, Python is portable:
+it runs on many Unix variants including Linux and macOS, and on Windows.
 
 To find out more, start with :ref:`tutorial-index`.  The `Beginner's Guide to
 Python <https://wiki.python.org/moin/BeginnersGuide>`_ links to other
@@ -53,7 +54,7 @@ commercial use, to sell copies of Python in source or binary form (modified or
 unmodified), or to sell products that incorporate Python in some form.  We would
 still like to know about all commercial use of Python, of course.
 
-See `the PSF license page <https://docs.python.org/3/license/>`_ to find further
+See `the PSF license page <https://www.python.org/psf/license/>`_ to find further
 explanations and a link to the full text of the license.
 
 The Python logo is trademarked, and in certain cases permission is required to
@@ -117,7 +118,7 @@ programming), software engineering (unit testing, logging, profiling, parsing
 Python code), and operating system interfaces (system calls, filesystems, TCP/IP
 sockets).  Look at the table of contents for :ref:`library-index` to get an idea
 of what's available.  A wide variety of third-party extensions are also
-available.  Consult `the Python Package Index <https://pypi.python.org/pypi>`_ to
+available.  Consult `the Python Package Index <https://pypi.org>`_ to
 find packages of interest to you.
 
 
@@ -141,26 +142,25 @@ to fix critical bugs.
 Alpha, beta and release candidate versions have an additional suffix.  The
 suffix for an alpha version is "aN" for some small number N, the suffix for a
 beta version is "bN" for some small number N, and the suffix for a release
-candidate version is "cN" for some small number N.  In other words, all versions
+candidate version is "rcN" for some small number N.  In other words, all versions
 labeled 2.0aN precede the versions labeled 2.0bN, which precede versions labeled
-2.0cN, and *those* precede 2.0.
+2.0rcN, and *those* precede 2.0.
 
 You may also find version numbers with a "+" suffix, e.g. "2.2+".  These are
-unreleased versions, built directly from the Subversion trunk.  In practice,
-after a final minor release is made, the Subversion trunk is incremented to the
-next minor version, which becomes the "a0" version,
-e.g. "2.4a0".
+unreleased versions, built directly from the CPython development repository.  In
+practice, after a final minor release is made, the version is incremented to the
+next minor version, which becomes the "a0" version, e.g. "2.4a0".
 
-See also the documentation for ``sys.version``, ``sys.hexversion``, and
-``sys.version_info``.
+See also the documentation for :data:`sys.version`, :data:`sys.hexversion`, and
+:data:`sys.version_info`.
 
 
 How do I obtain a copy of the Python source?
 --------------------------------------------
 
 The latest Python source distribution is always available from python.org, at
-https://www.python.org/download/.  The latest development sources can be obtained
-via anonymous Mercurial access at https://hg.python.org/cpython.
+https://www.python.org/downloads/.  The latest development sources can be obtained
+at https://github.com/python/cpython/.
 
 The source distribution is a gzipped tar file containing the complete C source,
 Sphinx-formatted documentation, Python library modules, example programs, and
@@ -168,7 +168,7 @@ several useful pieces of freely distributable software.  The source will compile
 and run out of the box on most UNIX platforms.
 
 Consult the `Getting Started section of the Python Developer's Guide
-<https://docs.python.org/devguide/setup.html>`__ for more
+<https://devguide.python.org/setup/>`__ for more
 information on getting the source code and compiling it.
 
 
@@ -218,13 +218,13 @@ can be found at https://www.python.org/community/lists/.
 How do I get a beta test version of Python?
 -------------------------------------------
 
-Alpha and beta releases are available from https://www.python.org/download/.  All
+Alpha and beta releases are available from https://www.python.org/downloads/.  All
 releases are announced on the comp.lang.python and comp.lang.python.announce
 newsgroups and on the Python home page at https://www.python.org/; an RSS feed of
 news is available.
 
-You can also access the development version of Python through Mercurial.  See
-https://docs.python.org/devguide/faq.html for details.
+You can also access the development version of Python through Git.  See
+`The Python Developer's Guide <https://devguide.python.org/>`_ for details.
 
 
 How do I submit bug reports and patches for Python?
@@ -240,7 +240,7 @@ report bugs to Python, you can obtain your Roundup password through Roundup's
 `password reset procedure <https://bugs.python.org/user?@template=forgotten>`_.
 
 For more information on how Python is developed, consult `the Python Developer's
-Guide <https://docs.python.org/devguide/>`_.
+Guide <https://devguide.python.org/>`_.
 
 
 Are there any published articles about Python that I can reference?
@@ -253,7 +253,7 @@ outdated.
 
     Guido van Rossum and Jelke de Boer, "Interactively Testing Remote Servers
     Using the Python Programming Language", CWI Quarterly, Volume 4, Issue 4
-    (December 1991), Amsterdam, pp 283-303.
+    (December 1991), Amsterdam, pp 283--303.
 
 
 Are there any books on Python?
@@ -269,14 +269,8 @@ Python references; or perhaps search for "Python" and "language".
 Where in the world is www.python.org located?
 ---------------------------------------------
 
-The Python project's infrastructure is located all over the world.
-`www.python.org <https://www.python.org>`_ is graciously hosted by `Rackspace
-<http://www.rackspace.com>`_, with CDN caching provided by `Fastly
-<https://www.fastly.com>`_.  `Upfront Systems
-<http://www.upfrontsystems.co.za>`_ hosts `bugs.python.org
-<https://bugs.python.org>`_.  Many other Python services like `the Wiki
-<https://wiki.python.org>`_ are hosted by `Oregon State
-University Open Source Lab <https://osuosl.org>`_.
+The Python project's infrastructure is located all over the world and is managed
+by the Python Infrastructure Team. Details `here <http://infra.psf.io>`__.
 
 
 Why is it called Python?
@@ -284,7 +278,7 @@ Why is it called Python?
 
 When he began implementing Python, Guido van Rossum was also reading the
 published scripts from `"Monty Python's Flying Circus"
-<http://en.wikipedia.org/wiki/Monty_Python>`__, a BBC comedy series from the 1970s.  Van Rossum
+<https://en.wikipedia.org/wiki/Monty_Python>`__, a BBC comedy series from the 1970s.  Van Rossum
 thought he needed a name that was short, unique, and slightly mysterious, so he
 decided to call the language Python.
 
@@ -302,29 +296,27 @@ How stable is Python?
 ---------------------
 
 Very stable.  New, stable releases have been coming out roughly every 6 to 18
-months since 1991, and this seems likely to continue.  Currently there are
-usually around 18 months between major releases.
+months since 1991, and this seems likely to continue.  As of version 3.9,
+Python will have a major new release every 12 months (:pep:`602`).
 
 The developers issue "bugfix" releases of older versions, so the stability of
 existing releases gradually improves.  Bugfix releases, indicated by a third
-component of the version number (e.g. 2.5.3, 2.6.2), are managed for stability;
+component of the version number (e.g. 3.5.3, 3.6.2), are managed for stability;
 only fixes for known problems are included in a bugfix release, and it's
 guaranteed that interfaces will remain the same throughout a series of bugfix
 releases.
 
 The latest stable releases can always be found on the `Python download page
-<https://www.python.org/download/>`_.  There are two recommended production-ready
-versions at this point in time, because at the moment there are two branches of
-stable releases: 2.x and 3.x.  Python 3.x may be less useful than 2.x, since
-currently there is more third party software available for Python 2 than for
-Python 3.  Python 2 code will generally not run unchanged in Python 3.
-
+<https://www.python.org/downloads/>`_.  There are two production-ready versions
+of Python: 2.x and 3.x. The recommended version is 3.x, which is supported by
+most widely used libraries.  Although 2.x is still widely used, `it is not
+maintained anymore <https://www.python.org/dev/peps/pep-0373/>`_.
 
 How many people are using Python?
 ---------------------------------
 
-There are probably tens of thousands of users, though it's difficult to obtain
-an exact count.
+There are probably millions of users, though it's difficult to obtain an exact
+count.
 
 Python is available for free download, so there are no sales figures, and it's
 available from many different sites and packaged with many Linux distributions,
@@ -345,7 +337,7 @@ different companies and organizations.
 High-profile Python projects include `the Mailman mailing list manager
 <http://www.list.org>`_ and `the Zope application server
 <http://www.zope.org>`_.  Several Linux distributions, most notably `Red Hat
-<http://www.redhat.com>`_, have written part or all of their installer and
+<https://www.redhat.com>`_, have written part or all of their installer and
 system administration software in Python.  Companies that use Python internally
 include Google, Yahoo, and Lucasfilm Ltd.
 
@@ -439,7 +431,7 @@ remember the methods for a list, they can do something like this::
    >>> L
    [1]
 
-With the interpreter, documentation is never far from the student as he's
+With the interpreter, documentation is never far from the student as they are
 programming.
 
 There are also good IDEs for Python.  IDLE is a cross-platform IDE for Python

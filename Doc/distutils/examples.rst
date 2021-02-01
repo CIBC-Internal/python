@@ -1,8 +1,10 @@
-.. _examples:
+.. _distutils_examples:
 
-********
-Examples
-********
+******************
+Distutils Examples
+******************
+
+.. include:: ./_setuptools_disclaimer.rst
 
 This chapter provides a number of basic examples to help get started with
 distutils.  Additional information about using distutils can be found in the
@@ -245,13 +247,15 @@ Let's take an example with a simple script::
 
     setup(name='foobar')
 
-Running the ``check`` command will display some warnings::
+Running the ``check`` command will display some warnings:
+
+.. code-block:: shell-session
 
     $ python setup.py check
     running check
     warning: check: missing required meta-data: version, url
     warning: check: missing meta-data: either (author and author_email) or
-             (maintainer and maintainer_email) must be supplied
+             (maintainer and maintainer_email) should be supplied
 
 
 If you use the reStructuredText syntax in the ``long_description`` field and
@@ -274,7 +278,9 @@ For example, if the :file:`setup.py` script is changed like this::
         url='http://example.com', long_description=desc)
 
 Where the long description is broken, ``check`` will be able to detect it
-by using the :mod:`docutils` parser::
+by using the :mod:`docutils` parser:
+
+.. code-block:: shell-session
 
     $ python setup.py check --restructuredtext
     running check
@@ -286,7 +292,9 @@ Reading the metadata
 
 The :func:`distutils.core.setup` function provides a command-line interface
 that allows you to query the metadata fields of a project through the
-``setup.py`` script of a given project::
+``setup.py`` script of a given project:
+
+.. code-block:: shell-session
 
     $ python setup.py --name
     distribute
@@ -315,7 +323,7 @@ You can read back this static file, by using the
     >>> metadata.description
     'Easily download, build, install, upgrade, and uninstall Python packages'
 
-Notice that the class can also be instanciated with a metadata file path to
+Notice that the class can also be instantiated with a metadata file path to
 loads its values::
 
     >>> pkg_info_path = 'distribute-0.6.8-py2.7.egg-info'

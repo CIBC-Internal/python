@@ -3,8 +3,13 @@
 
 .. module:: codeop
    :synopsis: Compile (possibly incomplete) Python code.
+
 .. sectionauthor:: Moshe Zadka <moshez@zadka.site.co.il>
 .. sectionauthor:: Michael Hudson <mwh@python.net>
+
+**Source code:** :source:`Lib/codeop.py`
+
+--------------
 
 The :mod:`codeop` module provides utilities upon which the Python
 read-eval-print loop can be emulated, as is done in the :mod:`code` module.  As
@@ -38,8 +43,9 @@ To do just the former:
    :exc:`OverflowError` or :exc:`ValueError` if there is an invalid literal.
 
    The *symbol* argument determines whether *source* is compiled as a statement
-   (``'single'``, the default) or as an :term:`expression` (``'eval'``).  Any
-   other value will cause :exc:`ValueError` to  be raised.
+   (``'single'``, the default), as a sequence of statements (``'exec'``) or
+   as an :term:`expression` (``'eval'``).  Any other value will
+   cause :exc:`ValueError` to  be raised.
 
    .. note::
 

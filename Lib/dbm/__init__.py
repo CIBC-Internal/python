@@ -82,7 +82,8 @@ def open(file, flag='r', mode=0o666):
             # file doesn't exist and the new flag was used so use default type
             mod = _defaultmod
         else:
-            raise error[0]("need 'c' or 'n' flag to open new db")
+            raise error[0]("db file doesn't exist; "
+                           "use 'c' or 'n' flag to create a new db")
     elif result == "":
         # db type cannot be determined
         raise error[0]("db type could not be determined")
@@ -153,9 +154,9 @@ def whichdb(filename):
     except OSError:
         return None
 
-    # Read the start of the file -- the magic number
-    s16 = f.read(16)
-    f.close()
+    with f:
+        # Read the start of the file -- the magic number
+        s16 = f.read(16)
     s = s16[0:4]
 
     # Return "" if not at least 4 bytes

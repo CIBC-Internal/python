@@ -3,11 +3,12 @@
 
 .. module:: sched
    :synopsis: General purpose event scheduler.
+
 .. sectionauthor:: Moshe Zadka <moshez@zadka.site.co.il>
 
-.. index:: single: event scheduling
-
 **Source code:** :source:`Lib/sched.py`
+
+.. index:: single: event scheduling
 
 --------------
 
@@ -19,8 +20,7 @@ scheduler:
    The :class:`scheduler` class defines a generic interface to scheduling events.
    It needs two functions to actually deal with the "outside world" --- *timefunc*
    should be callable without arguments, and return  a number (the "time", in any
-   units whatsoever). If time.monotonic is not available, the *timefunc* default
-   is time.time instead. The *delayfunc* function should be callable with one
+   units whatsoever).  The *delayfunc* function should be callable with one
    argument, compatible with the output of *timefunc*, and should delay that many
    time units. *delayfunc* will also be called with the argument ``0`` after each
    event is run to allow other threads an opportunity to run in multi-threaded
@@ -68,7 +68,7 @@ Scheduler Objects
    Schedule a new event. The *time* argument should be a numeric type compatible
    with the return value of the *timefunc* function passed  to the constructor.
    Events scheduled for the same *time* will be executed in the order of their
-   *priority*.
+   *priority*. A lower number represents a higher priority.
 
    Executing the event means executing ``action(*argument, **kwargs)``.
    *argument* is a sequence holding the positional arguments for *action*.
@@ -80,7 +80,7 @@ Scheduler Objects
    .. versionchanged:: 3.3
       *argument* parameter is optional.
 
-   .. versionadded:: 3.3
+   .. versionchanged:: 3.3
       *kwargs* parameter was added.
 
 
@@ -93,7 +93,7 @@ Scheduler Objects
    .. versionchanged:: 3.3
       *argument* parameter is optional.
 
-   .. versionadded:: 3.3
+   .. versionchanged:: 3.3
       *kwargs* parameter was added.
 
 .. method:: scheduler.cancel(event)
@@ -104,7 +104,7 @@ Scheduler Objects
 
 .. method:: scheduler.empty()
 
-   Return true if the event queue is empty.
+   Return ``True`` if the event queue is empty.
 
 
 .. method:: scheduler.run(blocking=True)
@@ -127,7 +127,7 @@ Scheduler Objects
    the calling code is responsible for canceling  events which are no longer
    pertinent.
 
-   .. versionadded:: 3.3
+   .. versionchanged:: 3.3
       *blocking* parameter was added.
 
 .. attribute:: scheduler.queue

@@ -46,24 +46,23 @@ class SelectTestCase(unittest.TestCase):
 
     def test_select(self):
         cmd = 'for i in 0 1 2 3 4 5 6 7 8 9; do echo testing...; sleep 1; done'
-        p = os.popen(cmd, 'r')
-        for tout in (0, 1, 2, 4, 8, 16) + (None,)*10:
-            if support.verbose:
-                print('timeout =', tout)
-            rfd, wfd, xfd = select.select([p], [], [], tout)
-            if (rfd, wfd, xfd) == ([], [], []):
-                continue
-            if (rfd, wfd, xfd) == ([p], [], []):
-                line = p.readline()
+        with os.popen(cmd) as p:
+            for tout in (0, 1, 2, 4, 8, 16) + (None,)*10:
                 if support.verbose:
-                    print(repr(line))
-                if not line:
+                    print('timeout =', tout)
+                rfd, wfd, xfd = select.select([p], [], [], tout)
+                if (rfd, wfd, xfd) == ([], [], []):
+                    continue
+                if (rfd, wfd, xfd) == ([p], [], []):
+                    line = p.readline()
                     if support.verbose:
-                        print('EOF')
-                    break
-                continue
-            self.fail('Unexpected return values from select():', rfd, wfd, xfd)
-        p.close()
+                        print(repr(line))
+                    if not line:
+                        if support.verbose:
+                            print('EOF')
+                        break
+                    continue
+                self.fail('Unexpected return values from select():', rfd, wfd, xfd)
 
     # Issue 16230: Crash on select resized list
     def test_select_mutated(self):
@@ -75,9 +74,8 @@ class SelectTestCase(unittest.TestCase):
         a[:] = [F()] * 10
         self.assertEqual(select.select([], a, []), ([], a[:5], []))
 
-def test_main():
-    support.run_unittest(SelectTestCase)
+def tearDownModule():
     support.reap_children()
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

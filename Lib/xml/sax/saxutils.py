@@ -56,8 +56,7 @@ def quoteattr(data, entities={}):
     the optional entities parameter.  The keys and values must all be
     strings; each key will be replaced with its corresponding value.
     """
-    entities = entities.copy()
-    entities.update({'\n': '&#10;', '\r': '&#13;', '\t':'&#9;'})
+    entities = {**entities, '\n': '&#10;', '\r': '&#13;', '\t':'&#9;'}
     data = escape(data, entities)
     if '"' in data:
         if "'" in data:
@@ -340,16 +339,21 @@ def prepare_input_source(source, base=""):
     """This function takes an InputSource and an optional base URL and
     returns a fully resolved InputSource object ready for reading."""
 
+    if isinstance(source, os.PathLike):
+        source = os.fspath(source)
     if isinstance(source, str):
         source = xmlreader.InputSource(source)
     elif hasattr(source, "read"):
         f = source
         source = xmlreader.InputSource()
-        source.setByteStream(f)
+        if isinstance(f.read(0), str):
+            source.setCharacterStream(f)
+        else:
+            source.setByteStream(f)
         if hasattr(f, "name") and isinstance(f.name, str):
             source.setSystemId(f.name)
 
-    if source.getByteStream() is None:
+    if source.getCharacterStream() is None and source.getByteStream() is None:
         sysid = source.getSystemId()
         basehead = os.path.dirname(os.path.normpath(base))
         sysidfilename = os.path.join(basehead, sysid)

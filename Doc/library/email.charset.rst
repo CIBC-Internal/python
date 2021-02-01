@@ -4,6 +4,14 @@
 .. module:: email.charset
    :synopsis: Character Sets
 
+**Source code:** :source:`Lib/email/charset.py`
+
+--------------
+
+This module is part of the legacy (``Compat32``) email API.  In the new
+API only the aliases table is used.
+
+The remaining text in this section is the original documentation of the module.
 
 This module provides a class :class:`Charset` for representing character sets
 and character set conversions in email messages, as well as a character set
@@ -100,38 +108,6 @@ Import this class from the :mod:`email.charset` module.
       Returns the string ``quoted-printable`` if *body_encoding* is ``QP``,
       returns the string ``base64`` if *body_encoding* is ``BASE64``, and
       returns the string ``7bit`` otherwise.
-
-   .. XXX to_splittable and from_splittable are not there anymore!
-
-   .. method to_splittable(s)
-
-      Convert a possibly multibyte string to a safely splittable format. *s* is
-      the string to split.
-
-      Uses the *input_codec* to try and convert the string to Unicode, so it can
-      be safely split on character boundaries (even for multibyte characters).
-
-      Returns the string as-is if it isn't known how to convert *s* to Unicode
-      with the *input_charset*.
-
-      Characters that could not be converted to Unicode will be replaced with
-      the Unicode replacement character ``'U+FFFD'``.
-
-
-   .. method from_splittable(ustr[, to_output])
-
-      Convert a splittable string back into an encoded string.  *ustr* is a
-      Unicode string to "unsplit".
-
-      This method uses the proper codec to try and convert the string from
-      Unicode back into an encoded format.  Return the string as-is if it is not
-      Unicode, or if it could not be converted from Unicode.
-
-      Characters that could not be converted from Unicode will be replaced with
-      an appropriate character (usually ``'?'``).
-
-      If *to_output* is ``True`` (the default), uses *output_codec* to convert
-      to an encoded format.  If *to_output* is ``False``, it uses *input_codec*.
 
 
    .. method:: get_output_charset()
@@ -234,5 +210,5 @@ new entries to the global character set, alias, and codec registries:
 
    *charset* is the canonical name of a character set. *codecname* is the name of a
    Python codec, as appropriate for the second argument to the :class:`str`'s
-   :meth:`~str.encode` method
+   :meth:`~str.encode` method.
 

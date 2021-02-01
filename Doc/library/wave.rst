@@ -3,6 +3,7 @@
 
 .. module:: wave
    :synopsis: Provide an interface to the WAV sound format.
+
 .. sectionauthor:: Moshe Zadka <moshez@zadka.site.co.il>
 .. Documentations stolen from comments in file.
 
@@ -39,17 +40,12 @@ The :mod:`wave` module defines the following function and exception:
    the file object.
 
    The :func:`.open` function may be used in a :keyword:`with` statement.  When
-   the :keyword:`with` block completes, the :meth:`Wave_read.close()
+   the :keyword:`!with` block completes, the :meth:`Wave_read.close()
    <wave.Wave_read.close>` or :meth:`Wave_write.close()
    <wave.Wave_write.close()>` method is called.
 
    .. versionchanged:: 3.4
       Added support for unseekable files.
-
-.. function:: openfp(file, mode)
-
-   A synonym for :func:`.open`, maintained for backwards compatibility.
-
 
 .. exception:: Error
 
@@ -111,7 +107,7 @@ Wave_read objects, as returned by :func:`.open`, have the following methods:
 
 .. method:: Wave_read.readframes(n)
 
-   Reads and returns at most *n* frames of audio, as a string of bytes.
+   Reads and returns at most *n* frames of audio, as a :class:`bytes` object.
 
 
 .. method:: Wave_read.rewind()

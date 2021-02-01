@@ -3,10 +3,10 @@
 """Unpack a MIME message into a directory of files."""
 
 import os
-import sys
 import email
-import errno
 import mimetypes
+
+from email.policy import default
 
 from argparse import ArgumentParser
 
@@ -22,8 +22,8 @@ Unpack a MIME message into a directory of files.
     parser.add_argument('msgfile')
     args = parser.parse_args()
 
-    with open(args.msgfile) as fp:
-        msg = email.message_from_file(fp)
+    with open(args.msgfile, 'rb') as fp:
+        msg = email.message_from_binary_file(fp, policy=default)
 
     try:
         os.mkdir(args.directory)
@@ -43,7 +43,7 @@ Unpack a MIME message into a directory of files.
             if not ext:
                 # Use a generic bag-of-bits extension
                 ext = '.bin'
-            filename = 'part-%03d%s' % (counter, ext)
+            filename = f'part-{counter:03d}{ext}'
         counter += 1
         with open(os.path.join(args.directory, filename), 'wb') as fp:
             fp.write(part.get_payload(decode=True))

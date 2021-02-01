@@ -3,6 +3,7 @@
 
 .. module:: symbol
    :synopsis: Constants representing internal nodes of the parse tree.
+
 .. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
 
 **Source code:** :source:`Lib/symbol.py`
@@ -15,6 +16,11 @@ names.  Refer to the file :file:`Grammar/Grammar` in the Python distribution for
 the definitions of the names in the context of the language grammar.  The
 specific numeric values which the names map to may change between Python
 versions.
+
+.. warning::
+
+   The symbol module is deprecated and will be removed in future versions of
+   Python.
 
 This module also provides one additional data object:
 

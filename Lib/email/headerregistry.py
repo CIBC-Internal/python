@@ -16,7 +16,7 @@ from email import _header_value_parser as parser
 class Address:
 
     def __init__(self, display_name='', username='', domain='', addr_spec=None):
-        """Create an object represeting a full email address.
+        """Create an object representing a full email address.
 
         An address can have a 'display_name', a 'username', and a 'domain'.  In
         addition to specifying the username and domain separately, they may be
@@ -31,6 +31,11 @@ class Address:
         without any Content Transfer Encoding.
 
         """
+
+        inputs = ''.join(filter(None, (display_name, username, domain, addr_spec)))
+        if '\r' in inputs or '\n' in inputs:
+            raise ValueError("invalid arguments; address parts cannot contain CR or LF")
+
         # This clause with its potential 'raise' may only happen when an
         # application program creates an Address object using an addr_spec
         # keyword.  The email library code itself must always supply username
@@ -69,11 +74,9 @@ class Address:
         """The addr_spec (username@domain) portion of the address, quoted
         according to RFC 5322 rules, but with no Content Transfer Encoding.
         """
-        nameset = set(self.username)
-        if len(nameset) > len(nameset-parser.DOT_ATOM_ENDS):
-            lp = parser.quote_string(self.username)
-        else:
-            lp = self.username
+        lp = self.username
+        if not parser.DOT_ATOM_ENDS.isdisjoint(lp):
+            lp = parser.quote_string(lp)
         if self.domain:
             return lp + '@' + self.domain
         if not lp:
@@ -81,23 +84,22 @@ class Address:
         return lp
 
     def __repr__(self):
-        return "Address(display_name={!r}, username={!r}, domain={!r})".format(
+        return "{}(display_name={!r}, username={!r}, domain={!r})".format(
+                        self.__class__.__name__,
                         self.display_name, self.username, self.domain)
 
     def __str__(self):
-        nameset = set(self.display_name)
-        if len(nameset) > len(nameset-parser.SPECIALS):
-            disp = parser.quote_string(self.display_name)
-        else:
-            disp = self.display_name
+        disp = self.display_name
+        if not parser.SPECIALS.isdisjoint(disp):
+            disp = parser.quote_string(disp)
         if disp:
             addr_spec = '' if self.addr_spec=='<>' else self.addr_spec
             return "{} <{}>".format(disp, addr_spec)
         return self.addr_spec
 
     def __eq__(self, other):
-        if type(other) != type(self):
-            return False
+        if not isinstance(other, Address):
+            return NotImplemented
         return (self.display_name == other.display_name and
                 self.username == other.username and
                 self.domain == other.domain)
@@ -108,7 +110,7 @@ class Group:
     def __init__(self, display_name=None, addresses=None):
         """Create an object representing an address group.
 
-        An address group consists of a display_name followed by colon and an
+        An address group consists of a display_name followed by colon and a
         list of addresses (see Address) terminated by a semi-colon.  The Group
         is created by specifying a display_name and a possibly empty list of
         Address objects.  A Group can also be used to represent a single
@@ -132,24 +134,23 @@ class Group:
         return self._addresses
 
     def __repr__(self):
-        return "Group(display_name={!r}, addresses={!r}".format(
+        return "{}(display_name={!r}, addresses={!r}".format(
+                 self.__class__.__name__,
                  self.display_name, self.addresses)
 
     def __str__(self):
         if self.display_name is None and len(self.addresses)==1:
             return str(self.addresses[0])
         disp = self.display_name
-        if disp is not None:
-            nameset = set(disp)
-            if len(nameset) > len(nameset-parser.SPECIALS):
-                disp = parser.quote_string(disp)
+        if disp is not None and not parser.SPECIALS.isdisjoint(disp):
+            disp = parser.quote_string(disp)
         adrstr = ", ".join(str(x) for x in self.addresses)
         adrstr = ' ' + adrstr if adrstr else adrstr
         return "{}:{};".format(disp, adrstr)
 
     def __eq__(self, other):
-        if type(other) != type(self):
-            return False
+        if not isinstance(other, Group):
+            return NotImplemented
         return (self.display_name == other.display_name and
                 self.addresses == other.addresses)
 
@@ -243,13 +244,16 @@ class BaseHeader(str):
         the header name and the ': ' separator.
 
         """
-        # At some point we need to only put fws here if it was in the source.
+        # At some point we need to put fws here if it was in the source.
         header = parser.Header([
             parser.HeaderLabel([
                 parser.ValueTerminal(self.name, 'header-name'),
                 parser.ValueTerminal(':', 'header-sep')]),
-            parser.CFWSList([parser.WhiteSpaceTerminal(' ', 'fws')]),
-                             self._parse_tree])
+            ])
+        if self._parse_tree:
+            header.append(
+                parser.CFWSList([parser.WhiteSpaceTerminal(' ', 'fws')]))
+        header.append(self._parse_tree)
         return header.fold(policy=policy)
 
 
@@ -367,8 +371,8 @@ class AddressHeader:
     @property
     def addresses(self):
         if self._addresses is None:
-            self._addresses = tuple([address for group in self._groups
-                                             for address in group.addresses])
+            self._addresses = tuple(address for group in self._groups
+                                            for address in group.addresses)
         return self._addresses
 
 
@@ -515,6 +519,18 @@ class ContentTransferEncodingHeader:
         return self._cte
 
 
+class MessageIDHeader:
+
+    max_count = 1
+    value_parser = staticmethod(parser.parse_message_id)
+
+    @classmethod
+    def parse(cls, value, kwds):
+        kwds['parse_tree'] = parse_tree = cls.value_parser(value)
+        kwds['decoded'] = str(parse_tree)
+        kwds['defects'].extend(parse_tree.all_defects)
+
+
 # The header factory #
 
 _default_header_map = {
@@ -537,6 +553,7 @@ _default_header_map = {
     'content-type':                 ContentTypeHeader,
     'content-disposition':          ContentDispositionHeader,
     'content-transfer-encoding':    ContentTransferEncodingHeader,
+    'message-id':                   MessageIDHeader,
     }
 
 class HeaderRegistry:

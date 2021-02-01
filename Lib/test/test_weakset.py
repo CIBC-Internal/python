@@ -1,15 +1,8 @@
 import unittest
-from test import support
-from weakref import proxy, ref, WeakSet
-import operator
-import copy
+from weakref import WeakSet
 import string
-import os
-from random import randrange, shuffle
-import sys
-import warnings
-import collections
 from collections import UserString as ustr
+from collections.abc import Set, MutableSet
 import gc
 import contextlib
 
@@ -442,9 +435,13 @@ class TestWeakSet(unittest.TestCase):
             self.assertGreaterEqual(n2, 0)
             self.assertLessEqual(n2, n1)
 
+    def test_repr(self):
+        assert repr(self.s) == repr(self.s.data)
 
-def test_main(verbose=None):
-    support.run_unittest(TestWeakSet)
+    def test_abc(self):
+        self.assertIsInstance(self.s, Set)
+        self.assertIsInstance(self.s, MutableSet)
+
 
 if __name__ == "__main__":
-    test_main(verbose=True)
+    unittest.main()

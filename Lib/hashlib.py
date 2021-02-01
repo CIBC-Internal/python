@@ -4,14 +4,15 @@
 
 __doc__ = """hashlib module - A common interface to many hash functions.
 
-new(name, data=b'') - returns a new hash object implementing the
-                      given hash function; initializing the hash
-                      using the given binary data.
+new(name, data=b'', **kwargs) - returns a new hash object implementing the
+                                given hash function; initializing the hash
+                                using the given binary data.
 
 Named constructor functions are also available, these are faster
 than using new(name):
 
-md5(), sha1(), sha224(), sha256(), sha384(), and sha512()
+md5(), sha1(), sha224(), sha256(), sha384(), sha512(), blake2b(), blake2s(),
+sha3_224, sha3_256, sha3_384, sha3_512, shake_128, and shake_256.
 
 More algorithms may be available on your platform but the above are guaranteed
 to exist.  See the algorithms_guaranteed and algorithms_available attributes
@@ -24,18 +25,18 @@ Choose your hash function wisely.  Some have known collision weaknesses.
 sha384 and sha512 will be slow on 32 bit platforms.
 
 Hash objects have these methods:
- - update(arg): Update the hash object with the bytes in arg. Repeated calls
-                are equivalent to a single call with the concatenation of all
-                the arguments.
- - digest():    Return the digest of the bytes passed to the update() method
-                so far.
- - hexdigest(): Like digest() except the digest is returned as a unicode
-                object of double length, containing only hexadecimal digits.
- - copy():      Return a copy (clone) of the hash object. This can be used to
-                efficiently compute the digests of strings that share a common
-                initial substring.
+ - update(data): Update the hash object with the bytes in data. Repeated calls
+                 are equivalent to a single call with the concatenation of all
+                 the arguments.
+ - digest():     Return the digest of the bytes passed to the update() method
+                 so far as a bytes object.
+ - hexdigest():  Like digest() except the digest is returned as a string
+                 of double length, containing only hexadecimal digits.
+ - copy():       Return a copy (clone) of the hash object. This can be used to
+                 efficiently compute the digests of datas that share a common
+                 initial substring.
 
-For example, to obtain the digest of the string 'Nobody inspects the
+For example, to obtain the digest of the byte string 'Nobody inspects the
 spammish repetition':
 
     >>> import hashlib
@@ -54,7 +55,11 @@ More condensed:
 
 # This tuple and __get_builtin_constructor() must be modified if a new
 # always available algorithm is added.
-__always_supported = ('md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512')
+__always_supported = ('md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512',
+                      'blake2b', 'blake2s',
+                      'sha3_224', 'sha3_256', 'sha3_384', 'sha3_512',
+                      'shake_128', 'shake_256')
+
 
 algorithms_guaranteed = set(__always_supported)
 algorithms_available = set(__always_supported)
@@ -65,26 +70,49 @@ __all__ = __always_supported + ('new', 'algorithms_guaranteed',
 
 __builtin_constructor_cache = {}
 
+# Prefer our blake2 implementation
+# OpenSSL 1.1.0 comes with a limited implementation of blake2b/s. The OpenSSL
+# implementations neither support keyed blake2 (blake2 MAC) nor advanced
+# features like salt, personalization, or tree hashing. OpenSSL hash-only
+# variants are available as 'blake2b512' and 'blake2s256', though.
+__block_openssl_constructor = {
+    'blake2b', 'blake2s',
+}
+
 def __get_builtin_constructor(name):
     cache = __builtin_constructor_cache
     constructor = cache.get(name)
     if constructor is not None:
         return constructor
     try:
-        if name in ('SHA1', 'sha1'):
+        if name in {'SHA1', 'sha1'}:
             import _sha1
             cache['SHA1'] = cache['sha1'] = _sha1.sha1
-        elif name in ('MD5', 'md5'):
+        elif name in {'MD5', 'md5'}:
             import _md5
             cache['MD5'] = cache['md5'] = _md5.md5
-        elif name in ('SHA256', 'sha256', 'SHA224', 'sha224'):
+        elif name in {'SHA256', 'sha256', 'SHA224', 'sha224'}:
             import _sha256
             cache['SHA224'] = cache['sha224'] = _sha256.sha224
             cache['SHA256'] = cache['sha256'] = _sha256.sha256
-        elif name in ('SHA512', 'sha512', 'SHA384', 'sha384'):
+        elif name in {'SHA512', 'sha512', 'SHA384', 'sha384'}:
             import _sha512
             cache['SHA384'] = cache['sha384'] = _sha512.sha384
             cache['SHA512'] = cache['sha512'] = _sha512.sha512
+        elif name in {'blake2b', 'blake2s'}:
+            import _blake2
+            cache['blake2b'] = _blake2.blake2b
+            cache['blake2s'] = _blake2.blake2s
+        elif name in {'sha3_224', 'sha3_256', 'sha3_384', 'sha3_512'}:
+            import _sha3
+            cache['sha3_224'] = _sha3.sha3_224
+            cache['sha3_256'] = _sha3.sha3_256
+            cache['sha3_384'] = _sha3.sha3_384
+            cache['sha3_512'] = _sha3.sha3_512
+        elif name in {'shake_128', 'shake_256'}:
+            import _sha3
+            cache['shake_128'] = _sha3.shake_128
+            cache['shake_256'] = _sha3.shake_256
     except ImportError:
         pass  # no extension module, this hash is unsupported.
 
@@ -96,30 +124,40 @@ def __get_builtin_constructor(name):
 
 
 def __get_openssl_constructor(name):
+    if name in __block_openssl_constructor:
+        # Prefer our builtin blake2 implementation.
+        return __get_builtin_constructor(name)
     try:
+        # MD5, SHA1, and SHA2 are in all supported OpenSSL versions
+        # SHA3/shake are available in OpenSSL 1.1.1+
         f = getattr(_hashlib, 'openssl_' + name)
         # Allow the C module to raise ValueError.  The function will be
-        # defined but the hash not actually available thanks to OpenSSL.
-        f()
+        # defined but the hash not actually available.  Don't fall back to
+        # builtin if the current security policy blocks a digest, bpo#40695.
+        f(usedforsecurity=False)
         # Use the C function directly (very fast)
         return f
     except (AttributeError, ValueError):
         return __get_builtin_constructor(name)
 
 
-def __py_new(name, data=b''):
-    """new(name, data=b'') - Return a new hashing object using the named algorithm;
-    optionally initialized with data (which must be bytes).
+def __py_new(name, data=b'', **kwargs):
+    """new(name, data=b'', **kwargs) - Return a new hashing object using the
+    named algorithm; optionally initialized with data (which must be
+    a bytes-like object).
     """
-    return __get_builtin_constructor(name)(data)
+    return __get_builtin_constructor(name)(data, **kwargs)
 
 
-def __hash_new(name, data=b''):
+def __hash_new(name, data=b'', **kwargs):
     """new(name, data=b'') - Return a new hashing object using the named algorithm;
-    optionally initialized with data (which must be bytes).
+    optionally initialized with data (which must be a bytes-like object).
     """
+    if name in __block_openssl_constructor:
+        # Prefer our builtin blake2 implementation.
+        return __get_builtin_constructor(name)(data, **kwargs)
     try:
-        return _hashlib.new(name, data)
+        return _hashlib.new(name, data, **kwargs)
     except ValueError:
         # If the _hashlib module (OpenSSL) doesn't support the named
         # hash, try using our builtin implementations.
@@ -191,7 +229,7 @@ except ImportError:
         from_bytes = int.from_bytes
         while len(dkey) < dklen:
             prev = prf(salt + loop.to_bytes(4, 'big'))
-            # endianess doesn't matter here as long to / from use the same
+            # endianness doesn't matter here as long to / from use the same
             rkey = int.from_bytes(prev, 'big')
             for i in range(iterations - 1):
                 prev = prf(prev)
@@ -202,6 +240,12 @@ except ImportError:
 
         return dkey[:dklen]
 
+try:
+    # OpenSSL's scrypt requires OpenSSL 1.1+
+    from _hashlib import scrypt
+except ImportError:
+    pass
+
 
 for __func_name in __always_supported:
     # try them all, some may not work due to the OpenSSL
@@ -211,6 +255,7 @@ for __func_name in __always_supported:
     except ValueError:
         import logging
         logging.exception('code for hash %s was not found.', __func_name)
+
 
 # Cleanup locals()
 del __always_supported, __func_name, __get_hash

@@ -3,24 +3,26 @@
 
 .. module:: unicodedata
    :synopsis: Access the Unicode Database.
+
 .. moduleauthor:: Marc-André Lemburg <mal@lemburg.com>
 .. sectionauthor:: Marc-André Lemburg <mal@lemburg.com>
 .. sectionauthor:: Martin v. Löwis <martin@v.loewis.de>
-
 
 .. index::
    single: Unicode
    single: character
    pair: Unicode; database
 
+--------------
+
 This module provides access to the Unicode Character Database (UCD) which
 defines character properties for all Unicode characters. The data contained in
-this database is compiled from the `UCD version 6.3.0
-<http://www.unicode.org/Public/6.3.0/ucd>`_.
+this database is compiled from the `UCD version 13.0.0
+<https://www.unicode.org/Public/13.0.0/ucd>`_.
 
 The module uses the same names and symbols as defined by Unicode
 Standard Annex #44, `"Unicode Character Database"
-<http://www.unicode.org/reports/tr44/tr44-6.html>`_.  It defines the
+<https://www.unicode.org/reports/tr44/>`_.  It defines the
 following functions:
 
 
@@ -131,6 +133,13 @@ following functions:
    a human reader, if one has combining characters and the other
    doesn't, they may not compare equal.
 
+.. function:: is_normalized(form, unistr)
+
+   Return whether the Unicode string *unistr* is in the normal form *form*. Valid
+   values for *form* are 'NFC', 'NFKC', 'NFD', and 'NFKD'.
+
+   .. versionadded:: 3.8
+
 
 In addition, the module exposes the following constant:
 
@@ -156,7 +165,7 @@ Examples:
    9
    >>> unicodedata.decimal('a')
    Traceback (most recent call last):
-     File "<stdin>", line 1, in ?
+     File "<stdin>", line 1, in <module>
    ValueError: not a decimal
    >>> unicodedata.category('A')  # 'L'etter, 'u'ppercase
    'Lu'
@@ -166,6 +175,6 @@ Examples:
 
 .. rubric:: Footnotes
 
-.. [#] http://www.unicode.org/Public/6.3.0/ucd/NameAliases.txt
+.. [#] https://www.unicode.org/Public/13.0.0/ucd/NameAliases.txt
 
-.. [#] http://www.unicode.org/Public/6.3.0/ucd/NamedSequences.txt
+.. [#] https://www.unicode.org/Public/13.0.0/ucd/NamedSequences.txt

@@ -3,12 +3,13 @@
 
 .. module:: poplib
    :synopsis: POP3 protocol client (requires sockets).
+
 .. sectionauthor:: Andrew T. Csillag
 .. revised by ESR, January 2000
 
-.. index:: pair: POP3; protocol
-
 **Source code:** :source:`Lib/poplib.py`
+
+.. index:: pair: POP3; protocol
 
 --------------
 
@@ -38,6 +39,17 @@ The :mod:`poplib` module provides two classes:
    connection attempt (if not specified, the global default timeout setting will
    be used).
 
+   .. audit-event:: poplib.connect self,host,port poplib.POP3
+
+   .. audit-event:: poplib.putline self,line poplib.POP3
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``poplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
+
+   .. versionchanged:: 3.9
+      If the *timeout* parameter is set to be zero, it will raise a
+      :class:`ValueError` to prevent the creation of a non-blocking socket.
 
 .. class:: POP3_SSL(host, port=POP3_SSL_PORT, keyfile=None, certfile=None, timeout=None, context=None)
 
@@ -53,6 +65,14 @@ The :mod:`poplib` module provides two classes:
    point to PEM-formatted private key and certificate chain files,
    respectively, for the SSL connection.
 
+   .. audit-event:: poplib.connect self,host,port poplib.POP3_SSL
+
+   .. audit-event:: poplib.putline self,line poplib.POP3_SSL
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``poplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
+
    .. versionchanged:: 3.2
       *context* parameter added.
 
@@ -60,6 +80,17 @@ The :mod:`poplib` module provides two classes:
       The class now supports hostname check with
       :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
       :data:`ssl.HAS_SNI`).
+
+   .. deprecated:: 3.6
+
+       *keyfile* and *certfile* are deprecated in favor of *context*.
+       Please use :meth:`ssl.SSLContext.load_cert_chain` instead, or let
+       :func:`ssl.create_default_context` select the system's trusted CA
+       certificates for you.
+
+   .. versionchanged:: 3.9
+      If the *timeout* parameter is set to be zero, it will raise a
+      :class:`ValueError` to prevent the creation of a non-blocking socket.
 
 One exception is defined as an attribute of the :mod:`poplib` module:
 
@@ -194,6 +225,15 @@ An :class:`POP3` instance has the following methods:
    the unique id for that message in the form ``'response mesgnum uid``, otherwise
    result is list ``(response, ['mesgnum uid', ...], octets)``.
 
+
+.. method:: POP3.utf8()
+
+   Try to switch to UTF-8 mode. Returns the server response if successful,
+   raises :class:`error_proto` if not. Specified in :RFC:`6856`.
+
+   .. versionadded:: 3.5
+
+
 .. method:: POP3.stls(context=None)
 
    Start a TLS session on the active connection as specified in :rfc:`2595`.
@@ -235,4 +275,3 @@ retrieves and prints all messages::
 
 At the end of the module, there is a test section that contains a more extensive
 example of usage.
-

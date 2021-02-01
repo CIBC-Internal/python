@@ -1,5 +1,8 @@
 """HTML character entity references."""
 
+__all__ = ['html5', 'name2codepoint', 'codepoint2name', 'entitydefs']
+
+
 # maps the HTML entity name to the Unicode code point
 name2codepoint = {
     'AElig':    0x00c6, # latin capital letter AE = latin capital ligature AE, U+00C6 ISOlat1
@@ -221,7 +224,7 @@ name2codepoint = {
     'spades':   0x2660, # black spade suit, U+2660 ISOpub
     'sub':      0x2282, # subset of, U+2282 ISOtech
     'sube':     0x2286, # subset of or equal to, U+2286 ISOtech
-    'sum':      0x2211, # n-ary sumation, U+2211 ISOamsb
+    'sum':      0x2211, # n-ary summation, U+2211 ISOamsb
     'sup':      0x2283, # superset of, U+2283 ISOtech
     'sup1':     0x00b9, # superscript one = superscript digit one, U+00B9 ISOnum
     'sup2':     0x00b2, # superscript two = superscript digit two = squared, U+00B2 ISOnum

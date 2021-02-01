@@ -16,7 +16,9 @@ The list of modules described in this chapter is:
 
 .. toctree::
 
+   typing.rst
    pydoc.rst
+   devmode.rst
    doctest.rst
    unittest.rst
    unittest.mock.rst

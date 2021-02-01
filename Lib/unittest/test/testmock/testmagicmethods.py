@@ -1,7 +1,8 @@
+import math
 import unittest
-import inspect
-import sys
-from unittest.mock import Mock, MagicMock, _magics
+import os
+from asyncio import iscoroutinefunction
+from unittest.mock import AsyncMock, Mock, MagicMock, _magics
 
 
 
@@ -256,7 +257,7 @@ class TestMockingMagicMethods(unittest.TestCase):
 
         for entry in _magics:
             self.assertTrue(hasattr(mock, entry))
-        self.assertFalse(hasattr(mock, '__imaginery__'))
+        self.assertFalse(hasattr(mock, '__imaginary__'))
 
 
     def test_magic_mock_equality(self):
@@ -269,6 +270,31 @@ class TestMockingMagicMethods(unittest.TestCase):
         self.assertEqual(mock == mock, True)
         self.assertEqual(mock != mock, False)
 
+    def test_asyncmock_defaults(self):
+        mock = AsyncMock()
+        self.assertEqual(int(mock), 1)
+        self.assertEqual(complex(mock), 1j)
+        self.assertEqual(float(mock), 1.0)
+        self.assertNotIn(object(), mock)
+        self.assertEqual(len(mock), 0)
+        self.assertEqual(list(mock), [])
+        self.assertEqual(hash(mock), object.__hash__(mock))
+        self.assertEqual(str(mock), object.__str__(mock))
+        self.assertTrue(bool(mock))
+        self.assertEqual(round(mock), mock.__round__())
+        self.assertEqual(math.trunc(mock), mock.__trunc__())
+        self.assertEqual(math.floor(mock), mock.__floor__())
+        self.assertEqual(math.ceil(mock), mock.__ceil__())
+        self.assertTrue(iscoroutinefunction(mock.__aexit__))
+        self.assertTrue(iscoroutinefunction(mock.__aenter__))
+        self.assertIsInstance(mock.__aenter__, AsyncMock)
+        self.assertIsInstance(mock.__aexit__, AsyncMock)
+
+        # in Python 3 oct and hex use __index__
+        # so these tests are for __index__ in py3k
+        self.assertEqual(oct(mock), '0o1')
+        self.assertEqual(hex(mock), '0x1')
+        # how to test __sizeof__ ?
 
     def test_magicmock_defaults(self):
         mock = MagicMock()
@@ -281,6 +307,14 @@ class TestMockingMagicMethods(unittest.TestCase):
         self.assertEqual(hash(mock), object.__hash__(mock))
         self.assertEqual(str(mock), object.__str__(mock))
         self.assertTrue(bool(mock))
+        self.assertEqual(round(mock), mock.__round__())
+        self.assertEqual(math.trunc(mock), mock.__trunc__())
+        self.assertEqual(math.floor(mock), mock.__floor__())
+        self.assertEqual(math.ceil(mock), mock.__ceil__())
+        self.assertTrue(iscoroutinefunction(mock.__aexit__))
+        self.assertTrue(iscoroutinefunction(mock.__aenter__))
+        self.assertIsInstance(mock.__aenter__, AsyncMock)
+        self.assertIsInstance(mock.__aexit__, AsyncMock)
 
         # in Python 3 oct and hex use __index__
         # so these tests are for __index__ in py3k
@@ -289,10 +323,18 @@ class TestMockingMagicMethods(unittest.TestCase):
         # how to test __sizeof__ ?
 
 
+    def test_magic_methods_fspath(self):
+        mock = MagicMock()
+        expected_path = mock.__fspath__()
+        mock.reset_mock()
+
+        self.assertEqual(os.fspath(mock), expected_path)
+        mock.__fspath__.assert_called_once()
+
+
     def test_magic_methods_and_spec(self):
         class Iterable(object):
-            def __iter__(self):
-                pass
+            def __iter__(self): pass
 
         mock = Mock(spec=Iterable)
         self.assertRaises(AttributeError, lambda: mock.__iter__)
@@ -316,8 +358,7 @@ class TestMockingMagicMethods(unittest.TestCase):
 
     def test_magic_methods_and_spec_set(self):
         class Iterable(object):
-            def __iter__(self):
-                pass
+            def __iter__(self): pass
 
         mock = Mock(spec_set=Iterable)
         self.assertRaises(AttributeError, lambda: mock.__iter__)
@@ -387,7 +428,6 @@ class TestMockingMagicMethods(unittest.TestCase):
             self.assertEqual(dir(mock), ['foo'])
 
 
-    @unittest.skipIf('PyPy' in sys.version, "This fails differently on pypy")
     def test_bound_methods(self):
         m = Mock()
 
@@ -422,6 +462,47 @@ class TestMockingMagicMethods(unittest.TestCase):
         m.__iter__.return_value = iter([4, 5, 6])
         self.assertEqual(list(m), [4, 5, 6])
         self.assertEqual(list(m), [])
+
+
+    def test_matmul(self):
+        m = MagicMock()
+        self.assertIsInstance(m @ 1, MagicMock)
+        m.__matmul__.return_value = 42
+        m.__rmatmul__.return_value = 666
+        m.__imatmul__.return_value = 24
+        self.assertEqual(m @ 1, 42)
+        self.assertEqual(1 @ m, 666)
+        m @= 24
+        self.assertEqual(m, 24)
+
+    def test_divmod_and_rdivmod(self):
+        m = MagicMock()
+        self.assertIsInstance(divmod(5, m), MagicMock)
+        m.__divmod__.return_value = (2, 1)
+        self.assertEqual(divmod(m, 2), (2, 1))
+        m = MagicMock()
+        foo = divmod(2, m)
+        self.assertIsInstance(foo, MagicMock)
+        foo_direct = m.__divmod__(2)
+        self.assertIsInstance(foo_direct, MagicMock)
+        bar = divmod(m, 2)
+        self.assertIsInstance(bar, MagicMock)
+        bar_direct = m.__rdivmod__(2)
+        self.assertIsInstance(bar_direct, MagicMock)
+
+    # http://bugs.python.org/issue23310
+    # Check if you can change behaviour of magic methods in MagicMock init
+    def test_magic_in_initialization(self):
+        m = MagicMock(**{'__str__.return_value': "12"})
+        self.assertEqual(str(m), "12")
+
+    def test_changing_magic_set_in_initialization(self):
+        m = MagicMock(**{'__str__.return_value': "12"})
+        m.__str__.return_value = "13"
+        self.assertEqual(str(m), "13")
+        m = MagicMock(**{'__str__.return_value': "12"})
+        m.configure_mock(**{'__str__.return_value': "14"})
+        self.assertEqual(str(m), "14")
 
 
 if __name__ == '__main__':

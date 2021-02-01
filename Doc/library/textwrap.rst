@@ -3,6 +3,7 @@
 
 .. module:: textwrap
    :synopsis: Text wrapping and filling
+
 .. moduleauthor:: Greg Ward <gward@python.net>
 .. sectionauthor:: Greg Ward <gward@python.net>
 
@@ -75,6 +76,9 @@ functions should be good enough; otherwise, you should use an instance of
    Note that tabs and spaces are both treated as whitespace, but they are not
    equal: the lines ``"  hello"`` and ``"\thello"`` are considered to have no
    common leading whitespace.
+
+   Lines containing only whitespace are ignored in the input and normalized to a
+   single newline character in the output.
 
    For example::
 
@@ -235,7 +239,7 @@ hyphenated words; only then will long words be broken if necessary, unless
       :attr:`fix_sentence_endings` is false by default.
 
       Since the sentence detection algorithm relies on ``string.lowercase`` for
-      the definition of "lowercase letter," and a convention of using two spaces
+      the definition of "lowercase letter", and a convention of using two spaces
       after a period to separate sentences on the same line, it is specific to
       English-language texts.
 
@@ -266,6 +270,8 @@ hyphenated words; only then will long words be broken if necessary, unless
 
       .. versionadded:: 3.4
 
+
+   .. index:: single: ...; placeholder
 
    .. attribute:: placeholder
 

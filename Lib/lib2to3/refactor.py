@@ -8,38 +8,35 @@ recursively descend down directories.  Imported as a module, this
 provides infrastructure to write your own refactoring tool.
 """
 
-from __future__ import with_statement
-
 __author__ = "Guido van Rossum <guido@python.org>"
 
 
 # Python imports
+import io
 import os
+import pkgutil
 import sys
 import logging
 import operator
 import collections
-import io
 from itertools import chain
 
 # Local imports
 from .pgen2 import driver, tokenize, token
 from .fixer_util import find_root
 from . import pytree, pygram
-from . import btm_utils as bu
 from . import btm_matcher as bm
 
 
 def get_all_fix_names(fixer_pkg, remove_prefix=True):
     """Return a sorted list of all available fix names in the given package."""
     pkg = __import__(fixer_pkg, [], [], ["*"])
-    fixer_dir = os.path.dirname(pkg.__file__)
     fix_names = []
-    for name in sorted(os.listdir(fixer_dir)):
-        if name.startswith("fix_") and name.endswith(".py"):
+    for finder, name, ispkg in pkgutil.iter_modules(pkg.__path__):
+        if name.startswith("fix_"):
             if remove_prefix:
                 name = name[4:]
-            fix_names.append(name[:-3])
+            fix_names.append(name)
     return fix_names
 
 
@@ -110,22 +107,6 @@ def get_fixers_from_package(pkg_name):
 def _identity(obj):
     return obj
 
-if sys.version_info < (3, 0):
-    import codecs
-    _open_with_encoding = codecs.open
-    # codecs.open doesn't translate newlines sadly.
-    def _from_system_newlines(input):
-        return input.replace("\r\n", "\n")
-    def _to_system_newlines(input):
-        if os.linesep != "\n":
-            return input.replace("\n", os.linesep)
-        else:
-            return input
-else:
-    _open_with_encoding = open
-    _from_system_newlines = _identity
-    _to_system_newlines = _identity
-
 
 def _detect_future_features(source):
     have_docstring = False
@@ -174,6 +155,7 @@ class FixerError(Exception):
 class RefactoringTool(object):
 
     _default_options = {"print_function" : False,
+                        "exec_function": False,
                         "write_unchanged_files" : False}
 
     CLASS_PREFIX = "Fix" # The prefix for fixer classes
@@ -184,7 +166,7 @@ class RefactoringTool(object):
 
         Args:
             fixer_names: a list of fixers to import
-            options: an dict with configuration.
+            options: a dict with configuration.
             explicit: a list of fixers to run even if they are explicit.
         """
         self.fixers = fixer_names
@@ -192,10 +174,13 @@ class RefactoringTool(object):
         self.options = self._default_options.copy()
         if options is not None:
             self.options.update(options)
-        if self.options["print_function"]:
-            self.grammar = pygram.python_grammar_no_print_statement
-        else:
-            self.grammar = pygram.python_grammar
+        self.grammar = pygram.python_grammar.copy()
+
+        if self.options['print_function']:
+            del self.grammar.keywords["print"]
+        elif self.options['exec_function']:
+            del self.grammar.keywords["exec"]
+
         # When this is True, the refactor*() methods will call write_file() for
         # files processed even if they were not changed during refactoring. If
         # and only if the refactor method's write parameter was True.
@@ -251,11 +236,11 @@ class RefactoringTool(object):
             try:
                 fix_class = getattr(mod, class_name)
             except AttributeError:
-                raise FixerError("Can't find %s.%s" % (fix_name, class_name))
+                raise FixerError("Can't find %s.%s" % (fix_name, class_name)) from None
             fixer = fix_class(self.options, self.fixer_log)
             if fixer.explicit and self.explicit is not True and \
                     fix_mod_path not in self.explicit:
-                self.log_message("Skipping implicit fixer: %s", fix_name)
+                self.log_message("Skipping optional fixer: %s", fix_name)
                 continue
 
             self.log_debug("Adding transformation: %s", fix_name)
@@ -333,8 +318,8 @@ class RefactoringTool(object):
             encoding = tokenize.detect_encoding(f.readline)[0]
         finally:
             f.close()
-        with _open_with_encoding(filename, "r", encoding=encoding) as f:
-            return _from_system_newlines(f.read()), encoding
+        with io.open(filename, "r", encoding=encoding, newline='') as f:
+            return f.read(), encoding
 
     def refactor_file(self, filename, write=False, doctests_only=False):
         """Refactors a file."""
@@ -533,16 +518,16 @@ class RefactoringTool(object):
         set.
         """
         try:
-            f = _open_with_encoding(filename, "w", encoding=encoding)
+            fp = io.open(filename, "w", encoding=encoding, newline='')
         except OSError as err:
             self.log_error("Can't create %s: %s", filename, err)
             return
-        try:
-            f.write(_to_system_newlines(new_text))
-        except OSError as err:
-            self.log_error("Can't write %s: %s", filename, err)
-        finally:
-            f.close()
+
+        with fp:
+            try:
+                fp.write(new_text)
+            except OSError as err:
+                self.log_error("Can't write %s: %s", filename, err)
         self.log_debug("Wrote changes to %s", filename)
         self.wrote = True
 
