@@ -18723,7 +18723,6 @@ then
 	echo "# Edit this file for local setup changes" >Modules/Setup.local
 fi
 
-touch $srcdir/Modules/Setup
 echo "creating Makefile" >&6
 $SHELL $srcdir/Modules/makesetup -c $srcdir/Modules/config.c.in \
 			-s Modules \
@@ -18738,3 +18737,4 @@ if test "$Py_OPT" = 'false' -a "$Py_DEBUG" != 'true'; then
     echo "" >&6
     echo "" >&6
 fi
+
