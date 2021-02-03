@@ -1,5 +1,5 @@
-# This file can be invoked from the various frameworkinstall... targets in the 
-# main Makefile. The next couple of variables are overridden on the 
+# This file can be invoked from the various frameworkinstall... targets in the
+# main Makefile. The next couple of variables are overridden on the
 # commandline in that case.
 
 VERSION=@VERSION@
@@ -28,7 +28,7 @@ export MACOSX_DEPLOYMENT_TARGET
 
 # These are normally glimpsed from the previous set
 BINDIR=		@bindir@
-#PYTHONAPPSDIR=@FRAMEWORKINSTALLAPPSPREFIX@/$(PYTHONFRAMEWORK) $(VERSION)
+PYTHONAPPSDIR=@FRAMEWORKINSTALLAPPSPREFIX@/$(PYTHONFRAMEWORK) $(VERSION)
 APPINSTALLDIR=$(prefix)/Resources/Python.app
 
 # Variables for installing the "normal" unix binaries
@@ -50,10 +50,10 @@ APPTEMPLATE=$(srcdir)/Resources/app
 APPSUBDIRS=MacOS Resources
 compileall=$(srcdir)/../Lib/compileall.py
 
-installapps: install_Python
+installapps: install_Python install_PythonLauncher install_IDLE
 
 #
-# Install unix tools in /usr/local/bin. These are just aliases for the 
+# Install unix tools in /usr/local/bin. These are just aliases for the
 # actual installation inside the framework.
 #
 installunixtools:
@@ -67,7 +67,6 @@ installunixtools:
 			pydoc3 \
 			python3 \
 			python3-config \
-			pyvenv \
 			; \
 	do \
 		rm -f $${fn} ; \
@@ -118,7 +117,6 @@ altinstallunixtools:
 			pydoc$(VERSION) \
 			python$(VERSION) \
 			python$(LDVERSION)-config \
-			pyvenv-$(VERSION) \
 			; \
 	do \
 		rm -f $${fn} ;\
@@ -165,7 +163,7 @@ install_PythonLauncher:
 	cd PythonLauncher && make install DESTDIR=$(DESTDIR)
 
 install_Python:
-	@for i in "$(APPINSTALLDIR)" "$(APPINSTALLDIR)/Contents"; do \
+	@for i in "$(PYTHONAPPSDIR)" "$(APPINSTALLDIR)" "$(APPINSTALLDIR)/Contents"; do \
 		if test ! -d "$(DESTDIR)$$i"; then \
 			echo "Creating directory $(DESTDIR)$$i"; \
 			$(INSTALL) -d -m $(DIRMODE) "$(DESTDIR)$$i"; \
@@ -221,10 +219,6 @@ install_IDLE:
 	-test -d "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app" && rm -rf "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app"
 	/bin/cp -PR "$(srcdir)/IDLE/IDLE.app" "$(DESTDIR)$(PYTHONAPPSDIR)"
 	ln -sf "$(INSTALLED_PYTHONAPP)" "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app/Contents/MacOS/Python"
-ifneq ($(LIPO_32BIT_FLAGS),)
-	rm "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app/Contents/MacOS/Python"
-	lipo $(LIPO_32BIT_FLAGS) -output "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app/Contents/MacOS/Python" "$(BUILDPYTHON)"
-endif
 	sed -e "s!%prefix%!$(prefix)!g" -e 's!%exe%!$(PYTHONFRAMEWORK)!g' < "$(srcdir)/IDLE/IDLE.app/Contents/MacOS/IDLE" > "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app/Contents/MacOS/IDLE"
 	sed "s!%version%!`$(RUNSHARED) $(BUILDPYTHON) -c 'import platform; print(platform.python_version())'`!g" < "$(srcdir)/IDLE/IDLE.app/Contents/Info.plist" > "$(DESTDIR)$(PYTHONAPPSDIR)/IDLE.app/Contents/Info.plist"
 	if [ -f "$(DESTDIR)$(LIBDEST)/idlelib/config-main.def" ]; then \

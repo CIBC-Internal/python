@@ -6,6 +6,8 @@
 
 .. versionadded:: 3.3
 
+----------------
+
 This module contains functions to dump Python tracebacks explicitly, on a fault,
 after a timeout, or on a user signal. Call :func:`faulthandler.enable` to
 install fault handlers for the :const:`SIGSEGV`, :const:`SIGFPE`,
@@ -38,6 +40,9 @@ alternatively be passed to :func:`faulthandler.enable`.
 The module is implemented in C, so tracebacks can be dumped on a crash or when
 Python is deadlocked.
 
+The :ref:`Python Development Mode <devmode>` calls :func:`faulthandler.enable`
+at Python startup.
+
 
 Dumping the traceback
 ---------------------
@@ -46,6 +51,9 @@ Dumping the traceback
 
    Dump the tracebacks of all threads into *file*. If *all_threads* is
    ``False``, dump only the current thread.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 
 Fault handler state
@@ -58,6 +66,15 @@ Fault handler state
    signals to dump the Python traceback. If *all_threads* is ``True``,
    produce tracebacks for every running thread. Otherwise, dump only the current
    thread.
+
+   The *file* must be kept open until the fault handler is disabled: see
+   :ref:`issue with file descriptors <faulthandler-fd>`.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
+
+   .. versionchanged:: 3.6
+      On Windows, a handler for Windows exception is also installed.
 
 .. function:: disable()
 
@@ -82,8 +99,17 @@ Dumping the tracebacks after a timeout
    call replaces previous parameters and resets the timeout. The timer has a
    sub-second resolution.
 
-   This function is implemented using a watchdog thread and therefore is not
-   available if Python is compiled with threads disabled.
+   The *file* must be kept open until the traceback is dumped or
+   :func:`cancel_dump_traceback_later` is called: see :ref:`issue with file
+   descriptors <faulthandler-fd>`.
+
+   This function is implemented using a watchdog thread.
+
+   .. versionchanged:: 3.7
+      This function is now always available.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 .. function:: cancel_dump_traceback_later()
 
@@ -99,7 +125,13 @@ Dumping the traceback on a user signal
    the traceback of all threads, or of the current thread if *all_threads* is
    ``False``, into *file*. Call the previous handler if chain is ``True``.
 
+   The *file* must be kept open until the signal is unregistered by
+   :func:`unregister`: see :ref:`issue with file descriptors <faulthandler-fd>`.
+
    Not available on Windows.
+
+   .. versionchanged:: 3.5
+      Added support for passing file descriptor to this function.
 
 .. function:: unregister(signum)
 
@@ -109,6 +141,8 @@ Dumping the traceback on a user signal
 
    Not available on Windows.
 
+
+.. _faulthandler-fd:
 
 Issue with file descriptors
 ---------------------------
@@ -123,10 +157,10 @@ these functions again each time that the file is replaced.
 Example
 -------
 
-.. highlight:: sh
-
 Example of a segmentation fault on Linux with and without enabling the fault
-handler::
+handler:
+
+.. code-block:: shell-session
 
     $ python3 -c "import ctypes; ctypes.string_at(0)"
     Segmentation fault

@@ -34,17 +34,41 @@ Argument list examples
     (1, 2, 3, 4, 5) {}
     >>> f(1, 2, 3, *[4, 5])
     (1, 2, 3, 4, 5) {}
+    >>> f(*[1, 2, 3], 4, 5)
+    (1, 2, 3, 4, 5) {}
     >>> f(1, 2, 3, *UserList([4, 5]))
     (1, 2, 3, 4, 5) {}
+    >>> f(1, 2, 3, *[4, 5], *[6, 7])
+    (1, 2, 3, 4, 5, 6, 7) {}
+    >>> f(1, *[2, 3], 4, *[5, 6], 7)
+    (1, 2, 3, 4, 5, 6, 7) {}
+    >>> f(*UserList([1, 2]), *UserList([3, 4]), 5, *UserList([6, 7]))
+    (1, 2, 3, 4, 5, 6, 7) {}
 
 Here we add keyword arguments
 
     >>> f(1, 2, 3, **{'a':4, 'b':5})
     (1, 2, 3) {'a': 4, 'b': 5}
+    >>> f(1, 2, **{'a': -1, 'b': 5}, **{'a': 4, 'c': 6})
+    Traceback (most recent call last):
+        ...
+    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
+    >>> f(1, 2, **{'a': -1, 'b': 5}, a=4, c=6)
+    Traceback (most recent call last):
+        ...
+    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
+    >>> f(1, 2, a=3, **{'a': 4}, **{'a': 5})
+    Traceback (most recent call last):
+        ...
+    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
     >>> f(1, 2, 3, *[4, 5], **{'a':6, 'b':7})
     (1, 2, 3, 4, 5) {'a': 6, 'b': 7}
     >>> f(1, 2, 3, x=4, y=5, *(6, 7), **{'a':8, 'b': 9})
     (1, 2, 3, 6, 7) {'a': 8, 'b': 9, 'x': 4, 'y': 5}
+    >>> f(1, 2, 3, *[4, 5], **{'c': 8}, **{'a':6, 'b':7})
+    (1, 2, 3, 4, 5) {'a': 6, 'b': 7, 'c': 8}
+    >>> f(1, 2, 3, *(4, 5), x=6, y=7, **{'a':8, 'b': 9})
+    (1, 2, 3, 4, 5) {'a': 8, 'b': 9, 'x': 6, 'y': 7}
 
     >>> f(1, 2, 3, **UserDict(a=4, b=5))
     (1, 2, 3) {'a': 4, 'b': 5}
@@ -52,6 +76,26 @@ Here we add keyword arguments
     (1, 2, 3, 4, 5) {'a': 6, 'b': 7}
     >>> f(1, 2, 3, x=4, y=5, *(6, 7), **UserDict(a=8, b=9))
     (1, 2, 3, 6, 7) {'a': 8, 'b': 9, 'x': 4, 'y': 5}
+    >>> f(1, 2, 3, *(4, 5), x=6, y=7, **UserDict(a=8, b=9))
+    (1, 2, 3, 4, 5) {'a': 8, 'b': 9, 'x': 6, 'y': 7}
+
+Mix keyword arguments and dict unpacking
+
+    >>> d1 = {'a':1}
+
+    >>> d2 = {'c':3}
+
+    >>> f(b=2, **d1, **d2)
+    () {'a': 1, 'b': 2, 'c': 3}
+
+    >>> f(**d1, b=2, **d2)
+    () {'a': 1, 'b': 2, 'c': 3}
+
+    >>> f(**d1, **d2, b=2)
+    () {'a': 1, 'b': 2, 'c': 3}
+
+    >>> f(**d1, b=2, **d2, d=4)
+    () {'a': 1, 'b': 2, 'c': 3, 'd': 4}
 
 Examples with invalid arguments (TypeErrors). We're also testing the function
 names in the exception messages.
@@ -92,7 +136,7 @@ Verify clearing of SF bug #733667
     >>> g(*Nothing())
     Traceback (most recent call last):
       ...
-    TypeError: g() argument after * must be a sequence, not Nothing
+    TypeError: test.test_extcall.g() argument after * must be an iterable, not Nothing
 
     >>> class Nothing:
     ...     def __len__(self): return 5
@@ -101,7 +145,7 @@ Verify clearing of SF bug #733667
     >>> g(*Nothing())
     Traceback (most recent call last):
       ...
-    TypeError: g() argument after * must be a sequence, not Nothing
+    TypeError: test.test_extcall.g() argument after * must be an iterable, not Nothing
 
     >>> class Nothing():
     ...     def __len__(self): return 5
@@ -126,6 +170,61 @@ Verify clearing of SF bug #733667
 
     >>> g(*Nothing())
     0 (1, 2, 3) {}
+
+Check for issue #4806: Does a TypeError in a generator get propagated with the
+right error message? (Also check with other iterables.)
+
+    >>> def broken(): raise TypeError("myerror")
+    ...
+
+    >>> g(*(broken() for i in range(1)))
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+    >>> g(*range(1), *(broken() for i in range(1)))
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+
+    >>> class BrokenIterable1:
+    ...     def __iter__(self):
+    ...         raise TypeError('myerror')
+    ...
+    >>> g(*BrokenIterable1())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+    >>> g(*range(1), *BrokenIterable1())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+
+    >>> class BrokenIterable2:
+    ...     def __iter__(self):
+    ...         yield 0
+    ...         raise TypeError('myerror')
+    ...
+    >>> g(*BrokenIterable2())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+    >>> g(*range(1), *BrokenIterable2())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+
+    >>> class BrokenSequence:
+    ...     def __getitem__(self, idx):
+    ...         raise TypeError('myerror')
+    ...
+    >>> g(*BrokenSequence())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
+    >>> g(*range(1), *BrokenSequence())
+    Traceback (most recent call last):
+      ...
+    TypeError: myerror
 
 Make sure that the function doesn't stomp the dictionary
 
@@ -156,7 +255,7 @@ What about willful misconduct?
     >>> f(**{1:2})
     Traceback (most recent call last):
       ...
-    TypeError: f() keywords must be strings
+    TypeError: keywords must be strings
 
     >>> h(**{'e': 2})
     Traceback (most recent call last):
@@ -166,39 +265,121 @@ What about willful misconduct?
     >>> h(*h)
     Traceback (most recent call last):
       ...
-    TypeError: h() argument after * must be a sequence, not function
+    TypeError: test.test_extcall.h() argument after * must be an iterable, not function
+
+    >>> h(1, *h)
+    Traceback (most recent call last):
+      ...
+    TypeError: Value after * must be an iterable, not function
+
+    >>> h(*[1], *h)
+    Traceback (most recent call last):
+      ...
+    TypeError: Value after * must be an iterable, not function
 
     >>> dir(*h)
     Traceback (most recent call last):
       ...
-    TypeError: dir() argument after * must be a sequence, not function
+    TypeError: dir() argument after * must be an iterable, not function
 
-    >>> None(*h)
+    >>> nothing = None
+    >>> nothing(*h)
     Traceback (most recent call last):
       ...
-    TypeError: NoneType object argument after * must be a sequence, \
+    TypeError: None argument after * must be an iterable, \
 not function
 
     >>> h(**h)
     Traceback (most recent call last):
       ...
-    TypeError: h() argument after ** must be a mapping, not function
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+
+    >>> h(**[])
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
+
+    >>> h(a=1, **h)
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+
+    >>> h(a=1, **[])
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
+
+    >>> h(**{'a': 1}, **h)
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+
+    >>> h(**{'a': 1}, **[])
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
 
     >>> dir(**h)
     Traceback (most recent call last):
       ...
     TypeError: dir() argument after ** must be a mapping, not function
 
-    >>> None(**h)
+    >>> nothing(**h)
     Traceback (most recent call last):
       ...
-    TypeError: NoneType object argument after ** must be a mapping, \
+    TypeError: None argument after ** must be a mapping, \
 not function
 
     >>> dir(b=1, **{'b': 1})
     Traceback (most recent call last):
       ...
     TypeError: dir() got multiple values for keyword argument 'b'
+
+Test a kwargs mapping with duplicated keys.
+
+    >>> from collections.abc import Mapping
+    >>> class MultiDict(Mapping):
+    ...     def __init__(self, items):
+    ...         self._items = items
+    ...
+    ...     def __iter__(self):
+    ...         return (k for k, v in self._items)
+    ...
+    ...     def __getitem__(self, key):
+    ...         for k, v in self._items:
+    ...             if k == key:
+    ...                 return v
+    ...         raise KeyError(key)
+    ...
+    ...     def __len__(self):
+    ...         return len(self._items)
+    ...
+    ...     def keys(self):
+    ...         return [k for k, v in self._items]
+    ...
+    ...     def values(self):
+    ...         return [v for k, v in self._items]
+    ...
+    ...     def items(self):
+    ...         return [(k, v) for k, v in self._items]
+    ...
+    >>> g(**MultiDict([('x', 1), ('y', 2)]))
+    1 () {'y': 2}
+
+    >>> g(**MultiDict([('x', 1), ('x', 2)]))
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
+
+    >>> g(a=3, **MultiDict([('x', 1), ('x', 2)]))
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
+
+    >>> g(**MultiDict([('a', 3)]), **MultiDict([('x', 1), ('x', 2)]))
+    Traceback (most recent call last):
+      ...
+    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
 
 Another helper function
 

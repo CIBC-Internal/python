@@ -1,17 +1,17 @@
 import socket
 import selectors
 import telnetlib
-import time
+import threading
 import contextlib
 
-from unittest import TestCase
 from test import support
-threading = support.import_module('threading')
+from test.support import socket_helper
+import unittest
 
-HOST = support.HOST
+HOST = socket_helper.HOST
 
 def server(evt, serv):
-    serv.listen(5)
+    serv.listen()
     evt.set()
     try:
         conn, addr = serv.accept()
@@ -21,13 +21,13 @@ def server(evt, serv):
     finally:
         serv.close()
 
-class GeneralTests(TestCase):
+class GeneralTests(unittest.TestCase):
 
     def setUp(self):
         self.evt = threading.Event()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(60)  # Safety net. Look issue 11812
-        self.port = support.bind_port(self.sock)
+        self.port = socket_helper.bind_port(self.sock)
         self.thread = threading.Thread(target=server, args=(self.evt,self.sock))
         self.thread.setDaemon(True)
         self.thread.start()
@@ -41,6 +41,11 @@ class GeneralTests(TestCase):
         # connects
         telnet = telnetlib.Telnet(HOST, self.port)
         telnet.sock.close()
+
+    def testContextManager(self):
+        with telnetlib.Telnet(HOST, self.port) as tn:
+            self.assertIsNotNone(tn.get_socket())
+        self.assertIsNone(tn.get_socket())
 
     def testTimeoutDefault(self):
         self.assertTrue(socket.getdefaulttimeout() is None)
@@ -165,7 +170,7 @@ def test_telnet(reads=(), cls=TelnetAlike):
         telnet._messages = '' # debuglevel output
     return telnet
 
-class ExpectAndReadTestCase(TestCase):
+class ExpectAndReadTestCase(unittest.TestCase):
     def setUp(self):
         self.old_selector = telnetlib._TelnetSelector
         telnetlib._TelnetSelector = MockSelector
@@ -237,8 +242,8 @@ class ReadTests(ExpectAndReadTestCase):
         self.assertEqual(data, want)
 
     def test_read_eager(self):
-        # read_eager and read_very_eager make the same gaurantees
-        # (they behave differently but we only test the gaurantees)
+        # read_eager and read_very_eager make the same guarantees
+        # (they behave differently but we only test the guarantees)
         self._read_eager('read_eager')
         self._read_eager('read_very_eager')
         # NB -- we need to test the IAC block which is mentioned in the
@@ -284,7 +289,7 @@ class nego_collector(object):
 
 tl = telnetlib
 
-class WriteTests(TestCase):
+class WriteTests(unittest.TestCase):
     '''The only thing that write does is replace each tl.IAC for
     tl.IAC+tl.IAC'''
 
@@ -300,7 +305,7 @@ class WriteTests(TestCase):
             written = b''.join(telnet.sock.writes)
             self.assertEqual(data.replace(tl.IAC,tl.IAC+tl.IAC), written)
 
-class OptionTests(TestCase):
+class OptionTests(unittest.TestCase):
     # RFC 854 commands
     cmds = [tl.AO, tl.AYT, tl.BRK, tl.EC, tl.EL, tl.GA, tl.IP, tl.NOP]
 
@@ -393,9 +398,5 @@ class ExpectTests(ExpectAndReadTestCase):
         self.assertEqual(data, b''.join(want[:-1]))
 
 
-def test_main(verbose=None):
-    support.run_unittest(GeneralTests, ReadTests, WriteTests, OptionTests,
-                         ExpectTests)
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

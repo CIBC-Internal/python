@@ -3,11 +3,12 @@
 # written by Fredrik Lundh, February 1998
 #
 
-__version__ = "0.9"
-
 import itertools
 import tkinter
 
+__version__ = "0.9"
+__all__ = ["NORMAL", "ROMAN", "BOLD", "ITALIC",
+           "nametofont", "Font", "families", "names"]
 
 # weight/slant
 NORMAL = "normal"
@@ -100,7 +101,9 @@ class Font:
         return self.name
 
     def __eq__(self, other):
-        return isinstance(other, Font) and self.name == other.name
+        if not isinstance(other, Font):
+            return NotImplemented
+        return self.name == other.name
 
     def __getitem__(self, key):
         return self.cget(key)
@@ -112,8 +115,6 @@ class Font:
         try:
             if self.delete_font:
                 self._call("font", "delete", self.name)
-        except (KeyboardInterrupt, SystemExit):
-            raise
         except Exception:
             pass
 
@@ -153,7 +154,7 @@ class Font:
         args = (text,)
         if displayof:
             args = ('-displayof', displayof, text)
-        return int(self._call("font", "measure", self.name, *args))
+        return self._tk.getint(self._call("font", "measure", self.name, *args))
 
     def metrics(self, *options, **kw):
         """Return font metrics.
@@ -166,13 +167,13 @@ class Font:
             args = ('-displayof', displayof)
         if options:
             args = args + self._get(options)
-            return int(
+            return self._tk.getint(
                 self._call("font", "metrics", self.name, *args))
         else:
             res = self._split(self._call("font", "metrics", self.name, *args))
             options = {}
             for i in range(0, len(res), 2):
-                options[res[i][1:]] = int(res[i+1])
+                options[res[i][1:]] = self._tk.getint(res[i+1])
             return options
 
 

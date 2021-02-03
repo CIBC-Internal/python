@@ -4,9 +4,13 @@
 .. module:: struct
    :synopsis: Interpret bytes as packed binary data.
 
+**Source code:** :source:`Lib/struct.py`
+
 .. index::
    pair: C; structures
    triple: packing; binary; data
+
+--------------
 
 This module performs conversions between Python values and C structs represented
 as Python :class:`bytes` objects.  This can be used in handling binary data
@@ -44,53 +48,54 @@ The module defines the following exception and functions:
    is wrong.
 
 
-.. function:: pack(fmt, v1, v2, ...)
+.. function:: pack(format, v1, v2, ...)
 
    Return a bytes object containing the values *v1*, *v2*, ... packed according
-   to the format string *fmt*.  The arguments must match the values required by
+   to the format string *format*.  The arguments must match the values required by
    the format exactly.
 
 
-.. function:: pack_into(fmt, buffer, offset, v1, v2, ...)
+.. function:: pack_into(format, buffer, offset, v1, v2, ...)
 
-   Pack the values *v1*, *v2*, ... according to the format string *fmt* and
+   Pack the values *v1*, *v2*, ... according to the format string *format* and
    write the packed bytes into the writable buffer *buffer* starting at
    position *offset*.  Note that *offset* is a required argument.
 
 
-.. function:: unpack(fmt, buffer)
+.. function:: unpack(format, buffer)
 
-   Unpack from the buffer *buffer* (presumably packed by ``pack(fmt, ...)``)
-   according to the format string *fmt*.  The result is a tuple even if it
-   contains exactly one item.  The buffer must contain exactly the amount of
-   data required by the format (``len(bytes)`` must equal ``calcsize(fmt)``).
+   Unpack from the buffer *buffer* (presumably packed by ``pack(format, ...)``)
+   according to the format string *format*.  The result is a tuple even if it
+   contains exactly one item.  The buffer's size in bytes must match the
+   size required by the format, as reflected by :func:`calcsize`.
 
 
-.. function:: unpack_from(fmt, buffer, offset=0)
+.. function:: unpack_from(format, /, buffer, offset=0)
 
    Unpack from *buffer* starting at position *offset*, according to the format
-   string *fmt*.  The result is a tuple even if it contains exactly one
-   item.  *buffer* must contain at least the amount of data required by the
-   format (``len(buffer[offset:])`` must be at least ``calcsize(fmt)``).
+   string *format*.  The result is a tuple even if it contains exactly one
+   item.  The buffer's size in bytes, starting at position *offset*, must be at
+   least the size required by the format, as reflected by :func:`calcsize`.
 
 
-.. function:: iter_unpack(fmt, buffer)
+.. function:: iter_unpack(format, buffer)
 
    Iteratively unpack from the buffer *buffer* according to the format
-   string *fmt*.  This function returns an iterator which will read
+   string *format*.  This function returns an iterator which will read
    equally-sized chunks from the buffer until all its contents have been
-   consumed.  The buffer's size in bytes must be a multiple of the amount
-   of data required by the format, as reflected by :func:`calcsize`.
+   consumed.  The buffer's size in bytes must be a multiple of the size
+   required by the format, as reflected by :func:`calcsize`.
 
    Each iteration yields a tuple as specified by the format string.
 
    .. versionadded:: 3.4
 
 
-.. function:: calcsize(fmt)
+.. function:: calcsize(format)
 
    Return the size of the struct (and hence of the bytes object produced by
-   ``pack(fmt, ...)``) corresponding to the format string *fmt*.
+   ``pack(format, ...)``) corresponding to the format string *format*.
+
 
 .. _struct-format-strings:
 
@@ -111,6 +116,13 @@ Byte Order, Size, and Alignment
 By default, C types are represented in the machine's native format and byte
 order, and properly aligned by skipping pad bytes if necessary (according to the
 rules used by the C compiler).
+
+.. index::
+   single: @ (at); in struct format strings
+   single: = (equals); in struct format strings
+   single: < (less); in struct format strings
+   single: > (greater); in struct format strings
+   single: ! (exclamation); in struct format strings
 
 Alternatively, the first character of the format string can be used to indicate
 the byte order, size and alignment of the packed data, according to the
@@ -147,8 +159,8 @@ the :ref:`format-characters` section.
 Note the difference between ``'@'`` and ``'='``: both use native byte order, but
 the size and alignment of the latter is standardized.
 
-The form ``'!'`` is available for those poor souls who claim they can't remember
-whether network byte order is big-endian or little-endian.
+The form ``'!'`` represents the network byte order which is always big-endian
+as defined in `IETF RFC 1700 <IETF RFC 1700_>`_.
 
 There is no way to indicate non-native byte order (force byte-swapping); use the
 appropriate choice of ``'<'`` or ``'>'``.
@@ -185,84 +197,98 @@ platform-dependent.
 +--------+--------------------------+--------------------+----------------+------------+
 | ``c``  | :c:type:`char`           | bytes of length 1  | 1              |            |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``b``  | :c:type:`signed char`    | integer            | 1              | \(1),\(3)  |
+| ``b``  | :c:type:`signed char`    | integer            | 1              | \(1), \(2) |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``B``  | :c:type:`unsigned char`  | integer            | 1              | \(3)       |
+| ``B``  | :c:type:`unsigned char`  | integer            | 1              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
 | ``?``  | :c:type:`_Bool`          | bool               | 1              | \(1)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``h``  | :c:type:`short`          | integer            | 2              | \(3)       |
+| ``h``  | :c:type:`short`          | integer            | 2              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``H``  | :c:type:`unsigned short` | integer            | 2              | \(3)       |
+| ``H``  | :c:type:`unsigned short` | integer            | 2              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``i``  | :c:type:`int`            | integer            | 4              | \(3)       |
+| ``i``  | :c:type:`int`            | integer            | 4              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``I``  | :c:type:`unsigned int`   | integer            | 4              | \(3)       |
+| ``I``  | :c:type:`unsigned int`   | integer            | 4              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``l``  | :c:type:`long`           | integer            | 4              | \(3)       |
+| ``l``  | :c:type:`long`           | integer            | 4              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``L``  | :c:type:`unsigned long`  | integer            | 4              | \(3)       |
+| ``L``  | :c:type:`unsigned long`  | integer            | 4              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``q``  | :c:type:`long long`      | integer            | 8              | \(2), \(3) |
+| ``q``  | :c:type:`long long`      | integer            | 8              | \(2)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``Q``  | :c:type:`unsigned long   | integer            | 8              | \(2), \(3) |
+| ``Q``  | :c:type:`unsigned long   | integer            | 8              | \(2)       |
 |        | long`                    |                    |                |            |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``n``  | :c:type:`ssize_t`        | integer            |                | \(4)       |
+| ``n``  | :c:type:`ssize_t`        | integer            |                | \(3)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``N``  | :c:type:`size_t`         | integer            |                | \(4)       |
+| ``N``  | :c:type:`size_t`         | integer            |                | \(3)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``f``  | :c:type:`float`          | float              | 4              | \(5)       |
+| ``e``  | \(6)                     | float              | 2              | \(4)       |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``d``  | :c:type:`double`         | float              | 8              | \(5)       |
+| ``f``  | :c:type:`float`          | float              | 4              | \(4)       |
++--------+--------------------------+--------------------+----------------+------------+
+| ``d``  | :c:type:`double`         | float              | 8              | \(4)       |
 +--------+--------------------------+--------------------+----------------+------------+
 | ``s``  | :c:type:`char[]`         | bytes              |                |            |
 +--------+--------------------------+--------------------+----------------+------------+
 | ``p``  | :c:type:`char[]`         | bytes              |                |            |
 +--------+--------------------------+--------------------+----------------+------------+
-| ``P``  | :c:type:`void \*`        | integer            |                | \(6)       |
+| ``P``  | :c:type:`void \*`        | integer            |                | \(5)       |
 +--------+--------------------------+--------------------+----------------+------------+
 
 .. versionchanged:: 3.3
    Added support for the ``'n'`` and ``'N'`` formats.
 
+.. versionchanged:: 3.6
+   Added support for the ``'e'`` format.
+
+
 Notes:
 
 (1)
+   .. index:: single: ? (question mark); in struct format strings
+
    The ``'?'`` conversion code corresponds to the :c:type:`_Bool` type defined by
    C99. If this type is not available, it is simulated using a :c:type:`char`. In
    standard mode, it is always represented by one byte.
 
 (2)
-   The ``'q'`` and ``'Q'`` conversion codes are available in native mode only if
-   the platform C compiler supports C :c:type:`long long`, or, on Windows,
-   :c:type:`__int64`.  They are always available in standard modes.
-
-(3)
    When attempting to pack a non-integer using any of the integer conversion
    codes, if the non-integer has a :meth:`__index__` method then that method is
    called to convert the argument to an integer before packing.
 
    .. versionchanged:: 3.2
-      Use of the :meth:`__index__` method for non-integers is new in 3.2.
+      Added use of the :meth:`__index__` method for non-integers.
 
-(4)
+(3)
    The ``'n'`` and ``'N'`` conversion codes are only available for the native
    size (selected as the default or with the ``'@'`` byte order character).
    For the standard size, you can use whichever of the other integer formats
    fits your application.
 
-(5)
-   For the ``'f'`` and ``'d'`` conversion codes, the packed representation uses
-   the IEEE 754 binary32 (for ``'f'``) or binary64 (for ``'d'``) format,
-   regardless of the floating-point format used by the platform.
+(4)
+   For the ``'f'``, ``'d'`` and ``'e'`` conversion codes, the packed
+   representation uses the IEEE 754 binary32, binary64 or binary16 format (for
+   ``'f'``, ``'d'`` or ``'e'`` respectively), regardless of the floating-point
+   format used by the platform.
 
-(6)
+(5)
    The ``'P'`` format character is only available for the native byte ordering
    (selected as the default or with the ``'@'`` byte order character). The byte
    order character ``'='`` chooses to use little- or big-endian ordering based
    on the host system. The struct module does not interpret this as native
    ordering, so the ``'P'`` format is not available.
+
+(6)
+   The IEEE 754 binary16 "half precision" type was introduced in the 2008
+   revision of the `IEEE 754 standard <ieee 754 standard_>`_. It has a sign
+   bit, a 5-bit exponent and 11-bit precision (with 10 bits explicitly stored),
+   and can represent numbers between approximately ``6.1e-05`` and ``6.5e+04``
+   at full precision. This type is not widely supported by C compilers: on a
+   typical machine, an unsigned short can be used for storage, but not for math
+   operations. See the Wikipedia page on the `half-precision floating-point
+   format <half precision format_>`_ for more information.
 
 
 A format character may be preceded by an integral repeat count.  For example,
@@ -286,7 +312,7 @@ When packing a value ``x`` using one of the integer formats (``'b'``,
 then :exc:`struct.error` is raised.
 
 .. versionchanged:: 3.1
-   In 3.0, some of the integer formats wrapped out-of-range values and
+   Previously, some of the integer formats wrapped out-of-range values and
    raised :exc:`DeprecationWarning` instead of :exc:`struct.error`.
 
 The ``'p'`` format character encodes a "Pascal string", meaning a short
@@ -299,6 +325,8 @@ smaller.  The bytes of the string follow.  If the string passed in to
 are used.  Note that for :func:`unpack`, the ``'p'`` format character consumes
 ``count`` bytes, but that the string returned can never contain more than 255
 bytes.
+
+.. index:: single: ? (question mark); in struct format strings
 
 For the ``'?'`` format character, the return value is either :const:`True` or
 :const:`False`. When packing, the truth value of the argument object is used.
@@ -383,13 +411,19 @@ The :mod:`struct` module also defines the following type:
    methods is more efficient than calling the :mod:`struct` functions with the
    same format since the format string only needs to be compiled once.
 
+   .. note::
+
+      The compiled versions of the most recent format strings passed to
+      :class:`Struct` and the module-level functions are cached, so programs
+      that use only a few format strings needn't worry about reusing a single
+      :class:`Struct` instance.
 
    Compiled Struct objects support the following methods and attributes:
 
    .. method:: pack(v1, v2, ...)
 
       Identical to the :func:`pack` function, using the compiled format.
-      (``len(result)`` will equal :attr:`self.size`.)
+      (``len(result)`` will equal :attr:`size`.)
 
 
    .. method:: pack_into(buffer, offset, v1, v2, ...)
@@ -400,19 +434,20 @@ The :mod:`struct` module also defines the following type:
    .. method:: unpack(buffer)
 
       Identical to the :func:`unpack` function, using the compiled format.
-      (``len(buffer)`` must equal :attr:`self.size`).
+      The buffer's size in bytes must equal :attr:`size`.
 
 
    .. method:: unpack_from(buffer, offset=0)
 
       Identical to the :func:`unpack_from` function, using the compiled format.
-      (``len(buffer[offset:])`` must be at least :attr:`self.size`).
+      The buffer's size in bytes, starting at position *offset*, must be at least
+      :attr:`size`.
 
 
    .. method:: iter_unpack(buffer)
 
       Identical to the :func:`iter_unpack` function, using the compiled format.
-      (``len(buffer)`` must be a multiple of :attr:`self.size`).
+      The buffer's size in bytes must be a multiple of :attr:`size`.
 
       .. versionadded:: 3.4
 
@@ -420,8 +455,17 @@ The :mod:`struct` module also defines the following type:
 
       The format string used to construct this Struct object.
 
+      .. versionchanged:: 3.7
+         The format string type is now :class:`str` instead of :class:`bytes`.
+
    .. attribute:: size
 
       The calculated size of the struct (and hence of the bytes object produced
       by the :meth:`pack` method) corresponding to :attr:`format`.
 
+
+.. _half precision format: https://en.wikipedia.org/wiki/Half-precision_floating-point_format
+
+.. _ieee 754 standard: https://en.wikipedia.org/wiki/IEEE_floating_point#IEEE_754-2008
+
+.. _IETF RFC 1700: https://tools.ietf.org/html/rfc1700
