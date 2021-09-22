@@ -2,8 +2,8 @@ import sys
 import unittest
 import tkinter
 from tkinter import ttk
-from test.support import requires, run_unittest, swap_attr
-from tkinter.test.support import AbstractTkTest, destroy_default_root
+from test.support import requires, run_unittest, gc_collect
+from tkinter.test.support import AbstractTkTest, AbstractDefaultRootTest
 
 requires('gui')
 
@@ -18,6 +18,7 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
         x = ttk.LabeledScale(self.root)
         var = x._variable._name
         x.destroy()
+        gc_collect()  # For PyPy or other GCs.
         self.assertRaises(tkinter.TclError, x.tk.globalgetvar, var)
 
         # manually created variable
@@ -30,6 +31,7 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
         else:
             self.assertEqual(float(x.tk.globalgetvar(name)), myvar.get())
         del myvar
+        gc_collect()  # For PyPy or other GCs.
         self.assertRaises(tkinter.TclError, x.tk.globalgetvar, name)
 
         # checking that the tracing callback is properly removed
@@ -46,20 +48,6 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
         if hasattr(sys, 'last_type'):
             self.assertNotEqual(sys.last_type, tkinter.TclError)
 
-
-    def test_initialization_no_master(self):
-        # no master passing
-        with swap_attr(tkinter, '_default_root', None), \
-             swap_attr(tkinter, '_support_default_root', True):
-            try:
-                x = ttk.LabeledScale()
-                self.assertIsNotNone(tkinter._default_root)
-                self.assertEqual(x.master, tkinter._default_root)
-                self.assertEqual(x.tk, tkinter._default_root.tk)
-                x.destroy()
-            finally:
-                destroy_default_root()
-
     def test_initialization(self):
         # master passing
         master = tkinter.Frame(self.root)
@@ -69,18 +57,14 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
 
         # variable initialization/passing
         passed_expected = (('0', 0), (0, 0), (10, 10),
-            (-1, -1), (sys.maxsize + 1, sys.maxsize + 1))
-        if self.wantobjects:
-            passed_expected += ((2.5, 2),)
+            (-1, -1), (sys.maxsize + 1, sys.maxsize + 1),
+            (2.5, 2), ('2.5', 2))
         for pair in passed_expected:
             x = ttk.LabeledScale(self.root, from_=pair[0])
             self.assertEqual(x.value, pair[1])
             x.destroy()
-        x = ttk.LabeledScale(self.root, from_='2.5')
-        self.assertRaises(ValueError, x._variable.get)
-        x.destroy()
         x = ttk.LabeledScale(self.root, from_=None)
-        self.assertRaises(ValueError, x._variable.get)
+        self.assertRaises((ValueError, tkinter.TclError), x._variable.get)
         x.destroy()
         # variable should have its default value set to the from_ value
         myvar = tkinter.DoubleVar(self.root, value=20)
@@ -118,7 +102,6 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
     def test_horizontal_range(self):
         lscale = ttk.LabeledScale(self.root, from_=0, to=10)
         lscale.pack()
-        lscale.wait_visibility()
         lscale.update()
 
         linfo_1 = lscale.label.place_info()
@@ -148,7 +131,6 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
     def test_variable_change(self):
         x = ttk.LabeledScale(self.root)
         x.pack()
-        x.wait_visibility()
         x.update()
 
         curr_xcoord = x.scale.coords()[0]
@@ -157,8 +139,10 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
         # The following update is needed since the test doesn't use mainloop,
         # at the same time this shouldn't affect test outcome
         x.update()
+        self.assertEqual(x.value, newval)
         self.assertEqual(x.label['text'],
                          newval if self.wantobjects else str(newval))
+        self.assertEqual(float(x.scale.get()), newval)
         self.assertGreater(x.scale.coords()[0], curr_xcoord)
         self.assertEqual(x.scale.coords()[0],
             int(x.label.place_info()['x']))
@@ -170,9 +154,18 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
             conv = int
         x.value = conv(x.scale['to']) + 1 # no changes shouldn't happen
         x.update()
+        self.assertEqual(x.value, newval)
         self.assertEqual(conv(x.label['text']), newval)
+        self.assertEqual(float(x.scale.get()), newval)
         self.assertEqual(x.scale.coords()[0],
             int(x.label.place_info()['x']))
+
+        # non-integer value
+        x.value = newval = newval + 1.5
+        x.update()
+        self.assertEqual(x.value, int(newval))
+        self.assertEqual(conv(x.label['text']), int(newval))
+        self.assertEqual(float(x.scale.get()), newval)
 
         x.destroy()
 
@@ -180,7 +173,7 @@ class LabeledScaleTest(AbstractTkTest, unittest.TestCase):
     def test_resize(self):
         x = ttk.LabeledScale(self.root)
         x.pack(expand=True, fill='both')
-        x.wait_visibility()
+        gc_collect()  # For PyPy or other GCs.
         x.update()
 
         width, height = x.master.winfo_width(), x.master.winfo_height()
@@ -216,6 +209,7 @@ class OptionMenuTest(AbstractTkTest, unittest.TestCase):
         optmenu.destroy()
         self.assertEqual(optmenu.tk.globalgetvar(name), var.get())
         del var
+        gc_collect()  # For PyPy or other GCs.
         self.assertRaises(tkinter.TclError, optmenu.tk.globalgetvar, name)
 
 
@@ -261,7 +255,7 @@ class OptionMenuTest(AbstractTkTest, unittest.TestCase):
 
         # check that variable is updated correctly
         optmenu.pack()
-        optmenu.wait_visibility()
+        gc_collect()  # For PyPy or other GCs.
         optmenu['menu'].invoke(0)
         self.assertEqual(optmenu._variable.get(), items[0])
 
@@ -284,8 +278,37 @@ class OptionMenuTest(AbstractTkTest, unittest.TestCase):
 
         optmenu.destroy()
 
+    def test_unique_radiobuttons(self):
+        # check that radiobuttons are unique across instances (bpo25684)
+        items = ('a', 'b', 'c')
+        default = 'a'
+        optmenu = ttk.OptionMenu(self.root, self.textvar, default, *items)
+        textvar2 = tkinter.StringVar(self.root)
+        optmenu2 = ttk.OptionMenu(self.root, textvar2, default, *items)
+        optmenu.pack()
+        optmenu2.pack()
+        optmenu['menu'].invoke(1)
+        optmenu2['menu'].invoke(2)
+        optmenu_stringvar_name = optmenu['menu'].entrycget(0, 'variable')
+        optmenu2_stringvar_name = optmenu2['menu'].entrycget(0, 'variable')
+        self.assertNotEqual(optmenu_stringvar_name,
+                            optmenu2_stringvar_name)
+        self.assertEqual(self.root.tk.globalgetvar(optmenu_stringvar_name),
+                         items[1])
+        self.assertEqual(self.root.tk.globalgetvar(optmenu2_stringvar_name),
+                         items[2])
 
-tests_gui = (LabeledScaleTest, OptionMenuTest)
+        optmenu.destroy()
+        optmenu2.destroy()
+
+
+class DefaultRootTest(AbstractDefaultRootTest, unittest.TestCase):
+
+    def test_labeledscale(self):
+        self._test_widget(ttk.LabeledScale)
+
+
+tests_gui = (LabeledScaleTest, OptionMenuTest, DefaultRootTest)
 
 if __name__ == "__main__":
     run_unittest(*tests_gui)

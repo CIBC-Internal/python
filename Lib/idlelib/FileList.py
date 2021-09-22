@@ -1,12 +1,13 @@
+"idlelib.filelist"
+
 import os
-from tkinter import *
-import tkinter.messagebox as tkMessageBox
+from tkinter import messagebox
 
 
 class FileList:
 
     # N.B. this import overridden in PyShellFileList.
-    from idlelib.EditorWindow import EditorWindow
+    from idlelib.editor import EditorWindow
 
     def __init__(self, root):
         self.root = root
@@ -19,7 +20,7 @@ class FileList:
         filename = self.canonize(filename)
         if os.path.isdir(filename):
             # This can happen when bad filename is passed on command line:
-            tkMessageBox.showerror(
+            messagebox.showerror(
                 "File Error",
                 "%r is a directory." % (filename,),
                 master=self.root)
@@ -87,7 +88,7 @@ class FileList:
         if newkey in self.dict:
             conflict = self.dict[newkey]
             self.inversedict[conflict] = None
-            tkMessageBox.showerror(
+            messagebox.showerror(
                 "Name Conflict",
                 "You now have multiple edit windows open for %r" % (filename,),
                 master=self.root)
@@ -110,20 +111,21 @@ class FileList:
         return os.path.normpath(filename)
 
 
-def _test():
-    from idlelib.EditorWindow import fixwordbreaks
-    import sys
+def _test():  # TODO check and convert to htest
+    from tkinter import Tk
+    from idlelib.editor import fixwordbreaks
+    from idlelib.run import fix_scaling
     root = Tk()
+    fix_scaling(root)
     fixwordbreaks(root)
     root.withdraw()
     flist = FileList(root)
-    if sys.argv[1:]:
-        for filename in sys.argv[1:]:
-            flist.open(filename)
-    else:
-        flist.new()
+    flist.new()
     if flist.inversedict:
         root.mainloop()
 
 if __name__ == '__main__':
-    _test()
+    from unittest import main
+    main('idlelib.idle_test.test_filelist', verbosity=2)
+
+#    _test()

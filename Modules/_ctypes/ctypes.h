@@ -31,9 +31,7 @@ union value {
                 long l;
                 float f;
                 double d;
-#ifdef HAVE_LONG_LONG
-                PY_LONG_LONG ll;
-#endif
+                long long ll;
                 long double D;
 };
 
@@ -70,7 +68,7 @@ typedef struct {
     ffi_type *atypes[1];
 } CThunkObject;
 extern PyTypeObject PyCThunk_Type;
-#define CThunk_CheckExact(v)        ((v)->ob_type == &PyCThunk_Type)
+#define CThunk_CheckExact(v)        Py_IS_TYPE(v, &PyCThunk_Type)
 
 typedef struct {
     /* First part identical to tagCDataObject */
@@ -104,7 +102,7 @@ typedef struct {
 } PyCFuncPtrObject;
 
 extern PyTypeObject PyCStgDict_Type;
-#define PyCStgDict_CheckExact(v)            ((v)->ob_type == &PyCStgDict_Type)
+#define PyCStgDict_CheckExact(v)            Py_IS_TYPE(v, &PyCStgDict_Type)
 #define PyCStgDict_Check(v)         PyObject_TypeCheck(v, &PyCStgDict_Type)
 
 extern int PyCStructUnionType_update_stgdict(PyObject *fields, PyObject *type, int isStruct);
@@ -114,12 +112,12 @@ extern int PyObject_stginfo(PyObject *self, Py_ssize_t *psize, Py_ssize_t *palig
 
 
 extern PyTypeObject PyCData_Type;
-#define CDataObject_CheckExact(v)       ((v)->ob_type == &PyCData_Type)
+#define CDataObject_CheckExact(v)       Py_IS_TYPE(v, &PyCData_Type)
 #define CDataObject_Check(v)            PyObject_TypeCheck(v, &PyCData_Type)
 #define _CDataObject_HasExternalBuffer(v)  ((v)->b_ptr != (char *)&(v)->b_value)
 
 extern PyTypeObject PyCSimpleType_Type;
-#define PyCSimpleTypeObject_CheckExact(v)       ((v)->ob_type == &PyCSimpleType_Type)
+#define PyCSimpleTypeObject_CheckExact(v)       Py_IS_TYPE(v, &PyCSimpleType_Type)
 #define PyCSimpleTypeObject_Check(v)    PyObject_TypeCheck(v, &PyCSimpleType_Type)
 
 extern PyTypeObject PyCField_Type;
@@ -191,7 +189,7 @@ typedef struct {
    remember is that in PyCArrayType_new the ffi_type fields must be filled in -
    so far it was unneeded because libffi doesn't support arrays at all
    (because they are passed as pointers to function calls anyway).  But it's
-   too much risk to change that now, and there are other fields which doen't
+   too much risk to change that now, and there are other fields which doesn't
    belong into this structure anyway.  Maybe in ctypes 2.0... (ctypes 2000?)
 */
     Py_ssize_t size;            /* number of bytes */
@@ -238,7 +236,7 @@ typedef struct {
  StgDictObject function to a generic one.
 
  Currently, PyCFuncPtr types have 'converters' and 'checker' entries in their
- type dict.  They are only used to cache attributes from other entries, whihc
+ type dict.  They are only used to cache attributes from other entries, which
  is wrong.
 
  One use case is the .value attribute that all simple types have.  But some
@@ -290,6 +288,8 @@ PyObject *_ctypes_callproc(PPROC pProc,
 
 #define TYPEFLAG_ISPOINTER 0x100
 #define TYPEFLAG_HASPOINTER 0x200
+#define TYPEFLAG_HASUNION 0x400
+#define TYPEFLAG_HASBITFIELD 0x800
 
 #define DICTFLAG_FINAL 0x1000
 
@@ -303,9 +303,7 @@ struct tagPyCArgObject {
         short h;
         int i;
         long l;
-#ifdef HAVE_LONG_LONG
-        PY_LONG_LONG q;
-#endif
+        long long q;
         long double D;
         double d;
         float f;
@@ -316,7 +314,7 @@ struct tagPyCArgObject {
 };
 
 extern PyTypeObject PyCArg_Type;
-#define PyCArg_CheckExact(v)        ((v)->ob_type == &PyCArg_Type)
+#define PyCArg_CheckExact(v)        Py_IS_TYPE(v, &PyCArg_Type)
 extern PyCArgObject *PyCArgObject_new(void);
 
 extern PyObject *
@@ -327,7 +325,7 @@ extern int
 PyCData_set(PyObject *dst, PyObject *type, SETFUNC setfunc, PyObject *value,
           Py_ssize_t index, Py_ssize_t size, char *ptr);
 
-extern void _ctypes_extend_error(PyObject *exc_class, char *fmt, ...);
+extern void _ctypes_extend_error(PyObject *exc_class, const char *fmt, ...);
 
 struct basespec {
     CDataObject *base;
@@ -366,6 +364,14 @@ PyObject *_ctypes_get_errobj(int **pspace);
 
 #ifdef MS_WIN32
 extern PyObject *ComError;
+#endif
+
+#if USING_MALLOC_CLOSURE_DOT_C
+void Py_ffi_closure_free(void *p);
+void *Py_ffi_closure_alloc(size_t size, void** codeloc);
+#else
+#define Py_ffi_closure_free ffi_closure_free
+#define Py_ffi_closure_alloc ffi_closure_alloc
 #endif
 
 /*

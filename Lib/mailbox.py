@@ -18,14 +18,16 @@ import email.message
 import email.generator
 import io
 import contextlib
+from types import GenericAlias
 try:
     import fcntl
 except ImportError:
     fcntl = None
 
-__all__ = [ 'Mailbox', 'Maildir', 'mbox', 'MH', 'Babyl', 'MMDF',
-            'Message', 'MaildirMessage', 'mboxMessage', 'MHMessage',
-            'BabylMessage', 'MMDFMessage']
+__all__ = ['Mailbox', 'Maildir', 'mbox', 'MH', 'Babyl', 'MMDF',
+           'Message', 'MaildirMessage', 'mboxMessage', 'MHMessage',
+           'BabylMessage', 'MMDFMessage', 'Error', 'NoSuchMailboxError',
+           'NotEmptyError', 'ExternalClashError', 'FormatError']
 
 linesep = os.linesep.encode('ascii')
 
@@ -259,6 +261,8 @@ class Mailbox:
         else:
             raise TypeError('Invalid message type: %s' % type(message))
 
+    __class_getitem__ = classmethod(GenericAlias)
+
 
 class Maildir(Mailbox):
     """A qmail-style Maildir mailbox."""
@@ -312,11 +316,12 @@ class Maildir(Mailbox):
         # final position in order to prevent race conditions with changes
         # from other programs
         try:
-            if hasattr(os, 'link'):
+            try:
                 os.link(tmp_file.name, dest)
-                os.remove(tmp_file.name)
-            else:
+            except (AttributeError, PermissionError):
                 os.rename(tmp_file.name, dest)
+            else:
+                os.remove(tmp_file.name)
         except OSError as e:
             os.remove(tmp_file.name)
             if e.errno == errno.EEXIST:
@@ -553,7 +558,7 @@ class Maildir(Mailbox):
         try:
             return self._toc[key]
         except KeyError:
-            raise KeyError('No message with key: %s' % key)
+            raise KeyError('No message with key: %s' % key) from None
 
     # This method is for backward compatibility only.
     def next(self):
@@ -722,10 +727,14 @@ class _singlefileMailbox(Mailbox):
 
     def close(self):
         """Flush and close the mailbox."""
-        self.flush()
-        if self._locked:
-            self.unlock()
-        self._file.close()  # Sync has been done by self.flush() above.
+        try:
+            self.flush()
+        finally:
+            try:
+                if self._locked:
+                    self.unlock()
+            finally:
+                self._file.close()  # Sync has been done by self.flush() above.
 
     def _lookup(self, key=None):
         """Return (start, stop) or raise KeyError."""
@@ -735,7 +744,7 @@ class _singlefileMailbox(Mailbox):
             try:
                 return self._toc[key]
             except KeyError:
-                raise KeyError('No message with key: %s' % key)
+                raise KeyError('No message with key: %s' % key) from None
 
     def _append_message(self, message):
         """Append message to mailbox and return (start, stop) offsets."""
@@ -778,7 +787,7 @@ class _mboxMMDF(_singlefileMailbox):
     def get_string(self, key, from_=False):
         """Return a string representation or raise a KeyError."""
         return email.message_from_bytes(
-            self.get_bytes(key)).as_string(unixfrom=from_)
+            self.get_bytes(key, from_)).as_string(unixfrom=from_)
 
     def get_bytes(self, key, from_=False):
         """Return a string representation or raise a KeyError."""
@@ -1195,13 +1204,14 @@ class MH(Mailbox):
         for key in self.iterkeys():
             if key - 1 != prev:
                 changes.append((key, prev + 1))
-                if hasattr(os, 'link'):
+                try:
                     os.link(os.path.join(self._path, str(key)),
                             os.path.join(self._path, str(prev + 1)))
-                    os.unlink(os.path.join(self._path, str(key)))
-                else:
+                except (AttributeError, PermissionError):
                     os.rename(os.path.join(self._path, str(key)),
                               os.path.join(self._path, str(prev + 1)))
+                else:
+                    os.unlink(os.path.join(self._path, str(key)))
             prev += 1
         self._next_key = prev + 1
         if len(changes) == 0:
@@ -1230,8 +1240,8 @@ class MH(Mailbox):
 class Babyl(_singlefileMailbox):
     """An Rmail-style Babyl mailbox."""
 
-    _special_labels = frozenset(('unseen', 'deleted', 'filed', 'answered',
-                                 'forwarded', 'edited', 'resent'))
+    _special_labels = frozenset({'unseen', 'deleted', 'filed', 'answered',
+                                 'forwarded', 'edited', 'resent'})
 
     def __init__(self, path, factory=None, create=True):
         """Initialize a Babyl mailbox."""
@@ -1565,7 +1575,7 @@ class MaildirMessage(Message):
         try:
             self._date = float(date)
         except ValueError:
-            raise TypeError("can't convert to float: %s" % date)
+            raise TypeError("can't convert to float: %s" % date) from None
 
     def get_info(self):
         """Get the message's "info" as a string."""
@@ -1817,7 +1827,7 @@ class BabylMessage(Message):
     _type_specific_attributes = ['_labels', '_visible']
 
     def __init__(self, message=None):
-        """Initialize an BabylMessage instance."""
+        """Initialize a BabylMessage instance."""
         self._labels = []
         self._visible = Message()
         Message.__init__(self, message)
@@ -1949,7 +1959,7 @@ class _ProxyFile:
         while True:
             line = self.readline()
             if not line:
-                raise StopIteration
+                return
             yield line
 
     def tell(self):
@@ -1966,9 +1976,11 @@ class _ProxyFile:
     def close(self):
         """Close the file."""
         if hasattr(self, '_file'):
-            if hasattr(self._file, 'close'):
-                self._file.close()
-            del self._file
+            try:
+                if hasattr(self._file, 'close'):
+                    self._file.close()
+            finally:
+                del self._file
 
     def _read(self, size, read_method):
         """Read size bytes using read_method."""
@@ -2005,6 +2017,8 @@ class _ProxyFile:
         if not hasattr(self._file, 'closed'):
             return False
         return self._file.closed
+
+    __class_getitem__ = classmethod(GenericAlias)
 
 
 class _PartialFile(_ProxyFile):
@@ -2069,13 +2083,14 @@ def _lock_file(f, dotlock=True):
                 else:
                     raise
             try:
-                if hasattr(os, 'link'):
+                try:
                     os.link(pre_lock.name, f.name + '.lock')
                     dotlock_done = True
-                    os.unlink(pre_lock.name)
-                else:
+                except (AttributeError, PermissionError):
                     os.rename(pre_lock.name, f.name + '.lock')
                     dotlock_done = True
+                else:
+                    os.unlink(pre_lock.name)
             except FileExistsError:
                 os.remove(pre_lock.name)
                 raise ExternalClashError('dot lock unavailable: %s' %

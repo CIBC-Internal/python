@@ -8,22 +8,20 @@
 # written by Fredrik Lundh, May 1997
 #
 
-from tkinter import *
+__all__ = ["Dialog"]
+
+from tkinter import Frame
+
 
 class Dialog:
 
-    command  = None
+    command = None
 
     def __init__(self, master=None, **options):
-
-        # FIXME: should this be placed on the module level instead?
-        if TkVersion < 4.2:
-            raise TclError("this module requires Tk 4.2 or newer")
-
-        self.master  = master
+        if not master:
+            master = options.get('parent')
+        self.master = master
         self.options = options
-        if not master and options.get('parent'):
-            self.master = options['parent']
 
     def _fixoptions(self):
         pass # hook

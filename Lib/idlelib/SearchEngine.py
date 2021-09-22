@@ -1,7 +1,8 @@
 '''Define SearchEngine for search dialogs.'''
 import re
+
 from tkinter import StringVar, BooleanVar, TclError
-import tkinter.messagebox as tkMessageBox
+from tkinter import messagebox
 
 def get(root):
     '''Return the singleton SearchEngine instance for the process.
@@ -13,6 +14,7 @@ def get(root):
         root._searchengine = SearchEngine(root)
         # This creates a cycle that persists until root is deleted.
     return root._searchengine
+
 
 class SearchEngine:
     """Handles searching a text widget for Find, Replace, and Grep."""
@@ -57,7 +59,7 @@ class SearchEngine:
 
     def setcookedpat(self, pat):
         "Set pattern after escaping if re."
-        # called only in SearchDialog.py: 66
+        # called only in search.py: 66
         if self.isre():
             pat = re.escape(pat)
         self.setpat(pat)
@@ -82,22 +84,19 @@ class SearchEngine:
             flags = flags | re.IGNORECASE
         try:
             prog = re.compile(pat, flags)
-        except re.error as what:
-            args = what.args
-            msg = args[0]
-            col = args[1] if len(args) >= 2 else -1
-            self.report_error(pat, msg, col)
+        except re.error as e:
+            self.report_error(pat, e.msg, e.pos)
             return None
         return prog
 
-    def report_error(self, pat, msg, col=-1):
+    def report_error(self, pat, msg, col=None):
         # Derived class could override this with something fancier
         msg = "Error: " + str(msg)
         if pat:
             msg = msg + "\nPattern: " + str(pat)
-        if col >= 0:
+        if col is not None:
             msg = msg + "\nOffset: " + str(col)
-        tkMessageBox.showerror("Regular expression error",
+        messagebox.showerror("Regular expression error",
                                msg, master=self.root)
 
     def search_text(self, text, prog=None, ok=0):
@@ -107,7 +106,7 @@ class SearchEngine:
         It directly return the result of that call.
 
         Text is a text widget. Prog is a precompiled pattern.
-        The ok parameteris a bit complicated as it has two effects.
+        The ok parameter is a bit complicated as it has two effects.
 
         If there is a selection, the search begin at either end,
         depending on the direction setting and ok, with ok meaning that
@@ -186,12 +185,13 @@ class SearchEngine:
             col = len(chars) - 1
         return None
 
+
 def search_reverse(prog, chars, col):
     '''Search backwards and return an re match object or None.
 
     This is done by searching forwards until there is no match.
     Prog: compiled re object with a search method returning a match.
-    Chars: line of text, without \n.
+    Chars: line of text, without \\n.
     Col: stop index for the search; the limit for match.end().
     '''
     m = prog.search(chars)
@@ -228,6 +228,7 @@ def get_line_col(index):
     line, col = map(int, index.split(".")) # Fails on invalid index
     return line, col
 
+
 if __name__ == "__main__":
-    import unittest
-    unittest.main('idlelib.idle_test.test_searchengine', verbosity=2, exit=False)
+    from unittest import main
+    main('idlelib.idle_test.test_searchengine', verbosity=2)

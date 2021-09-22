@@ -1,8 +1,6 @@
 """Utility functions, node construction macros, etc."""
 # Author: Collin Winter
 
-from itertools import islice
-
 # Local imports
 from .pgen2 import token
 from .pytree import Leaf, Node
@@ -414,7 +412,7 @@ def _find(name, node):
     return None
 
 def _is_import_binding(node, name, package=None):
-    """ Will reuturn node if node will import name, or node
+    """ Will return node if node will import name, or node
         will import * from package.  None is returned otherwise.
         See test cases for examples. """
 

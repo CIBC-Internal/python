@@ -1,5 +1,5 @@
-:mod:`contextlib` --- Utilities for :keyword:`with`\ -statement contexts
-========================================================================
+:mod:`!contextlib` --- Utilities for :keyword:`!with`\ -statement contexts
+==========================================================================
 
 .. module:: contextlib
    :synopsis: Utilities for with-statement contexts.
@@ -18,32 +18,61 @@ Utilities
 
 Functions and classes provided:
 
+.. class:: AbstractContextManager
+
+   An :term:`abstract base class` for classes that implement
+   :meth:`object.__enter__` and :meth:`object.__exit__`. A default
+   implementation for :meth:`object.__enter__` is provided which returns
+   ``self`` while :meth:`object.__exit__` is an abstract method which by default
+   returns ``None``. See also the definition of :ref:`typecontextmanager`.
+
+   .. versionadded:: 3.6
+
+
+.. class:: AbstractAsyncContextManager
+
+   An :term:`abstract base class` for classes that implement
+   :meth:`object.__aenter__` and :meth:`object.__aexit__`. A default
+   implementation for :meth:`object.__aenter__` is provided which returns
+   ``self`` while :meth:`object.__aexit__` is an abstract method which by default
+   returns ``None``. See also the definition of
+   :ref:`async-context-managers`.
+
+   .. versionadded:: 3.7
+
+
 .. decorator:: contextmanager
 
    This function is a :term:`decorator` that can be used to define a factory
    function for :keyword:`with` statement context managers, without needing to
    create a class or separate :meth:`__enter__` and :meth:`__exit__` methods.
 
-   A simple example (this is not recommended as a real way of generating HTML!)::
+   While many objects natively support use in with statements, sometimes a
+   resource needs to be managed that isn't a context manager in its own right,
+   and doesn't implement a ``close()`` method for use with ``contextlib.closing``
+
+   An abstract example would be the following to ensure correct resource
+   management::
 
       from contextlib import contextmanager
 
       @contextmanager
-      def tag(name):
-          print("<%s>" % name)
-          yield
-          print("</%s>" % name)
+      def managed_resource(*args, **kwds):
+          # Code to acquire resource, e.g.:
+          resource = acquire_resource(*args, **kwds)
+          try:
+              yield resource
+          finally:
+              # Code to release resource, e.g.:
+              release_resource(resource)
 
-      >>> with tag("h1"):
-      ...    print("foo")
-      ...
-      <h1>
-      foo
-      </h1>
+      >>> with managed_resource(timeout=3600) as resource:
+      ...     # Resource is released at the end of this block,
+      ...     # even if code in the block raises an exception
 
    The function being decorated must return a :term:`generator`-iterator when
    called. This iterator must yield exactly one value, which will be bound to
-   the targets in the :keyword:`with` statement's :keyword:`as` clause, if any.
+   the targets in the :keyword:`with` statement's :keyword:`!as` clause, if any.
 
    At the point where the generator yields, the block nested in the :keyword:`with`
    statement is executed.  The generator is then resumed after the block is exited.
@@ -53,9 +82,9 @@ Functions and classes provided:
    the error (if any), or ensure that some cleanup takes place. If an exception is
    trapped merely in order to log it or to perform some action (rather than to
    suppress it entirely), the generator must reraise that exception. Otherwise the
-   generator context manager will indicate to the :keyword:`with` statement that
+   generator context manager will indicate to the :keyword:`!with` statement that
    the exception has been handled, and execution will resume with the statement
-   immediately following the :keyword:`with` statement.
+   immediately following the :keyword:`!with` statement.
 
    :func:`contextmanager` uses :class:`ContextDecorator` so the context managers
    it creates can be used as decorators as well as in :keyword:`with` statements.
@@ -66,6 +95,36 @@ Functions and classes provided:
 
    .. versionchanged:: 3.2
       Use of :class:`ContextDecorator`.
+
+
+.. decorator:: asynccontextmanager
+
+   Similar to :func:`~contextlib.contextmanager`, but creates an
+   :ref:`asynchronous context manager <async-context-managers>`.
+
+   This function is a :term:`decorator` that can be used to define a factory
+   function for :keyword:`async with` statement asynchronous context managers,
+   without needing to create a class or separate :meth:`__aenter__` and
+   :meth:`__aexit__` methods. It must be applied to an :term:`asynchronous
+   generator` function.
+
+   A simple example::
+
+      from contextlib import asynccontextmanager
+
+      @asynccontextmanager
+      async def get_connection():
+          conn = await acquire_db_connection()
+          try:
+              yield conn
+          finally:
+              await release_db_connection(conn)
+
+      async def get_all_users():
+          async with get_connection() as conn:
+              return conn.query('SELECT ...')
+
+   .. versionadded:: 3.7
 
 
 .. function:: closing(thing)
@@ -87,7 +146,7 @@ Functions and classes provided:
       from contextlib import closing
       from urllib.request import urlopen
 
-      with closing(urlopen('http://www.python.org')) as page:
+      with closing(urlopen('https://www.python.org')) as page:
           for line in page:
               print(line)
 
@@ -95,11 +154,46 @@ Functions and classes provided:
    ``page.close()`` will be called when the :keyword:`with` block is exited.
 
 
+.. _simplifying-support-for-single-optional-context-managers:
+
+.. function:: nullcontext(enter_result=None)
+
+   Return a context manager that returns *enter_result* from ``__enter__``, but
+   otherwise does nothing. It is intended to be used as a stand-in for an
+   optional context manager, for example::
+
+      def myfunction(arg, ignore_exceptions=False):
+          if ignore_exceptions:
+              # Use suppress to ignore all exceptions.
+              cm = contextlib.suppress(Exception)
+          else:
+              # Do not ignore any exceptions, cm has no effect.
+              cm = contextlib.nullcontext()
+          with cm:
+              # Do something
+
+   An example using *enter_result*::
+
+      def process_file(file_or_path):
+          if isinstance(file_or_path, str):
+              # If string, open file
+              cm = open(file_or_path)
+          else:
+              # Caller is responsible for closing file
+              cm = nullcontext(file_or_path)
+
+          with cm as file:
+              # Perform processing on the file
+
+   .. versionadded:: 3.7
+
+
 .. function:: suppress(*exceptions)
 
    Return a context manager that suppresses any of the specified exceptions
-   if they occur in the body of a with statement and then resumes execution
-   with the first statement following the end of the with statement.
+   if they occur in the body of a :keyword:`!with` statement and then
+   resumes execution with the first statement following the end of the
+   :keyword:`!with` statement.
 
    As with any other mechanism that completely suppresses exceptions, this
    context manager should be used only to cover very specific errors where
@@ -142,11 +236,12 @@ Functions and classes provided:
    is hardwired to stdout.
 
    For example, the output of :func:`help` normally is sent to *sys.stdout*.
-   You can capture that output in a string by redirecting the output to a
-   :class:`io.StringIO` object::
+   You can capture that output in a string by redirecting the output to an
+   :class:`io.StringIO` object. The replacement stream is returned from the
+   ``__enter__`` method and so is available as the target of the
+   :keyword:`with` statement::
 
-        f = io.StringIO()
-        with redirect_stdout(f):
+        with redirect_stdout(io.StringIO()) as f:
             help(pow)
         s = f.getvalue()
 
@@ -170,6 +265,16 @@ Functions and classes provided:
    This context manager is :ref:`reentrant <reentrant-cms>`.
 
    .. versionadded:: 3.4
+
+
+.. function:: redirect_stderr(new_target)
+
+   Similar to :func:`~contextlib.redirect_stdout` but redirecting
+   :data:`sys.stderr` to another file or file-like object.
+
+   This context manager is :ref:`reentrant <reentrant-cms>`.
+
+   .. versionadded:: 3.5
 
 
 .. class:: ContextDecorator()
@@ -243,7 +348,7 @@ Functions and classes provided:
       As the decorated function must be able to be called multiple times, the
       underlying context manager must support use in multiple :keyword:`with`
       statements. If this is not the case, then the original construct with the
-      explicit :keyword:`with` statement inside the function should be used.
+      explicit :keyword:`!with` statement inside the function should be used.
 
    .. versionadded:: 3.2
 
@@ -313,7 +418,7 @@ Functions and classes provided:
       The passed in object is returned from the function, allowing this
       method to be used as a function decorator.
 
-   .. method:: callback(callback, *args, **kwds)
+   .. method:: callback(callback, /, *args, **kwds)
 
       Accepts an arbitrary callback function and arguments and adds it to
       the callback stack.
@@ -350,6 +455,44 @@ Functions and classes provided:
       callbacks registered, the arguments passed in will indicate that no
       exception occurred.
 
+.. class:: AsyncExitStack()
+
+   An :ref:`asynchronous context manager <async-context-managers>`, similar
+   to :class:`ExitStack`, that supports combining both synchronous and
+   asynchronous context managers, as well as having coroutines for
+   cleanup logic.
+
+   The :meth:`close` method is not implemented, :meth:`aclose` must be used
+   instead.
+
+   .. coroutinemethod:: enter_async_context(cm)
+
+      Similar to :meth:`enter_context` but expects an asynchronous context
+      manager.
+
+   .. method:: push_async_exit(exit)
+
+      Similar to :meth:`push` but expects either an asynchronous context manager
+      or a coroutine function.
+
+   .. method:: push_async_callback(callback, /, *args, **kwds)
+
+      Similar to :meth:`callback` but expects a coroutine function.
+
+   .. coroutinemethod:: aclose()
+
+      Similar to :meth:`close` but properly handles awaitables.
+
+   Continuing the example for :func:`asynccontextmanager`::
+
+      async with AsyncExitStack() as stack:
+          connections = [await stack.enter_async_context(get_connection())
+              for i in range(5)]
+          # All opened connections will automatically be released at the end of
+          # the async with statement, even if attempts to open a connection
+          # later in the list raise an exception.
+
+   .. versionadded:: 3.7
 
 Examples and Recipes
 --------------------
@@ -379,24 +522,6 @@ some of the context managers being optional::
 As shown, :class:`ExitStack` also makes it quite easy to use :keyword:`with`
 statements to manage arbitrary resources that don't natively support the
 context management protocol.
-
-
-Simplifying support for single optional context managers
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-In the specific case of a single optional context manager, :class:`ExitStack`
-instances can be used as a "do nothing" context manager, allowing a context
-manager to easily be omitted without affecting the overall structure of
-the source code::
-
-   def debug_trace(details):
-       if __debug__:
-           return TraceContext(details)
-       # Don't do anything special with the context in release mode
-       return ExitStack()
-
-   with debug_trace():
-       # Suite is traced in debug mode, but runs normally otherwise
 
 
 Catching exceptions from ``__enter__`` methods
@@ -437,9 +562,9 @@ Here's an example of doing this for a context manager that accepts resource
 acquisition and release functions, along with an optional validation function,
 and maps them to the context management protocol::
 
-   from contextlib import contextmanager, ExitStack
+   from contextlib import contextmanager, AbstractContextManager, ExitStack
 
-   class ResourceManager:
+   class ResourceManager(AbstractContextManager):
 
        def __init__(self, acquire_resource, release_resource, check_resource_ok=None):
            self.acquire_resource = acquire_resource
@@ -514,8 +639,8 @@ even further by means of a small helper class::
    from contextlib import ExitStack
 
    class Callback(ExitStack):
-       def __init__(self, callback, *args, **kwds):
-           super(Callback, self).__init__()
+       def __init__(self, callback, /, *args, **kwds):
+           super().__init__()
            self.callback(callback, *args, **kwds)
 
        def cancel(self):
@@ -543,7 +668,7 @@ advance::
 
 Due to the way the decorator protocol works, a callback function
 declared this way cannot take any parameters. Instead, any resources to
-be released must be accessed as closure variables
+be released must be accessed as closure variables.
 
 
 Using a context manager as a function decorator
@@ -568,10 +693,10 @@ single definition::
             self.name = name
 
         def __enter__(self):
-            logging.info('Entering: {}'.format(self.name))
+            logging.info('Entering: %s', self.name)
 
         def __exit__(self, exc_type, exc, exc_tb):
-            logging.info('Exiting: {}'.format(self.name))
+            logging.info('Exiting: %s', self.name)
 
 Instances of this class can be used as both a context manager::
 
@@ -593,7 +718,7 @@ an explicit ``with`` statement.
 
 .. seealso::
 
-   :pep:`0343` - The "with" statement
+   :pep:`343` - The "with" statement
       The specification, background, and examples for the Python :keyword:`with`
       statement.
 
@@ -634,7 +759,7 @@ to yield if an attempt is made to use them a second time::
     Before
     After
     >>> with cm:
-    ...    pass
+    ...     pass
     ...
     Traceback (most recent call last):
         ...
@@ -648,7 +773,7 @@ Reentrant context managers
 
 More sophisticated context managers may be "reentrant". These context
 managers can not only be used in multiple :keyword:`with` statements,
-but may also be used *inside* a :keyword:`with` statement that is already
+but may also be used *inside* a :keyword:`!with` statement that is already
 using the same context manager.
 
 :class:`threading.RLock` is an example of a reentrant context manager, as are
