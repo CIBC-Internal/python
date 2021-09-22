@@ -4,8 +4,9 @@
 .. module:: array
    :synopsis: Space efficient arrays of uniformly typed numeric values.
 
-
 .. index:: single: arrays
+
+--------------
 
 This module defines an object type which can compactly represent an array of
 basic values: characters, integers, floating point numbers.  Arrays are sequence
@@ -35,9 +36,9 @@ defined:
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'L'``   | unsigned long      | int               | 4                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
-| ``'q'``   | signed long long   | int               | 8                     | \(2)  |
+| ``'q'``   | signed long long   | int               | 8                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
-| ``'Q'``   | unsigned long long | int               | 8                     | \(2)  |
+| ``'Q'``   | unsigned long long | int               | 8                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'f'``   | float              | float             | 4                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
@@ -55,13 +56,6 @@ Notes:
    API.
 
    .. deprecated-removed:: 3.3 4.0
-
-(2)
-   The ``'q'`` and ``'Q'`` type codes are available only if
-   the platform C compiler used to build Python supports C :c:type:`long long`,
-   or, on Windows, :c:type:`__int64`.
-
-   .. versionadded:: 3.3
 
 The actual representation of values is determined by the machine architecture
 (strictly speaking, by the C implementation).  The actual size can be accessed
@@ -82,6 +76,7 @@ The module defines the following type:
    to add initial items to the array.  Otherwise, the iterable initializer is
    passed to the :meth:`extend` method.
 
+   .. audit-event:: array.__new__ typecode,initializer array.array
 
 .. data:: typecodes
 
@@ -91,7 +86,7 @@ Array objects support the ordinary sequence operations of indexing, slicing,
 concatenation, and multiplication.  When using slice assignment, the assigned
 value must be an array object with the same type code; in all other cases,
 :exc:`TypeError` is raised. Array objects also implement the buffer interface,
-and may be used wherever :term:`bytes-like object`\ s are supported.
+and may be used wherever :term:`bytes-like objects <bytes-like object>` are supported.
 
 The following data items and methods are also supported:
 
@@ -164,8 +159,7 @@ The following data items and methods are also supported:
    Read *n* items (as machine values) from the :term:`file object` *f* and append
    them to the end of the array.  If less than *n* items are available,
    :exc:`EOFError` is raised, but the items that were available are still
-   inserted into the array. *f* must be a real built-in file object; something
-   else with a :meth:`read` method won't do.
+   inserted into the array.
 
 
 .. method:: array.fromlist(list)
@@ -177,6 +171,8 @@ The following data items and methods are also supported:
 .. method:: array.fromstring()
 
    Deprecated alias for :meth:`frombytes`.
+
+   .. deprecated-removed:: 3.2 3.9
 
 
 .. method:: array.fromunicode(s)
@@ -240,6 +236,8 @@ The following data items and methods are also supported:
 
    Deprecated alias for :meth:`tobytes`.
 
+   .. deprecated-removed:: 3.2 3.9
+
 
 .. method:: array.tounicode()
 
@@ -253,7 +251,7 @@ When an array object is printed or converted to a string, it is represented as
 empty, otherwise it is a string if the *typecode* is ``'u'``, otherwise it is a
 list of numbers.  The string is guaranteed to be able to be converted back to an
 array with the same type and value using :func:`eval`, so long as the
-:func:`array` function has been imported using ``from array import array``.
+:class:`~array.array` class has been imported using ``from array import array``.
 Examples::
 
    array('l')
@@ -271,7 +269,7 @@ Examples::
       Packing and unpacking of External Data Representation (XDR) data as used in some
       remote procedure call systems.
 
-   `The Numerical Python Documentation <http://docs.scipy.org/doc/>`_
+   `The Numerical Python Documentation <https://docs.scipy.org/doc/>`_
       The Numeric Python extension (NumPy) defines another array type; see
       http://www.numpy.org/ for further information about Numerical Python.
 

@@ -8,7 +8,7 @@
 
 --------------
 
-This module defines utility function to assist in dynamic creation of
+This module defines utility functions to assist in dynamic creation of
 new types.
 
 It also defines names for some object types that are used by the standard
@@ -34,7 +34,7 @@ Dynamic Type Creation
    freshly created class namespace. It should accept the class namespace
    as its sole argument and update the namespace directly with the class
    contents. If no callback is provided, it has the same effect as passing
-   in ``lambda ns: ns``.
+   in ``lambda ns: None``.
 
    .. versionadded:: 3.3
 
@@ -55,6 +55,12 @@ Dynamic Type Creation
 
    .. versionadded:: 3.3
 
+   .. versionchanged:: 3.6
+
+      The default value for the ``namespace`` element of the returned
+      tuple has changed.  Now an insertion-order-preserving mapping is
+      used when the metaclass does not have a ``__prepare__`` method.
+
 .. seealso::
 
    :ref:`metaclasses`
@@ -62,6 +68,23 @@ Dynamic Type Creation
 
    :pep:`3115` - Metaclasses in Python 3000
       Introduced the ``__prepare__`` namespace hook
+
+.. function:: resolve_bases(bases)
+
+   Resolve MRO entries dynamically as specified by :pep:`560`.
+
+   This function looks for items in *bases* that are not instances of
+   :class:`type`, and returns a tuple where each such object that has
+   an ``__mro_entries__`` method is replaced with an unpacked result of
+   calling this method.  If a *bases* item is an instance of :class:`type`,
+   or it doesn't have an ``__mro_entries__`` method, then it is included in
+   the return tuple unchanged.
+
+   .. versionadded:: 3.7
+
+.. seealso::
+
+   :pep:`560` - Core support for typing module and generic types
 
 
 Standard Interpreter Types
@@ -75,6 +98,9 @@ the types that arise only incidentally during processing such as the
 Typical use of these names is for :func:`isinstance` or
 :func:`issubclass` checks.
 
+
+If you instantiate any of these types, note that signatures may vary between Python versions.
+
 Standard names are defined for the following types:
 
 .. data:: FunctionType
@@ -83,18 +109,58 @@ Standard names are defined for the following types:
    The type of user-defined functions and functions created by
    :keyword:`lambda`  expressions.
 
+   .. audit-event:: function.__new__ code types.FunctionType
+
+   The audit event only occurs for direct instantiation of function objects,
+   and is not raised for normal compilation.
+
 
 .. data:: GeneratorType
 
-   The type of :term:`generator`-iterator objects, produced by calling a
-   generator function.
+   The type of :term:`generator`-iterator objects, created by
+   generator functions.
 
 
-.. data:: CodeType
+.. data:: CoroutineType
+
+   The type of :term:`coroutine` objects, created by
+   :keyword:`async def` functions.
+
+   .. versionadded:: 3.5
+
+
+.. data:: AsyncGeneratorType
+
+   The type of :term:`asynchronous generator`-iterator objects, created by
+   asynchronous generator functions.
+
+   .. versionadded:: 3.6
+
+
+.. class:: CodeType(**kwargs)
 
    .. index:: builtin: compile
 
    The type for code objects such as returned by :func:`compile`.
+
+   .. audit-event:: code.__new__ code,filename,name,argcount,posonlyargcount,kwonlyargcount,nlocals,stacksize,flags types.CodeType
+
+   Note that the audited arguments may not match the names or positions
+   required by the initializer.  The audit event only occurs for direct
+   instantiation of code objects, and is not raised for normal compilation.
+
+   .. method:: CodeType.replace(**kwargs)
+
+     Return a copy of the code object with new values for the specified fields.
+
+     .. versionadded:: 3.8
+
+.. data:: CellType
+
+   The type for cell objects: such objects are used as containers for
+   a function's free variables.
+
+   .. versionadded:: 3.8
 
 
 .. data:: MethodType
@@ -110,10 +176,45 @@ Standard names are defined for the following types:
    C".)
 
 
+.. data:: WrapperDescriptorType
+
+   The type of methods of some built-in data types and base classes such as
+   :meth:`object.__init__` or :meth:`object.__lt__`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: MethodWrapperType
+
+   The type of *bound* methods of some built-in data types and base classes.
+   For example it is the type of :code:`object().__str__`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: MethodDescriptorType
+
+   The type of methods of some built-in data types such as :meth:`str.join`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: ClassMethodDescriptorType
+
+   The type of *unbound* class methods of some built-in data types such as
+   ``dict.__dict__['fromkeys']``.
+
+   .. versionadded:: 3.7
+
+
 .. class:: ModuleType(name, doc=None)
 
-   The type of :term:`modules <module>`. Constructor takes the name of the
+   The type of :term:`modules <module>`. The constructor takes the name of the
    module to be created and optionally its :term:`docstring`.
+
+   .. note::
+      Use :func:`importlib.util.module_from_spec` to create a new module if you
+      wish to set the various import-controlled attributes.
 
    .. attribute:: __doc__
 
@@ -123,12 +224,23 @@ Standard names are defined for the following types:
 
       The :term:`loader` which loaded the module. Defaults to ``None``.
 
+      This attribute is to match :attr:`importlib.machinery.ModuleSpec.loader`
+      as stored in the attr:`__spec__` object.
+
+      .. note::
+         A future version of Python may stop setting this attribute by default.
+         To guard against this potential change, preferrably read from the
+         :attr:`__spec__` attribute instead or use
+         ``getattr(module, "__loader__", None)`` if you explicitly need to use
+         this attribute.
+
       .. versionchanged:: 3.4
          Defaults to ``None``. Previously the attribute was optional.
 
    .. attribute:: __name__
 
-      The name of the module.
+      The name of the module. Expected to match
+      :attr:`importlib.machinery.ModuleSpec.name`.
 
    .. attribute:: __package__
 
@@ -137,19 +249,43 @@ Standard names are defined for the following types:
       to ``''``, else it should be set to the name of the package (which can be
       :attr:`__name__` if the module is a package itself). Defaults to ``None``.
 
+      This attribute is to match :attr:`importlib.machinery.ModuleSpec.parent`
+      as stored in the attr:`__spec__` object.
+
+      .. note::
+         A future version of Python may stop setting this attribute by default.
+         To guard against this potential change, preferrably read from the
+         :attr:`__spec__` attribute instead or use
+         ``getattr(module, "__package__", None)`` if you explicitly need to use
+         this attribute.
+
       .. versionchanged:: 3.4
          Defaults to ``None``. Previously the attribute was optional.
 
+   .. attribute:: __spec__
 
-.. data:: TracebackType
+      A record of the the module's import-system-related state. Expected to be
+      an instance of :class:`importlib.machinery.ModuleSpec`.
+
+      .. versionadded:: 3.4
+
+
+.. class:: TracebackType(tb_next, tb_frame, tb_lasti, tb_lineno)
 
    The type of traceback objects such as found in ``sys.exc_info()[2]``.
+
+   See :ref:`the language reference <traceback-objects>` for details of the
+   available attributes and operations, and guidance on creating tracebacks
+   dynamically.
 
 
 .. data:: FrameType
 
    The type of frame objects such as found in ``tb.tb_frame`` if ``tb`` is a
    traceback object.
+
+   See :ref:`the language reference <frame-objects>` for details of the
+   available attributes and operations.
 
 
 .. data:: GetSetDescriptorType
@@ -238,14 +374,18 @@ Additional Utility Classes and Functions
    The type is roughly equivalent to the following code::
 
        class SimpleNamespace:
-           def __init__(self, **kwargs):
+           def __init__(self, /, **kwargs):
                self.__dict__.update(kwargs)
+
            def __repr__(self):
                keys = sorted(self.__dict__)
                items = ("{}={!r}".format(k, self.__dict__[k]) for k in keys)
                return "{}({})".format(type(self).__name__, ", ".join(items))
+
            def __eq__(self, other):
-               return self.__dict__ == other.__dict__
+               if isinstance(self, SimpleNamespace) and isinstance(other, SimpleNamespace):
+                  return self.__dict__ == other.__dict__
+               return NotImplemented
 
    ``SimpleNamespace`` may be useful as a replacement for ``class NS: pass``.
    However, for a structured record type use :func:`~collections.namedtuple`
@@ -267,3 +407,25 @@ Additional Utility Classes and Functions
    attributes on the class with the same name (see Enum for an example).
 
    .. versionadded:: 3.4
+
+
+Coroutine Utility Functions
+---------------------------
+
+.. function:: coroutine(gen_func)
+
+   This function transforms a :term:`generator` function into a
+   :term:`coroutine function` which returns a generator-based coroutine.
+   The generator-based coroutine is still a :term:`generator iterator`,
+   but is also considered to be a :term:`coroutine` object and is
+   :term:`awaitable`.  However, it may not necessarily implement
+   the :meth:`__await__` method.
+
+   If *gen_func* is a generator function, it will be modified in-place.
+
+   If *gen_func* is not a generator function, it will be wrapped. If it
+   returns an instance of :class:`collections.abc.Generator`, the instance
+   will be wrapped in an *awaitable* proxy object.  All other types
+   of objects will be returned as is.
+
+   .. versionadded:: 3.5

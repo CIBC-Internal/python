@@ -3,6 +3,7 @@
 
 .. module:: inspect
    :synopsis: Extract information and source code from live objects.
+
 .. moduleauthor:: Ka-Ping Yee <ping@lfw.org>
 .. sectionauthor:: Ka-Ping Yee <ping@lfw.org>
 
@@ -28,177 +29,240 @@ Types and members
 -----------------
 
 The :func:`getmembers` function retrieves the members of an object such as a
-class or module. The sixteen functions whose names begin with "is" are mainly
+class or module. The functions whose names begin with "is" are mainly
 provided as convenient choices for the second argument to :func:`getmembers`.
 They also help you determine when you can expect to find the following special
 attributes:
 
-+-----------+-----------------+---------------------------+
-| Type      | Attribute       | Description               |
-+===========+=================+===========================+
-| module    | __doc__         | documentation string      |
-+-----------+-----------------+---------------------------+
-|           | __file__        | filename (missing for     |
-|           |                 | built-in modules)         |
-+-----------+-----------------+---------------------------+
-| class     | __doc__         | documentation string      |
-+-----------+-----------------+---------------------------+
-|           | __module__      | name of module in which   |
-|           |                 | this class was defined    |
-+-----------+-----------------+---------------------------+
-| method    | __doc__         | documentation string      |
-+-----------+-----------------+---------------------------+
-|           | __name__        | name with which this      |
-|           |                 | method was defined        |
-+-----------+-----------------+---------------------------+
-|           | __func__        | function object           |
-|           |                 | containing implementation |
-|           |                 | of method                 |
-+-----------+-----------------+---------------------------+
-|           | __self__        | instance to which this    |
-|           |                 | method is bound, or       |
-|           |                 | ``None``                  |
-+-----------+-----------------+---------------------------+
-| function  | __doc__         | documentation string      |
-+-----------+-----------------+---------------------------+
-|           | __name__        | name with which this      |
-|           |                 | function was defined      |
-+-----------+-----------------+---------------------------+
-|           | __code__        | code object containing    |
-|           |                 | compiled function         |
-|           |                 | :term:`bytecode`          |
-+-----------+-----------------+---------------------------+
-|           | __defaults__    | tuple of any default      |
-|           |                 | values for positional or  |
-|           |                 | keyword parameters        |
-+-----------+-----------------+---------------------------+
-|           | __kwdefaults__  | mapping of any default    |
-|           |                 | values for keyword-only   |
-|           |                 | parameters                |
-+-----------+-----------------+---------------------------+
-|           | __globals__     | global namespace in which |
-|           |                 | this function was defined |
-+-----------+-----------------+---------------------------+
-| traceback | tb_frame        | frame object at this      |
-|           |                 | level                     |
-+-----------+-----------------+---------------------------+
-|           | tb_lasti        | index of last attempted   |
-|           |                 | instruction in bytecode   |
-+-----------+-----------------+---------------------------+
-|           | tb_lineno       | current line number in    |
-|           |                 | Python source code        |
-+-----------+-----------------+---------------------------+
-|           | tb_next         | next inner traceback      |
-|           |                 | object (called by this    |
-|           |                 | level)                    |
-+-----------+-----------------+---------------------------+
-| frame     | f_back          | next outer frame object   |
-|           |                 | (this frame's caller)     |
-+-----------+-----------------+---------------------------+
-|           | f_builtins      | builtins namespace seen   |
-|           |                 | by this frame             |
-+-----------+-----------------+---------------------------+
-|           | f_code          | code object being         |
-|           |                 | executed in this frame    |
-+-----------+-----------------+---------------------------+
-|           | f_globals       | global namespace seen by  |
-|           |                 | this frame                |
-+-----------+-----------------+---------------------------+
-|           | f_lasti         | index of last attempted   |
-|           |                 | instruction in bytecode   |
-+-----------+-----------------+---------------------------+
-|           | f_lineno        | current line number in    |
-|           |                 | Python source code        |
-+-----------+-----------------+---------------------------+
-|           | f_locals        | local namespace seen by   |
-|           |                 | this frame                |
-+-----------+-----------------+---------------------------+
-|           | f_restricted    | 0 or 1 if frame is in     |
-|           |                 | restricted execution mode |
-+-----------+-----------------+---------------------------+
-|           | f_trace         | tracing function for this |
-|           |                 | frame, or ``None``        |
-+-----------+-----------------+---------------------------+
-| code      | co_argcount     | number of arguments (not  |
-|           |                 | including \* or \*\*      |
-|           |                 | args)                     |
-+-----------+-----------------+---------------------------+
-|           | co_code         | string of raw compiled    |
-|           |                 | bytecode                  |
-+-----------+-----------------+---------------------------+
-|           | co_consts       | tuple of constants used   |
-|           |                 | in the bytecode           |
-+-----------+-----------------+---------------------------+
-|           | co_filename     | name of file in which     |
-|           |                 | this code object was      |
-|           |                 | created                   |
-+-----------+-----------------+---------------------------+
-|           | co_firstlineno  | number of first line in   |
-|           |                 | Python source code        |
-+-----------+-----------------+---------------------------+
-|           | co_flags        | bitmap: 1=optimized ``|`` |
-|           |                 | 2=newlocals ``|`` 4=\*arg |
-|           |                 | ``|`` 8=\*\*arg           |
-+-----------+-----------------+---------------------------+
-|           | co_lnotab       | encoded mapping of line   |
-|           |                 | numbers to bytecode       |
-|           |                 | indices                   |
-+-----------+-----------------+---------------------------+
-|           | co_name         | name with which this code |
-|           |                 | object was defined        |
-+-----------+-----------------+---------------------------+
-|           | co_names        | tuple of names of local   |
-|           |                 | variables                 |
-+-----------+-----------------+---------------------------+
-|           | co_nlocals      | number of local variables |
-+-----------+-----------------+---------------------------+
-|           | co_stacksize    | virtual machine stack     |
-|           |                 | space required            |
-+-----------+-----------------+---------------------------+
-|           | co_varnames     | tuple of names of         |
-|           |                 | arguments and local       |
-|           |                 | variables                 |
-+-----------+-----------------+---------------------------+
-| builtin   | __doc__         | documentation string      |
-+-----------+-----------------+---------------------------+
-|           | __name__        | original name of this     |
-|           |                 | function or method        |
-+-----------+-----------------+---------------------------+
-|           | __self__        | instance to which a       |
-|           |                 | method is bound, or       |
-|           |                 | ``None``                  |
-+-----------+-----------------+---------------------------+
+.. this function name is too big to fit in the ascii-art table below
+.. |coroutine-origin-link| replace:: :func:`sys.set_coroutine_origin_tracking_depth`
 
++-----------+-------------------+---------------------------+
+| Type      | Attribute         | Description               |
++===========+===================+===========================+
+| module    | __doc__           | documentation string      |
++-----------+-------------------+---------------------------+
+|           | __file__          | filename (missing for     |
+|           |                   | built-in modules)         |
++-----------+-------------------+---------------------------+
+| class     | __doc__           | documentation string      |
++-----------+-------------------+---------------------------+
+|           | __name__          | name with which this      |
+|           |                   | class was defined         |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | __module__        | name of module in which   |
+|           |                   | this class was defined    |
++-----------+-------------------+---------------------------+
+| method    | __doc__           | documentation string      |
++-----------+-------------------+---------------------------+
+|           | __name__          | name with which this      |
+|           |                   | method was defined        |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | __func__          | function object           |
+|           |                   | containing implementation |
+|           |                   | of method                 |
++-----------+-------------------+---------------------------+
+|           | __self__          | instance to which this    |
+|           |                   | method is bound, or       |
+|           |                   | ``None``                  |
++-----------+-------------------+---------------------------+
+|           | __module__        | name of module in which   |
+|           |                   | this method was defined   |
++-----------+-------------------+---------------------------+
+| function  | __doc__           | documentation string      |
++-----------+-------------------+---------------------------+
+|           | __name__          | name with which this      |
+|           |                   | function was defined      |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | __code__          | code object containing    |
+|           |                   | compiled function         |
+|           |                   | :term:`bytecode`          |
++-----------+-------------------+---------------------------+
+|           | __defaults__      | tuple of any default      |
+|           |                   | values for positional or  |
+|           |                   | keyword parameters        |
++-----------+-------------------+---------------------------+
+|           | __kwdefaults__    | mapping of any default    |
+|           |                   | values for keyword-only   |
+|           |                   | parameters                |
++-----------+-------------------+---------------------------+
+|           | __globals__       | global namespace in which |
+|           |                   | this function was defined |
++-----------+-------------------+---------------------------+
+|           | __annotations__   | mapping of parameters     |
+|           |                   | names to annotations;     |
+|           |                   | ``"return"`` key is       |
+|           |                   | reserved for return       |
+|           |                   | annotations.              |
++-----------+-------------------+---------------------------+
+|           | __module__        | name of module in which   |
+|           |                   | this function was defined |
++-----------+-------------------+---------------------------+
+| traceback | tb_frame          | frame object at this      |
+|           |                   | level                     |
++-----------+-------------------+---------------------------+
+|           | tb_lasti          | index of last attempted   |
+|           |                   | instruction in bytecode   |
++-----------+-------------------+---------------------------+
+|           | tb_lineno         | current line number in    |
+|           |                   | Python source code        |
++-----------+-------------------+---------------------------+
+|           | tb_next           | next inner traceback      |
+|           |                   | object (called by this    |
+|           |                   | level)                    |
++-----------+-------------------+---------------------------+
+| frame     | f_back            | next outer frame object   |
+|           |                   | (this frame's caller)     |
++-----------+-------------------+---------------------------+
+|           | f_builtins        | builtins namespace seen   |
+|           |                   | by this frame             |
++-----------+-------------------+---------------------------+
+|           | f_code            | code object being         |
+|           |                   | executed in this frame    |
++-----------+-------------------+---------------------------+
+|           | f_globals         | global namespace seen by  |
+|           |                   | this frame                |
++-----------+-------------------+---------------------------+
+|           | f_lasti           | index of last attempted   |
+|           |                   | instruction in bytecode   |
++-----------+-------------------+---------------------------+
+|           | f_lineno          | current line number in    |
+|           |                   | Python source code        |
++-----------+-------------------+---------------------------+
+|           | f_locals          | local namespace seen by   |
+|           |                   | this frame                |
++-----------+-------------------+---------------------------+
+|           | f_trace           | tracing function for this |
+|           |                   | frame, or ``None``        |
++-----------+-------------------+---------------------------+
+| code      | co_argcount       | number of arguments (not  |
+|           |                   | including keyword only    |
+|           |                   | arguments, \* or \*\*     |
+|           |                   | args)                     |
++-----------+-------------------+---------------------------+
+|           | co_code           | string of raw compiled    |
+|           |                   | bytecode                  |
++-----------+-------------------+---------------------------+
+|           | co_cellvars       | tuple of names of cell    |
+|           |                   | variables (referenced by  |
+|           |                   | containing scopes)        |
++-----------+-------------------+---------------------------+
+|           | co_consts         | tuple of constants used   |
+|           |                   | in the bytecode           |
++-----------+-------------------+---------------------------+
+|           | co_filename       | name of file in which     |
+|           |                   | this code object was      |
+|           |                   | created                   |
++-----------+-------------------+---------------------------+
+|           | co_firstlineno    | number of first line in   |
+|           |                   | Python source code        |
++-----------+-------------------+---------------------------+
+|           | co_flags          | bitmap of ``CO_*`` flags, |
+|           |                   | read more :ref:`here      |
+|           |                   | <inspect-module-co-flags>`|
++-----------+-------------------+---------------------------+
+|           | co_lnotab         | encoded mapping of line   |
+|           |                   | numbers to bytecode       |
+|           |                   | indices                   |
++-----------+-------------------+---------------------------+
+|           | co_freevars       | tuple of names of free    |
+|           |                   | variables (referenced via |
+|           |                   | a function's closure)     |
++-----------+-------------------+---------------------------+
+|           | co_posonlyargcount| number of positional only |
+|           |                   | arguments                 |
++-----------+-------------------+---------------------------+
+|           | co_kwonlyargcount | number of keyword only    |
+|           |                   | arguments (not including  |
+|           |                   | \*\* arg)                 |
++-----------+-------------------+---------------------------+
+|           | co_name           | name with which this code |
+|           |                   | object was defined        |
++-----------+-------------------+---------------------------+
+|           | co_names          | tuple of names of local   |
+|           |                   | variables                 |
++-----------+-------------------+---------------------------+
+|           | co_nlocals        | number of local variables |
++-----------+-------------------+---------------------------+
+|           | co_stacksize      | virtual machine stack     |
+|           |                   | space required            |
++-----------+-------------------+---------------------------+
+|           | co_varnames       | tuple of names of         |
+|           |                   | arguments and local       |
+|           |                   | variables                 |
++-----------+-------------------+---------------------------+
+| generator | __name__          | name                      |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | gi_frame          | frame                     |
++-----------+-------------------+---------------------------+
+|           | gi_running        | is the generator running? |
++-----------+-------------------+---------------------------+
+|           | gi_code           | code                      |
++-----------+-------------------+---------------------------+
+|           | gi_yieldfrom      | object being iterated by  |
+|           |                   | ``yield from``, or        |
+|           |                   | ``None``                  |
++-----------+-------------------+---------------------------+
+| coroutine | __name__          | name                      |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | cr_await          | object being awaited on,  |
+|           |                   | or ``None``               |
++-----------+-------------------+---------------------------+
+|           | cr_frame          | frame                     |
++-----------+-------------------+---------------------------+
+|           | cr_running        | is the coroutine running? |
++-----------+-------------------+---------------------------+
+|           | cr_code           | code                      |
++-----------+-------------------+---------------------------+
+|           | cr_origin         | where coroutine was       |
+|           |                   | created, or ``None``. See |
+|           |                   | |coroutine-origin-link|   |
++-----------+-------------------+---------------------------+
+| builtin   | __doc__           | documentation string      |
++-----------+-------------------+---------------------------+
+|           | __name__          | original name of this     |
+|           |                   | function or method        |
++-----------+-------------------+---------------------------+
+|           | __qualname__      | qualified name            |
++-----------+-------------------+---------------------------+
+|           | __self__          | instance to which a       |
+|           |                   | method is bound, or       |
+|           |                   | ``None``                  |
++-----------+-------------------+---------------------------+
+
+.. versionchanged:: 3.5
+
+   Add ``__qualname__`` and ``gi_yieldfrom`` attributes to generators.
+
+   The ``__name__`` attribute of generators is now set from the function
+   name, instead of the code name, and it can now be modified.
+
+.. versionchanged:: 3.7
+
+   Add ``cr_origin`` attribute to coroutines.
 
 .. function:: getmembers(object[, predicate])
 
-   Return all the members of an object in a list of (name, value) pairs sorted by
-   name.  If the optional *predicate* argument is supplied, only members for which
-   the predicate returns a true value are included.
+   Return all the members of an object in a list of ``(name, value)``
+   pairs sorted by name. If the optional *predicate* argument—which will be
+   called with the ``value`` object of each member—is supplied, only members
+   for which the predicate returns a true value are included.
 
    .. note::
 
       :func:`getmembers` will only return class attributes defined in the
       metaclass when the argument is a class and those attributes have been
       listed in the metaclass' custom :meth:`__dir__`.
-
-
-.. function:: getmoduleinfo(path)
-
-   Returns a :term:`named tuple` ``ModuleInfo(name, suffix, mode, module_type)``
-   of values that describe how Python will interpret the file identified by
-   *path* if it is a module, or ``None`` if it would not be identified as a
-   module.  In that tuple, *name* is the name of the module without the name of
-   any enclosing package, *suffix* is the trailing part of the file name (which
-   may not be a dot-delimited extension), *mode* is the :func:`open` mode that
-   would be used (``'r'`` or ``'rb'``), and *module_type* is an integer giving
-   the type of the module.  *module_type* will have a value which can be
-   compared to the constants defined in the :mod:`imp` module; see the
-   documentation for that module for more information on module types.
-
-   .. deprecated:: 3.3
-      You may check the file path's suffix against the supported suffixes
-      listed in :mod:`importlib.machinery` to infer the same information.
 
 
 .. function:: getmodulename(path)
@@ -214,105 +278,173 @@ attributes:
    still return ``None``.
 
    .. versionchanged:: 3.3
-      This function is now based directly on :mod:`importlib` rather than the
-      deprecated :func:`getmoduleinfo`.
+      The function is based directly on :mod:`importlib`.
 
 
 .. function:: ismodule(object)
 
-   Return true if the object is a module.
+   Return ``True`` if the object is a module.
 
 
 .. function:: isclass(object)
 
-   Return true if the object is a class, whether built-in or created in Python
+   Return ``True`` if the object is a class, whether built-in or created in Python
    code.
 
 
 .. function:: ismethod(object)
 
-   Return true if the object is a bound method written in Python.
+   Return ``True`` if the object is a bound method written in Python.
 
 
 .. function:: isfunction(object)
 
-   Return true if the object is a Python function, which includes functions
+   Return ``True`` if the object is a Python function, which includes functions
    created by a :term:`lambda` expression.
 
 
 .. function:: isgeneratorfunction(object)
 
-   Return true if the object is a Python generator function.
+   Return ``True`` if the object is a Python generator function.
+
+   .. versionchanged:: 3.8
+      Functions wrapped in :func:`functools.partial` now return ``True`` if the
+      wrapped function is a Python generator function.
 
 
 .. function:: isgenerator(object)
 
-   Return true if the object is a generator.
+   Return ``True`` if the object is a generator.
 
+
+.. function:: iscoroutinefunction(object)
+
+   Return ``True`` if the object is a :term:`coroutine function`
+   (a function defined with an :keyword:`async def` syntax).
+
+   .. versionadded:: 3.5
+
+   .. versionchanged:: 3.8
+      Functions wrapped in :func:`functools.partial` now return ``True`` if the
+      wrapped function is a :term:`coroutine function`.
+
+
+.. function:: iscoroutine(object)
+
+   Return ``True`` if the object is a :term:`coroutine` created by an
+   :keyword:`async def` function.
+
+   .. versionadded:: 3.5
+
+
+.. function:: isawaitable(object)
+
+   Return ``True`` if the object can be used in :keyword:`await` expression.
+
+   Can also be used to distinguish generator-based coroutines from regular
+   generators::
+
+      def gen():
+          yield
+      @types.coroutine
+      def gen_coro():
+          yield
+
+      assert not isawaitable(gen())
+      assert isawaitable(gen_coro())
+
+   .. versionadded:: 3.5
+
+
+.. function:: isasyncgenfunction(object)
+
+   Return ``True`` if the object is an :term:`asynchronous generator` function,
+   for example::
+
+    >>> async def agen():
+    ...     yield 1
+    ...
+    >>> inspect.isasyncgenfunction(agen)
+    True
+
+   .. versionadded:: 3.6
+
+   .. versionchanged:: 3.8
+      Functions wrapped in :func:`functools.partial` now return ``True`` if the
+      wrapped function is a :term:`asynchronous generator` function.
+
+
+.. function:: isasyncgen(object)
+
+   Return ``True`` if the object is an :term:`asynchronous generator iterator`
+   created by an :term:`asynchronous generator` function.
+
+   .. versionadded:: 3.6
 
 .. function:: istraceback(object)
 
-   Return true if the object is a traceback.
+   Return ``True`` if the object is a traceback.
 
 
 .. function:: isframe(object)
 
-   Return true if the object is a frame.
+   Return ``True`` if the object is a frame.
 
 
 .. function:: iscode(object)
 
-   Return true if the object is a code.
+   Return ``True`` if the object is a code.
 
 
 .. function:: isbuiltin(object)
 
-   Return true if the object is a built-in function or a bound built-in method.
+   Return ``True`` if the object is a built-in function or a bound built-in method.
 
 
 .. function:: isroutine(object)
 
-   Return true if the object is a user-defined or built-in function or method.
+   Return ``True`` if the object is a user-defined or built-in function or method.
 
 
 .. function:: isabstract(object)
 
-   Return true if the object is an abstract base class.
+   Return ``True`` if the object is an abstract base class.
 
 
 .. function:: ismethoddescriptor(object)
 
-   Return true if the object is a method descriptor, but not if
+   Return ``True`` if the object is a method descriptor, but not if
    :func:`ismethod`, :func:`isclass`, :func:`isfunction` or :func:`isbuiltin`
    are true.
 
    This, for example, is true of ``int.__add__``.  An object passing this test
-   has a :attr:`__get__` attribute but not a :attr:`__set__` attribute, but
-   beyond that the set of attributes varies.  :attr:`__name__` is usually
+   has a :meth:`~object.__get__` method but not a :meth:`~object.__set__`
+   method, but beyond that the set of attributes varies.  A
+   :attr:`~definition.__name__` attribute is usually
    sensible, and :attr:`__doc__` often is.
 
    Methods implemented via descriptors that also pass one of the other tests
-   return false from the :func:`ismethoddescriptor` test, simply because the
+   return ``False`` from the :func:`ismethoddescriptor` test, simply because the
    other tests promise more -- you can, e.g., count on having the
    :attr:`__func__` attribute (etc) when an object passes :func:`ismethod`.
 
 
 .. function:: isdatadescriptor(object)
 
-   Return true if the object is a data descriptor.
+   Return ``True`` if the object is a data descriptor.
 
-   Data descriptors have both a :attr:`__get__` and a :attr:`__set__` attribute.
+   Data descriptors have a :attr:`~object.__set__` or a :attr:`~object.__delete__` method.
    Examples are properties (defined in Python), getsets, and members.  The
    latter two are defined in C and there are more specific tests available for
    those types, which is robust across Python implementations.  Typically, data
-   descriptors will also have :attr:`__name__` and :attr:`__doc__` attributes
+   descriptors will also have :attr:`~definition.__name__` and :attr:`__doc__` attributes
    (properties, getsets, and members have both of these attributes), but this is
    not guaranteed.
 
 
 .. function:: isgetsetdescriptor(object)
 
-   Return true if the object is a getset descriptor.
+   Return ``True`` if the object is a getset descriptor.
 
    .. impl-detail::
 
@@ -323,7 +455,7 @@ attributes:
 
 .. function:: ismemberdescriptor(object)
 
-   Return true if the object is a member descriptor.
+   Return ``True`` if the object is a member descriptor.
 
    .. impl-detail::
 
@@ -340,13 +472,21 @@ Retrieving source code
 .. function:: getdoc(object)
 
    Get the documentation string for an object, cleaned up with :func:`cleandoc`.
+   If the documentation string for an object is not provided and the object is
+   a class, a method, a property or a descriptor, retrieve the documentation
+   string from the inheritance hierarchy.
+
+   .. versionchanged:: 3.5
+      Documentation strings are now inherited if not overridden.
 
 
 .. function:: getcomments(object)
 
    Return in a single string any lines of comments immediately preceding the
    object's source code (for a class, function, or method), or at the top of the
-   Python source file (if the object is a module).
+   Python source file (if the object is a module).  If the object's source code
+   is unavailable, return ``None``.  This could happen if the object has been
+   defined in C or the interactive shell.
 
 
 .. function:: getfile(object)
@@ -397,8 +537,12 @@ Retrieving source code
 .. function:: cleandoc(doc)
 
    Clean up indentation from docstrings that are indented to line up with blocks
-   of code.  Any whitespace that can be uniformly removed from the second line
-   onwards is removed.  Also, all tabs are expanded to spaces.
+   of code.
+
+   All leading whitespace is removed from the first line.  Any leading whitespace
+   that can be uniformly removed from the second line onwards is removed.  Empty
+   lines at the beginning and end are subsequently removed.  Also, all tabs are
+   expanded to spaces.
 
 
 .. _inspect-signature-object:
@@ -412,7 +556,7 @@ The Signature object represents the call signature of a callable object and its
 return annotation.  To retrieve a Signature object, use the :func:`signature`
 function.
 
-.. function:: signature(callable)
+.. function:: signature(callable, *, follow_wrapped=True)
 
    Return a :class:`Signature` object for the given ``callable``::
 
@@ -431,11 +575,20 @@ function.
       >>> sig.parameters['b'].annotation
       <class 'int'>
 
-   Accepts a wide range of python callables, from plain functions and classes to
+   Accepts a wide range of Python callables, from plain functions and classes to
    :func:`functools.partial` objects.
 
    Raises :exc:`ValueError` if no signature can be provided, and
    :exc:`TypeError` if that type of object is not supported.
+
+   A slash(/) in the signature of a function denotes that the parameters prior
+   to it are positional-only. For more info, see
+   :ref:`the FAQ entry on positional-only parameters <faq-positional-only-arguments>`.
+
+   .. versionadded:: 3.5
+      ``follow_wrapped`` parameter. Pass ``False`` to get a signature of
+      ``callable`` specifically (``callable.__wrapped__`` will not be used to
+      unwrap decorated callables.)
 
    .. note::
 
@@ -444,7 +597,7 @@ function.
       C provide no metadata about their arguments.
 
 
-.. class:: Signature(parameters=None, \*, return_annotation=Signature.empty)
+.. class:: Signature(parameters=None, *, return_annotation=Signature.empty)
 
    A Signature object represents the call signature of a function and its return
    annotation.  For each parameter accepted by the function it stores a
@@ -462,6 +615,9 @@ function.
    Signature objects are *immutable*.  Use :meth:`Signature.replace` to make a
    modified copy.
 
+   .. versionchanged:: 3.5
+      Signature objects are picklable and hashable.
+
    .. attribute:: Signature.empty
 
       A special class-level marker to specify absence of a return annotation.
@@ -469,7 +625,13 @@ function.
    .. attribute:: Signature.parameters
 
       An ordered mapping of parameters' names to the corresponding
-      :class:`Parameter` objects.
+      :class:`Parameter` objects.  Parameters appear in strict definition
+      order, including keyword-only parameters.
+
+      .. versionchanged:: 3.7
+         Python only explicitly guaranteed that it preserved the declaration
+         order of keyword-only parameters as of version 3.7, although in practice
+         this order had always been preserved in Python 3.
 
    .. attribute:: Signature.return_annotation
 
@@ -506,11 +668,29 @@ function.
          >>> str(new_sig)
          "(a, b) -> 'new return anno'"
 
+   .. classmethod:: Signature.from_callable(obj, *, follow_wrapped=True)
 
-.. class:: Parameter(name, kind, \*, default=Parameter.empty, annotation=Parameter.empty)
+       Return a :class:`Signature` (or its subclass) object for a given callable
+       ``obj``.  Pass ``follow_wrapped=False`` to get a signature of ``obj``
+       without unwrapping its ``__wrapped__`` chain.
+
+       This method simplifies subclassing of :class:`Signature`::
+
+         class MySignature(Signature):
+             pass
+         sig = MySignature.from_callable(min)
+         assert isinstance(sig, MySignature)
+
+       .. versionadded:: 3.5
+
+
+.. class:: Parameter(name, kind, *, default=Parameter.empty, annotation=Parameter.empty)
 
    Parameter objects are *immutable*.  Instead of modifying a Parameter object,
    you can use :meth:`Parameter.replace` to create a modified copy.
+
+   .. versionchanged:: 3.5
+      Parameter objects are picklable and hashable.
 
    .. attribute:: Parameter.empty
 
@@ -521,6 +701,16 @@ function.
 
       The name of the parameter as a string.  The name must be a valid
       Python identifier.
+
+      .. impl-detail::
+
+         CPython generates implicit parameter names of the form ``.0`` on the
+         code objects used to implement comprehensions and generator
+         expressions.
+
+         .. versionchanged:: 3.6
+            These parameter names are exposed by this module as names like
+            ``implicit0``.
 
    .. attribute:: Parameter.default
 
@@ -543,13 +733,9 @@ function.
       |    Name                | Meaning                                      |
       +========================+==============================================+
       | *POSITIONAL_ONLY*      | Value must be supplied as a positional       |
-      |                        | argument.                                    |
-      |                        |                                              |
-      |                        | Python has no explicit syntax for defining   |
-      |                        | positional-only parameters, but many built-in|
-      |                        | and extension module functions (especially   |
-      |                        | those that accept only one or two parameters)|
-      |                        | accept them.                                 |
+      |                        | argument. Positional only parameters are     |
+      |                        | those which appear before a ``/`` entry (if  |
+      |                        | present) in a Python function definition.    |
       +------------------------+----------------------------------------------+
       | *POSITIONAL_OR_KEYWORD*| Value may be supplied as either a keyword or |
       |                        | positional argument (this is the standard    |
@@ -583,6 +769,25 @@ function.
          ...                        param.default is param.empty):
          ...         print('Parameter:', param)
          Parameter: c
+
+   .. attribute:: Parameter.kind.description
+
+      Describes a enum value of Parameter.kind.
+
+      .. versionadded:: 3.8
+
+      Example: print all descriptions of arguments::
+
+         >>> def foo(a, b, *, c, d=10):
+         ...     pass
+
+         >>> sig = signature(foo)
+         >>> for param in sig.parameters.values():
+         ...     print(param.kind.description)
+         positional or keyword
+         positional or keyword
+         keyword-only
+         keyword-only
 
    .. method:: Parameter.replace(*[, name][, kind][, default][, annotation])
 
@@ -628,27 +833,8 @@ function.
 
          Arguments for which :meth:`Signature.bind` or
          :meth:`Signature.bind_partial` relied on a default value are skipped.
-         However, if needed, it is easy to include them.
-
-      ::
-
-        >>> def foo(a, b=10):
-        ...     pass
-
-        >>> sig = signature(foo)
-        >>> ba = sig.bind(5)
-
-        >>> ba.args, ba.kwargs
-        ((5,), {})
-
-        >>> for param in sig.parameters.values():
-        ...     if (param.name not in ba.arguments
-        ...             and param.default is not param.empty):
-        ...         ba.arguments[param.name] = param.default
-
-        >>> ba.args, ba.kwargs
-        ((5, 10), {})
-
+         However, if needed, use :meth:`BoundArguments.apply_defaults` to add
+         them.
 
    .. attribute:: BoundArguments.args
 
@@ -660,11 +846,35 @@ function.
       A dict of keyword arguments values.  Dynamically computed from the
       :attr:`arguments` attribute.
 
+   .. attribute:: BoundArguments.signature
+
+      A reference to the parent :class:`Signature` object.
+
+   .. method:: BoundArguments.apply_defaults()
+
+      Set default values for missing arguments.
+
+      For variable-positional arguments (``*args``) the default is an
+      empty tuple.
+
+      For variable-keyword arguments (``**kwargs``) the default is an
+      empty dict.
+
+      ::
+
+        >>> def foo(a, b='ham', *args): pass
+        >>> ba = inspect.signature(foo).bind('spam')
+        >>> ba.apply_defaults()
+        >>> ba.arguments
+        OrderedDict([('a', 'spam'), ('b', 'ham'), ('args', ())])
+
+      .. versionadded:: 3.5
+
    The :attr:`args` and :attr:`kwargs` properties can be used to invoke
    functions::
 
       def test(a, *, b):
-         ...
+          ...
 
       sig = signature(test)
       ba = sig.bind(10, b=20)
@@ -695,45 +905,70 @@ Classes and functions
 
 .. function:: getargspec(func)
 
-   Get the names and default values of a Python function's arguments. A
+   Get the names and default values of a Python function's parameters. A
    :term:`named tuple` ``ArgSpec(args, varargs, keywords, defaults)`` is
-   returned. *args* is a list of the argument names. *varargs* and *keywords*
-   are the names of the ``*`` and ``**`` arguments or ``None``. *defaults* is a
+   returned. *args* is a list of the parameter names. *varargs* and *keywords*
+   are the names of the ``*`` and ``**`` parameters or ``None``. *defaults* is a
    tuple of default argument values or ``None`` if there are no default
    arguments; if this tuple has *n* elements, they correspond to the last
    *n* elements listed in *args*.
 
    .. deprecated:: 3.0
-      Use :func:`getfullargspec` instead, which provides information about
-      keyword-only arguments and annotations.
+      Use :func:`getfullargspec` for an updated API that is usually a drop-in
+      replacement, but also correctly handles function annotations and
+      keyword-only parameters.
+
+      Alternatively, use :func:`signature` and
+      :ref:`Signature Object <inspect-signature-object>`, which provide a
+      more structured introspection API for callables.
 
 
 .. function:: getfullargspec(func)
 
-   Get the names and default values of a Python function's arguments.  A
+   Get the names and default values of a Python function's parameters.  A
    :term:`named tuple` is returned:
 
    ``FullArgSpec(args, varargs, varkw, defaults, kwonlyargs, kwonlydefaults,
    annotations)``
 
-   *args* is a list of the argument names.  *varargs* and *varkw* are the names
-   of the ``*`` and ``**`` arguments or ``None``.  *defaults* is an *n*-tuple
-   of the default values of the last *n* arguments, or ``None`` if there are no
-   default arguments.  *kwonlyargs* is a list of
-   keyword-only argument names.  *kwonlydefaults* is a dictionary mapping names
-   from kwonlyargs to defaults.  *annotations* is a dictionary mapping argument
-   names to annotations.
+   *args* is a list of the positional parameter names.
+   *varargs* is the name of the ``*`` parameter or ``None`` if arbitrary
+   positional arguments are not accepted.
+   *varkw* is the name of the ``**`` parameter or ``None`` if arbitrary
+   keyword arguments are not accepted.
+   *defaults* is an *n*-tuple of default argument values corresponding to the
+   last *n* positional parameters, or ``None`` if there are no such defaults
+   defined.
+   *kwonlyargs* is a list of keyword-only parameter names in declaration order.
+   *kwonlydefaults* is a dictionary mapping parameter names from *kwonlyargs*
+   to the default values used if no argument is supplied.
+   *annotations* is a dictionary mapping parameter names to annotations.
+   The special key ``"return"`` is used to report the function return value
+   annotation (if any).
 
-   The first four items in the tuple correspond to :func:`getargspec`.
-
-   .. note::
-      Consider using the new :ref:`Signature Object <inspect-signature-object>`
-      interface, which provides a better way of introspecting functions.
+   Note that :func:`signature` and
+   :ref:`Signature Object <inspect-signature-object>` provide the recommended
+   API for callable introspection, and support additional behaviours (like
+   positional-only arguments) that are sometimes encountered in extension module
+   APIs. This function is retained primarily for use in code that needs to
+   maintain compatibility with the Python 2 ``inspect`` module API.
 
    .. versionchanged:: 3.4
       This function is now based on :func:`signature`, but still ignores
       ``__wrapped__`` attributes and includes the already bound first
       parameter in the signature output for bound methods.
+
+   .. versionchanged:: 3.6
+      This method was previously documented as deprecated in favour of
+      :func:`signature` in Python 3.5, but that decision has been reversed
+      in order to restore a clearly supported standard interface for
+      single-source Python 2/3 code migrating away from the legacy
+      :func:`getargspec` API.
+
+   .. versionchanged:: 3.7
+      Python only explicitly guaranteed that it preserved the declaration
+      order of keyword-only parameters as of version 3.7, although in practice
+      this order had always been preserved in Python 3.
 
 
 .. function:: getargvalues(frame)
@@ -744,11 +979,14 @@ Classes and functions
    are the names of the ``*`` and ``**`` arguments or ``None``.  *locals* is the
    locals dictionary of the given frame.
 
+   .. note::
+      This function was inadvertently marked as deprecated in Python 3.5.
+
 
 .. function:: formatargspec(args[, varargs, varkw, defaults, kwonlyargs, kwonlydefaults, annotations[, formatarg, formatvarargs, formatvarkw, formatvalue, formatreturns, formatannotations]])
 
    Format a pretty argument spec from the values returned by
-   :func:`getargspec` or :func:`getfullargspec`.
+   :func:`getfullargspec`.
 
    The first seven arguments are (``args``, ``varargs``, ``varkw``,
    ``defaults``, ``kwonlyargs``, ``kwonlydefaults``, ``annotations``).
@@ -766,12 +1004,20 @@ Classes and functions
    >>> formatargspec(*getfullargspec(f))
    '(a: int, b: float)'
 
+   .. deprecated:: 3.5
+      Use :func:`signature` and
+      :ref:`Signature Object <inspect-signature-object>`, which provide a
+      better introspecting API for callables.
+
 
 .. function:: formatargvalues(args[, varargs, varkw, locals, formatarg, formatvarargs, formatvarkw, formatvalue])
 
    Format a pretty argument spec from the four values returned by
    :func:`getargvalues`.  The format\* arguments are the corresponding optional
    formatting functions that are called to turn names and values into strings.
+
+   .. note::
+      This function was inadvertently marked as deprecated in Python 3.5.
 
 
 .. function:: getmro(cls)
@@ -782,7 +1028,7 @@ Classes and functions
    metatype is in use, cls will be the first element of the tuple.
 
 
-.. function:: getcallargs(func, *args, **kwds)
+.. function:: getcallargs(func, /, *args, **kwds)
 
    Bind the *args* and *kwds* to the argument names of the Python function or
    method *func*, as if it was called with them. For bound methods, bind also the
@@ -807,8 +1053,8 @@ Classes and functions
 
    .. versionadded:: 3.2
 
-   .. note::
-      Consider using the new :meth:`Signature.bind` instead.
+   .. deprecated:: 3.5
+      Use :meth:`Signature.bind` and :meth:`Signature.bind_partial` instead.
 
 
 .. function:: getclosurevars(func)
@@ -849,10 +1095,16 @@ Classes and functions
 The interpreter stack
 ---------------------
 
-When the following functions return "frame records," each record is a tuple of
-six items: the frame object, the filename, the line number of the current line,
+When the following functions return "frame records," each record is a
+:term:`named tuple`
+``FrameInfo(frame, filename, lineno, function, code_context, index)``.
+The tuple contains the frame object, the filename, the line number of the
+current line,
 the function name, a list of lines of context from the source code, and the
 index of the current line within that list.
+
+.. versionchanged:: 3.5
+   Return a named tuple instead of a tuple.
 
 .. note::
 
@@ -898,6 +1150,11 @@ line.
    returned list represents *frame*; the last entry represents the outermost call
    on *frame*'s stack.
 
+   .. versionchanged:: 3.5
+      A list of :term:`named tuples <named tuple>`
+      ``FrameInfo(frame, filename, lineno, function, code_context, index)``
+      is returned.
+
 
 .. function:: getinnerframes(traceback, context=1)
 
@@ -905,6 +1162,11 @@ line.
    frames represent calls made as a consequence of *frame*.  The first entry in the
    list represents *traceback*; the last entry represents where the exception was
    raised.
+
+   .. versionchanged:: 3.5
+      A list of :term:`named tuples <named tuple>`
+      ``FrameInfo(frame, filename, lineno, function, code_context, index)``
+      is returned.
 
 
 .. function:: currentframe()
@@ -925,6 +1187,11 @@ line.
    returned list represents the caller; the last entry represents the outermost
    call on the stack.
 
+   .. versionchanged:: 3.5
+      A list of :term:`named tuples <named tuple>`
+      ``FrameInfo(frame, filename, lineno, function, code_context, index)``
+      is returned.
+
 
 .. function:: trace(context=1)
 
@@ -932,6 +1199,11 @@ line.
    frame in which an exception currently being handled was raised in.  The first
    entry in the list represents the caller; the last entry represents where the
    exception was raised.
+
+   .. versionchanged:: 3.5
+      A list of :term:`named tuples <named tuple>`
+      ``FrameInfo(frame, filename, lineno, function, code_context, index)``
+      is returned.
 
 
 Fetching attributes statically
@@ -992,8 +1264,8 @@ code execution::
            pass
 
 
-Current State of a Generator
-----------------------------
+Current State of Generators and Coroutines
+------------------------------------------
 
 When implementing coroutine schedulers and for other advanced uses of
 generators, it is useful to determine whether a generator is currently
@@ -1012,6 +1284,21 @@ generator to be determined easily.
     * GEN_CLOSED: Execution has completed.
 
    .. versionadded:: 3.2
+
+.. function:: getcoroutinestate(coroutine)
+
+   Get current state of a coroutine object.  The function is intended to be
+   used with coroutine objects created by :keyword:`async def` functions, but
+   will accept any coroutine-like object that has ``cr_running`` and
+   ``cr_frame`` attributes.
+
+   Possible states are:
+    * CORO_CREATED: Waiting to start execution.
+    * CORO_RUNNING: Currently being executed by the interpreter.
+    * CORO_SUSPENDED: Currently suspended at an await expression.
+    * CORO_CLOSED: Execution has completed.
+
+   .. versionadded:: 3.5
 
 The current internal state of the generator can also be queried. This is
 mostly useful for testing purposes, to ensure that internal state is being
@@ -1036,6 +1323,84 @@ updated as expected:
       return an empty dictionary.
 
    .. versionadded:: 3.3
+
+.. function:: getcoroutinelocals(coroutine)
+
+   This function is analogous to :func:`~inspect.getgeneratorlocals`, but
+   works for coroutine objects created by :keyword:`async def` functions.
+
+   .. versionadded:: 3.5
+
+
+.. _inspect-module-co-flags:
+
+Code Objects Bit Flags
+----------------------
+
+Python code objects have a ``co_flags`` attribute, which is a bitmap of
+the following flags:
+
+.. data:: CO_OPTIMIZED
+
+   The code object is optimized, using fast locals.
+
+.. data:: CO_NEWLOCALS
+
+   If set, a new dict will be created for the frame's ``f_locals`` when
+   the code object is executed.
+
+.. data:: CO_VARARGS
+
+   The code object has a variable positional parameter (``*args``-like).
+
+.. data:: CO_VARKEYWORDS
+
+   The code object has a variable keyword parameter (``**kwargs``-like).
+
+.. data:: CO_NESTED
+
+   The flag is set when the code object is a nested function.
+
+.. data:: CO_GENERATOR
+
+   The flag is set when the code object is a generator function, i.e.
+   a generator object is returned when the code object is executed.
+
+.. data:: CO_NOFREE
+
+   The flag is set if there are no free or cell variables.
+
+.. data:: CO_COROUTINE
+
+   The flag is set when the code object is a coroutine function.
+   When the code object is executed it returns a coroutine object.
+   See :pep:`492` for more details.
+
+   .. versionadded:: 3.5
+
+.. data:: CO_ITERABLE_COROUTINE
+
+   The flag is used to transform generators into generator-based
+   coroutines.  Generator objects with this flag can be used in
+   ``await`` expression, and can ``yield from`` coroutine objects.
+   See :pep:`492` for more details.
+
+   .. versionadded:: 3.5
+
+.. data:: CO_ASYNC_GENERATOR
+
+   The flag is set when the code object is an asynchronous generator
+   function.  When the code object is executed it returns an
+   asynchronous generator object.  See :pep:`525` for more details.
+
+   .. versionadded:: 3.6
+
+.. note::
+   The flags are specific to CPython, and may not be defined in other
+   Python implementations.  Furthermore, the flags are an implementation
+   detail, and can be removed or deprecated in future Python releases.
+   It's recommended to use public APIs from the :mod:`inspect` module
+   for any introspection needs.
 
 
 .. _inspect-module-cli:

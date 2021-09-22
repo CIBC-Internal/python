@@ -3,10 +3,12 @@
 
 .. module:: codecs
    :synopsis: Encode and decode data and streams.
+
 .. moduleauthor:: Marc-André Lemburg <mal@lemburg.com>
 .. sectionauthor:: Marc-André Lemburg <mal@lemburg.com>
 .. sectionauthor:: Martin v. Löwis <martin@v.loewis.de>
 
+**Source code:** :source:`Lib/codecs.py`
 
 .. index::
    single: Unicode
@@ -15,6 +17,8 @@
    pair: Codecs; decode
    single: streams
    pair: stackable; streams
+
+--------------
 
 This module defines base classes for standard Python codecs (encoders and
 decoders) and provides access to the internal Python codec registry, which
@@ -29,10 +33,9 @@ module features are restricted to use specifically with
 The module defines the following functions for encoding and decoding with
 any codec:
 
-.. function:: encode(obj, [encoding[, errors]])
+.. function:: encode(obj, encoding='utf-8', errors='strict')
 
-   Encodes *obj* using the codec registered for *encoding*. The default
-   encoding is ``utf-8``.
+   Encodes *obj* using the codec registered for *encoding*.
 
    *Errors* may be given to set the desired error handling scheme. The
    default error handler is ``'strict'`` meaning that encoding errors raise
@@ -40,10 +43,9 @@ any codec:
    :exc:`UnicodeEncodeError`). Refer to :ref:`codec-base-classes` for more
    information on codec error handling.
 
-.. function:: decode(obj, [encoding[, errors]])
+.. function:: decode(obj, encoding='utf-8', errors='strict')
 
-   Decodes *obj* using the codec registered for *encoding*. The default
-   encoding is ``utf-8``.
+   Decodes *obj* using the codec registered for *encoding*.
 
    *Errors* may be given to set the desired error handling scheme. The
    default error handler is ``'strict'`` meaning that decoding errors raise
@@ -104,7 +106,6 @@ The full details for each codec can also be looked up directly:
 To simplify access to the various codec components, the module provides
 these additional functions which use :func:`lookup` for the codec lookup:
 
-
 .. function:: getencoder(encoding)
 
    Look up the codec for the given encoding and return its encoder function.
@@ -139,16 +140,16 @@ these additional functions which use :func:`lookup` for the codec lookup:
 
 .. function:: getreader(encoding)
 
-   Look up the codec for the given encoding and return its StreamReader class or
-   factory function.
+   Look up the codec for the given encoding and return its :class:`StreamReader`
+   class or factory function.
 
    Raises a :exc:`LookupError` in case the encoding cannot be found.
 
 
 .. function:: getwriter(encoding)
 
-   Look up the codec for the given encoding and return its StreamWriter class or
-   factory function.
+   Look up the codec for the given encoding and return its :class:`StreamWriter`
+   class or factory function.
 
    Raises a :exc:`LookupError` in case the encoding cannot be found.
 
@@ -173,7 +174,7 @@ recommended approach for working with encoded text files, this module
 provides additional utility functions and classes that allow the use of a
 wider range of codecs when working with binary files:
 
-.. function:: open(filename, mode='r', encoding=None, errors='strict', buffering=1)
+.. function:: open(filename, mode='r', encoding=None, errors='strict', buffering=-1)
 
    Open an encoded file using the given *mode* and return an instance of
    :class:`StreamReaderWriter`, providing transparent encoding/decoding.
@@ -193,8 +194,8 @@ wider range of codecs when working with binary files:
    *errors* may be given to define the error handling. It defaults to ``'strict'``
    which causes a :exc:`ValueError` to be raised in case an encoding error occurs.
 
-   *buffering* has the same meaning as for the built-in :func:`open` function.  It
-   defaults to line buffered.
+   *buffering* has the same meaning as for the built-in :func:`open` function.
+   It defaults to -1 which means that the default buffer size will be used.
 
 
 .. function:: EncodedFile(file, data_encoding, file_encoding=None, errors='strict')
@@ -223,6 +224,10 @@ wider range of codecs when working with binary files:
    The *errors* argument (as well as any
    other keyword argument) is passed through to the incremental encoder.
 
+   This function requires that the codec accept text :class:`str` objects
+   to encode. Therefore it does not support bytes-to-bytes encoders such as
+   ``base64_codec``.
+
 
 .. function:: iterdecode(iterator, encoding, errors='strict', **kwargs)
 
@@ -230,6 +235,11 @@ wider range of codecs when working with binary files:
    *iterator*. This function is a :term:`generator`.
    The *errors* argument (as well as any
    other keyword argument) is passed through to the incremental decoder.
+
+   This function requires that the codec accept :class:`bytes` objects
+   to decode. Therefore it does not support text-to-text encoders such as
+   ``rot_13``, although ``rot_13`` may be used equivalently with
+   :func:`iterencode`.
 
 
 The module also provides the following constants which are useful for reading
@@ -274,6 +284,7 @@ implement the file protocols. Codec authors also need to define how the
 codec will handle encoding and decoding errors.
 
 
+.. _surrogateescape:
 .. _error-handlers:
 
 Error Handlers
@@ -281,7 +292,7 @@ Error Handlers
 
 To simplify and standardize error handling,
 codecs may implement different error handling schemes by
-accepting the *errors* string argument.  The following string values are
+accepting the *errors* string argument. The following string values are
 defined and implemented by all standard Python codecs:
 
 .. tabularcolumns:: |l|L|
@@ -290,16 +301,24 @@ defined and implemented by all standard Python codecs:
 | Value                   | Meaning                                       |
 +=========================+===============================================+
 | ``'strict'``            | Raise :exc:`UnicodeError` (or a subclass);    |
-|                         | this is the default.  Implemented in          |
+|                         | this is the default. Implemented in           |
 |                         | :func:`strict_errors`.                        |
 +-------------------------+-----------------------------------------------+
 | ``'ignore'``            | Ignore the malformed data and continue        |
-|                         | without further notice.  Implemented in       |
+|                         | without further notice. Implemented in        |
 |                         | :func:`ignore_errors`.                        |
 +-------------------------+-----------------------------------------------+
 
 The following error handlers are only applicable to
 :term:`text encodings <text encoding>`:
+
+.. index::
+   single: ? (question mark); replacement character
+   single: \ (backslash); escape sequence
+   single: \x; escape sequence
+   single: \u; escape sequence
+   single: \U; escape sequence
+   single: \N; escape sequence
 
 +-------------------------+-----------------------------------------------+
 | Value                   | Meaning                                       |
@@ -308,23 +327,27 @@ The following error handlers are only applicable to
 |                         | marker; Python will use the official          |
 |                         | ``U+FFFD`` REPLACEMENT CHARACTER for the      |
 |                         | built-in codecs on decoding, and '?' on       |
-|                         | encoding.  Implemented in                     |
+|                         | encoding. Implemented in                      |
 |                         | :func:`replace_errors`.                       |
 +-------------------------+-----------------------------------------------+
 | ``'xmlcharrefreplace'`` | Replace with the appropriate XML character    |
-|                         | reference (only for encoding).  Implemented   |
+|                         | reference (only for encoding). Implemented    |
 |                         | in :func:`xmlcharrefreplace_errors`.          |
 +-------------------------+-----------------------------------------------+
-| ``'backslashreplace'``  | Replace with backslashed escape sequences     |
-|                         | (only for encoding).  Implemented in          |
+| ``'backslashreplace'``  | Replace with backslashed escape sequences.    |
+|                         | Implemented in                                |
 |                         | :func:`backslashreplace_errors`.              |
++-------------------------+-----------------------------------------------+
+| ``'namereplace'``       | Replace with ``\N{...}`` escape sequences     |
+|                         | (only for encoding). Implemented in           |
+|                         | :func:`namereplace_errors`.                   |
 +-------------------------+-----------------------------------------------+
 | ``'surrogateescape'``   | On decoding, replace byte with individual     |
 |                         | surrogate code ranging from ``U+DC80`` to     |
-|                         | ``U+DCFF``.  This code will then be turned    |
+|                         | ``U+DCFF``. This code will then be turned     |
 |                         | back into the same byte when the              |
 |                         | ``'surrogateescape'`` error handler is used   |
-|                         | when encoding the data.  (See :pep:`383` for  |
+|                         | when encoding the data. (See :pep:`383` for   |
 |                         | more.)                                        |
 +-------------------------+-----------------------------------------------+
 
@@ -334,7 +357,7 @@ In addition, the following error handler is specific to the given codecs:
 | Value             | Codecs                 | Meaning                                   |
 +===================+========================+===========================================+
 |``'surrogatepass'``| utf-8, utf-16, utf-32, | Allow encoding and decoding of surrogate  |
-|                   | utf-16-be, utf-16-le,  | codes.  These codecs normally treat the   |
+|                   | utf-16-be, utf-16-le,  | codes. These codecs normally treat the    |
 |                   | utf-32-be, utf-32-le   | presence of surrogates as an error.       |
 +-------------------+------------------------+-------------------------------------------+
 
@@ -343,6 +366,13 @@ In addition, the following error handler is specific to the given codecs:
 
 .. versionchanged:: 3.4
    The ``'surrogatepass'`` error handlers now works with utf-16\* and utf-32\* codecs.
+
+.. versionadded:: 3.5
+   The ``'namereplace'`` error handler.
+
+.. versionchanged:: 3.5
+   The ``'backslashreplace'`` error handlers now works with decoding and
+   translating.
 
 The set of allowed values can be extended by registering a new named error
 handler:
@@ -358,9 +388,9 @@ handler:
    error handler must either raise this or a different exception, or return a
    tuple with a replacement for the unencodable part of the input and a position
    where encoding should continue. The replacement may be either :class:`str` or
-   :class:`bytes`.  If the replacement is bytes, the encoder will simply copy
+   :class:`bytes`. If the replacement is bytes, the encoder will simply copy
    them into the output buffer. If the replacement is a string, the encoder will
-   encode the replacement.  Encoding continues on original input at the
+   encode the replacement. Encoding continues on original input at the
    specified position. Negative position values will be treated as being
    relative to the end of the input string. If the resulting position is out of
    bound an :exc:`IndexError` will be raised.
@@ -393,7 +423,7 @@ functions:
    Implements the ``'replace'`` error handling (for :term:`text encodings
    <text encoding>` only): substitutes ``'?'`` for encoding errors
    (to be encoded by the codec), and ``'\ufffd'`` (the Unicode replacement
-   character, ``'�'``) for decoding errors.
+   character) for decoding errors.
 
 
 .. function:: ignore_errors(exception)
@@ -411,9 +441,17 @@ functions:
 
 .. function:: backslashreplace_errors(exception)
 
-   Implements the ``'backslashreplace'`` error handling (for encoding with
+   Implements the ``'backslashreplace'`` error handling (for
+   :term:`text encodings <text encoding>` only): malformed data is
+   replaced by a backslashed escape sequence.
+
+.. function:: namereplace_errors(exception)
+
+   Implements the ``'namereplace'`` error handling (for encoding with
    :term:`text encodings <text encoding>` only): the
-   unencodable character is replaced by a backslashed escape sequence.
+   unencodable character is replaced by a ``\N{...}`` escape sequence.
+
+   .. versionadded:: 3.5
 
 
 .. _codec-objects:
@@ -436,8 +474,8 @@ function interfaces of the stateless encoder and decoder:
    It defaults to ``'strict'`` handling.
 
    The method may not store state in the :class:`Codec` instance. Use
-   :class:`StreamCodec` for codecs which have to keep state in order to make
-   encoding/decoding efficient.
+   :class:`StreamWriter` for codecs which have to keep state in order to make
+   encoding efficient.
 
    The encoder must be able to handle zero length input and return an empty object
    of the output object type in this situation.
@@ -446,7 +484,7 @@ function interfaces of the stateless encoder and decoder:
 .. method:: Codec.decode(input[, errors])
 
    Decodes the object *input* and returns a tuple (output object, length
-   consumed).  For instance, for a :term:`text encoding`, decoding converts
+   consumed). For instance, for a :term:`text encoding`, decoding converts
    a bytes object encoded using a particular
    character set encoding to a string object.
 
@@ -458,8 +496,8 @@ function interfaces of the stateless encoder and decoder:
    It defaults to ``'strict'`` handling.
 
    The method may not store state in the :class:`Codec` instance. Use
-   :class:`StreamCodec` for codecs which have to keep state in order to make
-   encoding/decoding efficient.
+   :class:`StreamReader` for codecs which have to keep state in order to make
+   decoding efficient.
 
    The decoder must be able to handle zero length input and return an empty object
    of the output object type in this situation.
@@ -524,19 +562,19 @@ define in order to be compatible with the Python codec registry.
       if necessary, to reset the encoder and to get the output.
 
 
-.. method:: IncrementalEncoder.getstate()
+   .. method:: getstate()
 
-   Return the current state of the encoder which must be an integer. The
-   implementation should make sure that ``0`` is the most common state. (States
-   that are more complicated than integers can be converted into an integer by
-   marshaling/pickling the state and encoding the bytes of the resulting string
-   into an integer).
+      Return the current state of the encoder which must be an integer. The
+      implementation should make sure that ``0`` is the most common
+      state. (States that are more complicated than integers can be converted
+      into an integer by marshaling/pickling the state and encoding the bytes
+      of the resulting string into an integer.)
 
 
-.. method:: IncrementalEncoder.setstate(state)
+   .. method:: setstate(state)
 
-   Set the state of the encoder to *state*. *state* must be an encoder state
-   returned by :meth:`getstate`.
+      Set the state of the encoder to *state*. *state* must be an encoder state
+      returned by :meth:`getstate`.
 
 
 .. _incremental-decoder-objects:
@@ -600,7 +638,7 @@ define in order to be compatible with the Python codec registry.
 
    .. method:: setstate(state)
 
-      Set the state of the encoder to *state*. *state* must be a decoder state
+      Set the state of the decoder to *state*. *state* must be a decoder state
       returned by :meth:`getstate`.
 
 
@@ -713,7 +751,7 @@ compatible with the Python codec registry.
       number of encoded bytes or code points to read
       for decoding. The decoder can modify this setting as
       appropriate. The default value -1 indicates to read and decode as much as
-      possible.  This parameter is intended to
+      possible. This parameter is intended to
       prevent having to decode huge files in one step.
 
       The *firstline* flag indicates that
@@ -742,8 +780,8 @@ compatible with the Python codec registry.
       Read all lines available on the input stream and return them as a list of
       lines.
 
-      Line-endings are implemented using the codec's decoder method and are
-      included in the list entries if *keepends* is true.
+      Line-endings are implemented using the codec's :meth:`decode` method and
+      are included in the list entries if *keepends* is true.
 
       *sizehint*, if given, is passed as the *size* argument to the stream's
       :meth:`read` method.
@@ -753,7 +791,7 @@ compatible with the Python codec registry.
 
       Resets the codec buffers used for keeping state.
 
-      Note that no stream repositioning should take place.  This method is
+      Note that no stream repositioning should take place. This method is
       primarily intended to be able to recover from decoding errors.
 
 
@@ -772,7 +810,7 @@ The design is such that one can use the factory functions returned by the
 :func:`lookup` function to construct the instance.
 
 
-.. class:: StreamReaderWriter(stream, Reader, Writer, errors)
+.. class:: StreamReaderWriter(stream, Reader, Writer, errors='strict')
 
    Creates a :class:`StreamReaderWriter` instance. *stream* must be a file-like
    object. *Reader* and *Writer* must be factory functions or classes providing the
@@ -796,14 +834,14 @@ The design is such that one can use the factory functions returned by the
 :func:`lookup` function to construct the instance.
 
 
-.. class:: StreamRecoder(stream, encode, decode, Reader, Writer, errors)
+.. class:: StreamRecoder(stream, encode, decode, Reader, Writer, errors='strict')
 
    Creates a :class:`StreamRecoder` instance which implements a two-way conversion:
    *encode* and *decode* work on the frontend — the data visible to
    code calling :meth:`read` and :meth:`write`, while *Reader* and *Writer*
    work on the backend — the data in *stream*.
 
-   You can use these objects to do transparent transcodings from e.g. Latin-1
+   You can use these objects to do transparent transcodings, e.g., from Latin-1
    to UTF-8 and back.
 
    The *stream* argument must be a file-like object.
@@ -828,17 +866,17 @@ Encodings and Unicode
 ---------------------
 
 Strings are stored internally as sequences of code points in
-range ``0x0``-``0x10FFFF``.  (See :pep:`393` for
+range ``0x0``--``0x10FFFF``. (See :pep:`393` for
 more details about the implementation.)
 Once a string object is used outside of CPU and memory, endianness
-and how these arrays are stored as bytes become an issue.  As with other
+and how these arrays are stored as bytes become an issue. As with other
 codecs, serialising a string into a sequence of bytes is known as *encoding*,
 and recreating the string from the sequence of bytes is known as *decoding*.
 There are a variety of different text serialisation codecs, which are
 collectivity referred to as :term:`text encodings <text encoding>`.
 
 The simplest text encoding (called ``'latin-1'`` or ``'iso-8859-1'``) maps
-the code points 0-255 to the bytes ``0x0``-``0xff``, which means that a string
+the code points 0--255 to the bytes ``0x0``--``0xff``, which means that a string
 object that contains code points above ``U+00FF`` can't be encoded with this
 codec. Doing so will raise a :exc:`UnicodeEncodeError` that looks
 like the following (although the details of the error message may differ):
@@ -847,7 +885,7 @@ position 3: ordinal not in range(256)``.
 
 There's another group of encodings (the so called charmap encodings) that choose
 a different subset of all Unicode code points and how these code points are
-mapped to the bytes ``0x0``-``0xff``. To see how this is done simply open
+mapped to the bytes ``0x0``--``0xff``. To see how this is done simply open
 e.g. :file:`encodings/cp1252.py` (which is an encoding that is used primarily on
 Windows). There's a string constant with 256 characters that shows you which
 character is mapped to which byte value.
@@ -926,7 +964,7 @@ to determine the byte order used for generating the byte sequence, but as a
 signature that helps in guessing the encoding. On encoding the utf-8-sig codec
 will write ``0xef``, ``0xbb``, ``0xbf`` as the first three bytes to the file. On
 decoding ``utf-8-sig`` will skip those three bytes if they appear as the first
-three bytes in the file.  In UTF-8, the use of the BOM is discouraged and
+three bytes in the file. In UTF-8, the use of the BOM is discouraged and
 should generally be avoided.
 
 
@@ -946,11 +984,15 @@ e.g. ``'utf-8'`` is a valid alias for the ``'utf_8'`` codec.
 .. impl-detail::
 
    Some common encodings can bypass the codecs lookup machinery to
-   improve performance.  These optimization opportunities are only
-   recognized by CPython for a limited set of aliases: utf-8, utf8,
-   latin-1, latin1, iso-8859-1, mbcs (Windows only), ascii, utf-16,
-   and utf-32.  Using alternative spellings for these encodings may
-   result in slower execution.
+   improve performance. These optimization opportunities are only
+   recognized by CPython for a limited set of (case insensitive)
+   aliases: utf-8, utf8, latin-1, latin1, iso-8859-1, iso8859-1, mbcs
+   (Windows only), ascii, us-ascii, utf-16, utf16, utf-32, utf32, and
+   the same using underscores instead of dashes. Using alternative
+   aliases for these encodings may result in slower execution.
+
+   .. versionchanged:: 3.6
+      Optimization opportunity recognized for us-ascii.
 
 Many of the character sets support the same languages. They vary in individual
 characters (e.g. whether the EURO SIGN is supported or not), and in the
@@ -959,7 +1001,7 @@ particular, the following variants typically exist:
 
 * an ISO 8859 codeset
 
-* a Microsoft Windows code page, which is typically derived from a 8859 codeset,
+* a Microsoft Windows code page, which is typically derived from an 8859 codeset,
   but replaces control characters with additional graphic characters
 
 * an IBM EBCDIC code page
@@ -1064,11 +1106,6 @@ particular, the following variants typically exist:
 +-----------------+--------------------------------+--------------------------------+
 | cp1258          | windows-1258                   | Vietnamese                     |
 +-----------------+--------------------------------+--------------------------------+
-| cp65001         |                                | Windows only: Windows UTF-8    |
-|                 |                                | (``CP_UTF8``)                  |
-|                 |                                |                                |
-|                 |                                | .. versionadded:: 3.3          |
-+-----------------+--------------------------------+--------------------------------+
 | euc_jp          | eucjp, ujis, u-jis             | Japanese                       |
 +-----------------+--------------------------------+--------------------------------+
 | euc_jis_2004    | jisx0213, eucjis2004           | Japanese                       |
@@ -1079,10 +1116,10 @@ particular, the following variants typically exist:
 |                 | ks_c-5601, ks_c-5601-1987,     |                                |
 |                 | ksx1001, ks_x-1001             |                                |
 +-----------------+--------------------------------+--------------------------------+
-| gb2312          | chinese, csiso58gb231280, euc- | Simplified Chinese             |
-|                 | cn, euccn, eucgb2312-cn,       |                                |
-|                 | gb2312-1980, gb2312-80, iso-   |                                |
-|                 | ir-58                          |                                |
+| gb2312          | chinese, csiso58gb231280,      | Simplified Chinese             |
+|                 | euc-cn, euccn, eucgb2312-cn,   |                                |
+|                 | gb2312-1980, gb2312-80,        |                                |
+|                 | iso-ir-58                      |                                |
 +-----------------+--------------------------------+--------------------------------+
 | gbk             | 936, cp936, ms936              | Unified Chinese                |
 +-----------------+--------------------------------+--------------------------------+
@@ -1108,7 +1145,7 @@ particular, the following variants typically exist:
 | iso2022_kr      | csiso2022kr, iso2022kr,        | Korean                         |
 |                 | iso-2022-kr                    |                                |
 +-----------------+--------------------------------+--------------------------------+
-| latin_1         | iso-8859-1, iso8859-1, 8859,   | West Europe                    |
+| latin_1         | iso-8859-1, iso8859-1, 8859,   | Western Europe                 |
 |                 | cp819, latin, latin1, L1       |                                |
 +-----------------+--------------------------------+--------------------------------+
 | iso8859_2       | iso-8859-2, latin2, L2         | Central and Eastern Europe     |
@@ -1130,6 +1167,8 @@ particular, the following variants typically exist:
 +-----------------+--------------------------------+--------------------------------+
 | iso8859_10      | iso-8859-10, latin6, L6        | Nordic languages               |
 +-----------------+--------------------------------+--------------------------------+
+| iso8859_11      | iso-8859-11, thai              | Thai languages                 |
++-----------------+--------------------------------+--------------------------------+
 | iso8859_13      | iso-8859-13, latin7, L7        | Baltic languages               |
 +-----------------+--------------------------------+--------------------------------+
 | iso8859_14      | iso-8859-14, latin8, L8        | Celtic languages               |
@@ -1142,7 +1181,15 @@ particular, the following variants typically exist:
 +-----------------+--------------------------------+--------------------------------+
 | koi8_r          |                                | Russian                        |
 +-----------------+--------------------------------+--------------------------------+
+| koi8_t          |                                | Tajik                          |
+|                 |                                |                                |
+|                 |                                | .. versionadded:: 3.5          |
++-----------------+--------------------------------+--------------------------------+
 | koi8_u          |                                | Ukrainian                      |
++-----------------+--------------------------------+--------------------------------+
+| kz1048          | kz_1048, strk1048_2002, rk1048 | Kazakh                         |
+|                 |                                |                                |
+|                 |                                | .. versionadded:: 3.5          |
 +-----------------+--------------------------------+--------------------------------+
 | mac_cyrillic    | maccyrillic                    | Bulgarian, Byelorussian,       |
 |                 |                                | Macedonian, Russian, Serbian   |
@@ -1183,7 +1230,7 @@ particular, the following variants typically exist:
 +-----------------+--------------------------------+--------------------------------+
 | utf_7           | U7, unicode-1-1-utf-7          | all languages                  |
 +-----------------+--------------------------------+--------------------------------+
-| utf_8           | U8, UTF, utf8                  | all languages                  |
+| utf_8           | U8, UTF, utf8, cp65001         | all languages                  |
 +-----------------+--------------------------------+--------------------------------+
 | utf_8_sig       |                                | all languages                  |
 +-----------------+--------------------------------+--------------------------------+
@@ -1194,16 +1241,19 @@ particular, the following variants typically exist:
    The utf-32\* decoders no longer decode
    byte sequences that correspond to surrogate code points.
 
+.. versionchanged:: 3.8
+   ``cp65001`` is now an alias to ``utf_8``.
+
 
 Python Specific Encodings
 -------------------------
 
 A number of predefined codecs are specific to Python, so their codec names have
-no meaning outside Python.  These are listed in the tables below based on the
+no meaning outside Python. These are listed in the tables below based on the
 expected input and output types (note that while text encodings are the most
 common use case for codecs, the underlying codec infrastructure supports
-arbitrary data transforms rather than just text encodings).  For asymmetric
-codecs, the stated purpose describes the encoding direction.
+arbitrary data transforms rather than just text encodings). For asymmetric
+codecs, the stated meaning describes the encoding direction.
 
 Text Encodings
 ^^^^^^^^^^^^^^
@@ -1215,21 +1265,27 @@ encodings.
 .. tabularcolumns:: |l|p{0.3\linewidth}|p{0.3\linewidth}|
 
 +--------------------+---------+---------------------------+
-| Codec              | Aliases | Purpose                   |
+| Codec              | Aliases | Meaning                   |
 +====================+=========+===========================+
-| idna               |         | Implements :rfc:`3490`,   |
+| idna               |         | Implement :rfc:`3490`,    |
 |                    |         | see also                  |
 |                    |         | :mod:`encodings.idna`.    |
 |                    |         | Only ``errors='strict'``  |
 |                    |         | is supported.             |
 +--------------------+---------+---------------------------+
-| mbcs               | dbcs    | Windows only: Encode      |
+| mbcs               | ansi,   | Windows only: Encode the  |
+|                    | dbcs    | operand according to the  |
+|                    |         | ANSI codepage (CP_ACP).   |
++--------------------+---------+---------------------------+
+| oem                |         | Windows only: Encode the  |
 |                    |         | operand according to the  |
-|                    |         | ANSI codepage (CP_ACP)    |
+|                    |         | OEM codepage (CP_OEMCP).  |
+|                    |         |                           |
+|                    |         | .. versionadded:: 3.6     |
 +--------------------+---------+---------------------------+
-| palmos             |         | Encoding of PalmOS 3.5    |
+| palmos             |         | Encoding of PalmOS 3.5.   |
 +--------------------+---------+---------------------------+
-| punycode           |         | Implements :rfc:`3492`.   |
+| punycode           |         | Implement :rfc:`3492`.    |
 |                    |         | Stateful codecs are not   |
 |                    |         | supported.                |
 +--------------------+---------+---------------------------+
@@ -1252,22 +1308,16 @@ encodings.
 |                    |         | literal in ASCII-encoded  |
 |                    |         | Python source code,       |
 |                    |         | except that quotes are    |
-|                    |         | not escaped. Decodes from |
-|                    |         | Latin-1 source code.      |
+|                    |         | not escaped. Decode       |
+|                    |         | from Latin-1 source code. |
 |                    |         | Beware that Python source |
 |                    |         | code actually uses UTF-8  |
 |                    |         | by default.               |
 +--------------------+---------+---------------------------+
-| unicode_internal   |         | Return the internal       |
-|                    |         | representation of the     |
-|                    |         | operand. Stateful codecs  |
-|                    |         | are not supported.        |
-|                    |         |                           |
-|                    |         | .. deprecated:: 3.3       |
-|                    |         |    This representation is |
-|                    |         |    obsoleted by           |
-|                    |         |    :pep:`393`.            |
-+--------------------+---------+---------------------------+
+
+.. versionchanged:: 3.8
+   "unicode_internal" codec is removed.
+
 
 .. _binary-transforms:
 
@@ -1275,19 +1325,19 @@ Binary Transforms
 ^^^^^^^^^^^^^^^^^
 
 The following codecs provide binary transforms: :term:`bytes-like object`
-to :class:`bytes` mappings.  They are not supported by :meth:`bytes.decode`
+to :class:`bytes` mappings. They are not supported by :meth:`bytes.decode`
 (which only produces :class:`str` output).
 
 
 .. tabularcolumns:: |l|L|L|L|
 
 +----------------------+------------------+------------------------------+------------------------------+
-| Codec                | Aliases          | Purpose                      | Encoder / decoder            |
+| Codec                | Aliases          | Meaning                      | Encoder / decoder            |
 +======================+==================+==============================+==============================+
-| base64_codec [#b64]_ | base64, base_64  | Convert operand to MIME      | :meth:`base64.b64encode` /   |
-|                      |                  | base64 (the result always    | :meth:`base64.b64decode`     |
-|                      |                  | includes a trailing          |                              |
-|                      |                  | ``'\n'``)                    |                              |
+| base64_codec [#b64]_ | base64, base_64  | Convert the operand to       | :meth:`base64.encodebytes` / |
+|                      |                  | multiline MIME base64 (the   | :meth:`base64.decodebytes`   |
+|                      |                  | result always includes a     |                              |
+|                      |                  | trailing ``'\n'``).          |                              |
 |                      |                  |                              |                              |
 |                      |                  | .. versionchanged:: 3.4      |                              |
 |                      |                  |    accepts any               |                              |
@@ -1295,23 +1345,23 @@ to :class:`bytes` mappings.  They are not supported by :meth:`bytes.decode`
 |                      |                  |    as input for encoding and |                              |
 |                      |                  |    decoding                  |                              |
 +----------------------+------------------+------------------------------+------------------------------+
-| bz2_codec            | bz2              | Compress the operand         | :meth:`bz2.compress` /       |
-|                      |                  | using bz2                    | :meth:`bz2.decompress`       |
+| bz2_codec            | bz2              | Compress the operand using   | :meth:`bz2.compress` /       |
+|                      |                  | bz2.                         | :meth:`bz2.decompress`       |
 +----------------------+------------------+------------------------------+------------------------------+
-| hex_codec            | hex              | Convert operand to           | :meth:`base64.b16encode` /   |
-|                      |                  | hexadecimal                  | :meth:`base64.b16decode`     |
+| hex_codec            | hex              | Convert the operand to       | :meth:`binascii.b2a_hex` /   |
+|                      |                  | hexadecimal                  | :meth:`binascii.a2b_hex`     |
 |                      |                  | representation, with two     |                              |
-|                      |                  | digits per byte              |                              |
+|                      |                  | digits per byte.             |                              |
 +----------------------+------------------+------------------------------+------------------------------+
-| quopri_codec         | quopri,          | Convert operand to MIME      | :meth:`quopri.encodestring` /|
-|                      | quotedprintable, | quoted printable             | :meth:`quopri.decodestring`  |
-|                      | quoted_printable |                              |                              |
+| quopri_codec         | quopri,          | Convert the operand to MIME  | :meth:`quopri.encode` with   |
+|                      | quotedprintable, | quoted printable.            | ``quotetabs=True`` /         |
+|                      | quoted_printable |                              | :meth:`quopri.decode`        |
 +----------------------+------------------+------------------------------+------------------------------+
 | uu_codec             | uu               | Convert the operand using    | :meth:`uu.encode` /          |
-|                      |                  | uuencode                     | :meth:`uu.decode`            |
+|                      |                  | uuencode.                    | :meth:`uu.decode`            |
 +----------------------+------------------+------------------------------+------------------------------+
-| zlib_codec           | zip, zlib        | Compress the operand         | :meth:`zlib.compress` /      |
-|                      |                  | using gzip                   | :meth:`zlib.decompress`      |
+| zlib_codec           | zip, zlib        | Compress the operand using   | :meth:`zlib.compress` /      |
+|                      |                  | gzip.                        | :meth:`zlib.decompress`      |
 +----------------------+------------------+------------------------------+------------------------------+
 
 .. [#b64] In addition to :term:`bytes-like objects <bytes-like object>`,
@@ -1331,16 +1381,17 @@ Text Transforms
 ^^^^^^^^^^^^^^^
 
 The following codec provides a text transform: a :class:`str` to :class:`str`
-mapping.  It is not supported by :meth:`str.encode` (which only produces
+mapping. It is not supported by :meth:`str.encode` (which only produces
 :class:`bytes` output).
 
 .. tabularcolumns:: |l|l|L|
 
 +--------------------+---------+---------------------------+
-| Codec              | Aliases | Purpose                   |
+| Codec              | Aliases | Meaning                   |
 +====================+=========+===========================+
-| rot_13             | rot13   | Returns the Caesar-cypher |
-|                    |         | encryption of the operand |
+| rot_13             | rot13   | Return the Caesar-cypher  |
+|                    |         | encryption of the         |
+|                    |         | operand.                  |
 +--------------------+---------+---------------------------+
 
 .. versionadded:: 3.2
@@ -1362,6 +1413,9 @@ Applications) and :rfc:`3492` (Nameprep: A Stringprep Profile for
 Internationalized Domain Names (IDN)). It builds upon the ``punycode`` encoding
 and :mod:`stringprep`.
 
+If you need the IDNA 2008 standard from :rfc:`5891` and :rfc:`5895`, use the
+third-party `idna module <https://pypi.org/project/idna/>_`.
+
 These RFCs together define a protocol to support non-ASCII characters in domain
 names. A domain name containing non-ASCII characters (such as
 ``www.Alliancefrançaise.nu``) is converted into an ASCII-compatible encoding
@@ -1375,10 +1429,10 @@ to the user.
 
 Python supports this conversion in several ways:  the ``idna`` codec performs
 conversion between Unicode and ACE, separating an input string into labels
-based on the separator characters defined in `section 3.1`_ (1) of :rfc:`3490`
+based on the separator characters defined in :rfc:`section 3.1 of RFC 3490 <3490#section-3.1>`
 and converting each label to ACE as required, and conversely separating an input
 byte string into labels based on the ``.`` separator and converting any ACE
-labels found into unicode.  Furthermore, the :mod:`socket` module
+labels found into unicode. Furthermore, the :mod:`socket` module
 transparently converts Unicode host names to ACE, so that applications need not
 be concerned about converting host names themselves when they pass them to the
 socket module. On top of that, modules that have host names as function
@@ -1386,10 +1440,8 @@ parameters, such as :mod:`http.client` and :mod:`ftplib`, accept Unicode host
 names (:mod:`http.client` then also transparently sends an IDNA hostname in the
 :mailheader:`Host` field if it sends that field at all).
 
-.. _section 3.1: http://tools.ietf.org/html/rfc3490#section-3.1
-
 When receiving host names from the wire (such as in reverse name lookup), no
-automatic conversion to Unicode is performed: Applications wishing to present
+automatic conversion to Unicode is performed: applications wishing to present
 such host names to the user should decode them to Unicode.
 
 The module :mod:`encodings.idna` also implements the nameprep procedure, which
@@ -1421,9 +1473,9 @@ functions can be used directly if desired.
 .. module:: encodings.mbcs
    :synopsis: Windows ANSI codepage
 
-Encode operand according to the ANSI codepage (CP_ACP).
+This module implements the ANSI codepage (CP_ACP).
 
-Availability: Windows only.
+.. availability:: Windows only.
 
 .. versionchanged:: 3.3
    Support any error handler.
@@ -1440,8 +1492,7 @@ Availability: Windows only.
    :synopsis: UTF-8 codec with BOM signature
 .. moduleauthor:: Walter Dörwald
 
-This module implements a variant of the UTF-8 codec: On encoding a UTF-8 encoded
+This module implements a variant of the UTF-8 codec. On encoding, a UTF-8 encoded
 BOM will be prepended to the UTF-8 encoded bytes. For the stateful encoder this
-is only done once (on the first write to the byte stream).  For decoding an
+is only done once (on the first write to the byte stream). On decoding, an
 optional UTF-8 encoded BOM at the start of the data will be skipped.
-

@@ -2,7 +2,7 @@
 
 /* ------------------------------------------------------------------
    The code in this module was based on a download from:
-      http://www.math.keio.ac.jp/~matumoto/MT2002/emt19937ar.html
+      http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/MT2002/emt19937ar.html
 
    It was modified in 2002 by Raymond Hettinger as follows:
 
@@ -60,44 +60,54 @@
 
 
    Any feedback is very welcome.
-   http://www.math.keio.ac.jp/matumoto/emt.html
-   email: matumoto@math.keio.ac.jp
+   http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/emt.html
+   email: m-mat @ math.sci.hiroshima-u.ac.jp (remove space)
 */
 
 /* ---------------------------------------------------------------*/
 
 #include "Python.h"
 #include <time.h>               /* for seeding to current time */
+#ifdef HAVE_PROCESS_H
+#  include <process.h>          /* needed for getpid() */
+#endif
 
 /* Period parameters -- These are all magic.  Don't change. */
 #define N 624
 #define M 397
-#define MATRIX_A 0x9908b0dfUL   /* constant vector a */
-#define UPPER_MASK 0x80000000UL /* most significant w-r bits */
-#define LOWER_MASK 0x7fffffffUL /* least significant r bits */
+#define MATRIX_A 0x9908b0dfU    /* constant vector a */
+#define UPPER_MASK 0x80000000U  /* most significant w-r bits */
+#define LOWER_MASK 0x7fffffffU  /* least significant r bits */
 
 typedef struct {
     PyObject_HEAD
-    unsigned long state[N];
     int index;
+    uint32_t state[N];
 } RandomObject;
 
 static PyTypeObject Random_Type;
 
 #define RandomObject_Check(v)      (Py_TYPE(v) == &Random_Type)
 
+#include "clinic/_randommodule.c.h"
+
+/*[clinic input]
+module _random
+class _random.Random "RandomObject *" "&Random_Type"
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=f79898ae7847c321]*/
 
 /* Random methods */
 
 
 /* generates a random number on [0,0xffffffff]-interval */
-static unsigned long
+static uint32_t
 genrand_int32(RandomObject *self)
 {
-    unsigned long y;
-    static unsigned long mag01[2]={0x0UL, MATRIX_A};
+    uint32_t y;
+    static const uint32_t mag01[2] = {0x0U, MATRIX_A};
     /* mag01[x] = x * MATRIX_A  for x=0,1 */
-    unsigned long *mt;
+    uint32_t *mt;
 
     mt = self->state;
     if (self->index >= N) { /* generate N words at one time */
@@ -105,22 +115,22 @@ genrand_int32(RandomObject *self)
 
         for (kk=0;kk<N-M;kk++) {
             y = (mt[kk]&UPPER_MASK)|(mt[kk+1]&LOWER_MASK);
-            mt[kk] = mt[kk+M] ^ (y >> 1) ^ mag01[y & 0x1UL];
+            mt[kk] = mt[kk+M] ^ (y >> 1) ^ mag01[y & 0x1U];
         }
         for (;kk<N-1;kk++) {
             y = (mt[kk]&UPPER_MASK)|(mt[kk+1]&LOWER_MASK);
-            mt[kk] = mt[kk+(M-N)] ^ (y >> 1) ^ mag01[y & 0x1UL];
+            mt[kk] = mt[kk+(M-N)] ^ (y >> 1) ^ mag01[y & 0x1U];
         }
         y = (mt[N-1]&UPPER_MASK)|(mt[0]&LOWER_MASK);
-        mt[N-1] = mt[M-1] ^ (y >> 1) ^ mag01[y & 0x1UL];
+        mt[N-1] = mt[M-1] ^ (y >> 1) ^ mag01[y & 0x1U];
 
         self->index = 0;
     }
 
     y = mt[self->index++];
     y ^= (y >> 11);
-    y ^= (y << 7) & 0x9d2c5680UL;
-    y ^= (y << 15) & 0xefc60000UL;
+    y ^= (y << 7) & 0x9d2c5680U;
+    y ^= (y << 15) & 0xefc60000U;
     y ^= (y >> 18);
     return y;
 }
@@ -132,33 +142,41 @@ genrand_int32(RandomObject *self)
  * optimize the division away at compile-time.  67108864 is 2**26.  In
  * effect, a contains 27 random bits shifted left 26, and b fills in the
  * lower 26 bits of the 53-bit numerator.
- * The orginal code credited Isaku Wada for this algorithm, 2002/01/09.
+ * The original code credited Isaku Wada for this algorithm, 2002/01/09.
  */
+
+/*[clinic input]
+_random.Random.random
+
+  self: self(type="RandomObject *")
+
+random() -> x in the interval [0, 1).
+[clinic start generated code]*/
+
 static PyObject *
-random_random(RandomObject *self)
+_random_Random_random_impl(RandomObject *self)
+/*[clinic end generated code: output=117ff99ee53d755c input=afb2a59cbbb00349]*/
 {
-    unsigned long a=genrand_int32(self)>>5, b=genrand_int32(self)>>6;
+    uint32_t a=genrand_int32(self)>>5, b=genrand_int32(self)>>6;
     return PyFloat_FromDouble((a*67108864.0+b)*(1.0/9007199254740992.0));
 }
 
 /* initializes mt[N] with a seed */
 static void
-init_genrand(RandomObject *self, unsigned long s)
+init_genrand(RandomObject *self, uint32_t s)
 {
     int mti;
-    unsigned long *mt;
+    uint32_t *mt;
 
     mt = self->state;
-    mt[0]= s & 0xffffffffUL;
+    mt[0]= s;
     for (mti=1; mti<N; mti++) {
         mt[mti] =
-        (1812433253UL * (mt[mti-1] ^ (mt[mti-1] >> 30)) + mti);
+        (1812433253U * (mt[mti-1] ^ (mt[mti-1] >> 30)) + mti);
         /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
         /* In the previous versions, MSBs of the seed affect   */
         /* only MSBs of the array mt[].                                */
         /* 2002/01/09 modified by Makoto Matsumoto                     */
-        mt[mti] &= 0xffffffffUL;
-        /* for >32 bit machines */
     }
     self->index = mti;
     return;
@@ -167,35 +185,31 @@ init_genrand(RandomObject *self, unsigned long s)
 /* initialize by an array with array-length */
 /* init_key is the array for initializing keys */
 /* key_length is its length */
-static PyObject *
-init_by_array(RandomObject *self, unsigned long init_key[], size_t key_length)
+static void
+init_by_array(RandomObject *self, uint32_t init_key[], size_t key_length)
 {
     size_t i, j, k;       /* was signed in the original code. RDH 12/16/2002 */
-    unsigned long *mt;
+    uint32_t *mt;
 
     mt = self->state;
-    init_genrand(self, 19650218UL);
+    init_genrand(self, 19650218U);
     i=1; j=0;
     k = (N>key_length ? N : key_length);
     for (; k; k--) {
-        mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1664525UL))
-                 + init_key[j] + (unsigned long)j; /* non linear */
-        mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
+        mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1664525U))
+                 + init_key[j] + (uint32_t)j; /* non linear */
         i++; j++;
         if (i>=N) { mt[0] = mt[N-1]; i=1; }
         if (j>=key_length) j=0;
     }
     for (k=N-1; k; k--) {
-        mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1566083941UL))
-                 - (unsigned long)i; /* non linear */
-        mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
+        mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1566083941U))
+                 - (uint32_t)i; /* non linear */
         i++;
         if (i>=N) { mt[0] = mt[N-1]; i=1; }
     }
 
-    mt[0] = 0x80000000UL; /* MSB is 1; assuring non-zero initial array */
-    Py_INCREF(Py_None);
-    return Py_None;
+    mt[0] = 0x80000000U; /* MSB is 1; assuring non-zero initial array */
 }
 
 /*
@@ -203,34 +217,66 @@ init_by_array(RandomObject *self, unsigned long init_key[], size_t key_length)
  * Twister download.
  */
 
+static int
+random_seed_urandom(RandomObject *self)
+{
+    PY_UINT32_T key[N];
+
+    if (_PyOS_URandomNonblock(key, sizeof(key)) < 0) {
+        return -1;
+    }
+    init_by_array(self, key, Py_ARRAY_LENGTH(key));
+    return 0;
+}
+
+static void
+random_seed_time_pid(RandomObject *self)
+{
+    _PyTime_t now;
+    uint32_t key[5];
+
+    now = _PyTime_GetSystemClock();
+    key[0] = (PY_UINT32_T)(now & 0xffffffffU);
+    key[1] = (PY_UINT32_T)(now >> 32);
+
+    key[2] = (PY_UINT32_T)getpid();
+
+    now = _PyTime_GetMonotonicClock();
+    key[3] = (PY_UINT32_T)(now & 0xffffffffU);
+    key[4] = (PY_UINT32_T)(now >> 32);
+
+    init_by_array(self, key, Py_ARRAY_LENGTH(key));
+}
+
 static PyObject *
-random_seed(RandomObject *self, PyObject *args)
+random_seed(RandomObject *self, PyObject *arg)
 {
     PyObject *result = NULL;            /* guilty until proved innocent */
     PyObject *n = NULL;
-    unsigned long *key = NULL;
-    unsigned char *key_as_bytes = NULL;
-    size_t bits, keyused, i;
+    uint32_t *key = NULL;
+    size_t bits, keyused;
     int res;
-    PyObject *arg = NULL;
-
-    if (!PyArg_UnpackTuple(args, "seed", 0, 1, &arg))
-        return NULL;
 
     if (arg == NULL || arg == Py_None) {
-        time_t now;
+       if (random_seed_urandom(self) < 0) {
+            PyErr_Clear();
 
-        time(&now);
-        init_genrand(self, (unsigned long)now);
-        Py_INCREF(Py_None);
-        return Py_None;
+            /* Reading system entropy failed, fall back on the worst entropy:
+               use the current time and process identifier. */
+            random_seed_time_pid(self);
+        }
+        Py_RETURN_NONE;
     }
+
     /* This algorithm relies on the number being unsigned.
      * So: if the arg is a PyLong, use its absolute value.
      * Otherwise use its hash value, cast to unsigned.
      */
-    if (PyLong_Check(arg))
-        n = PyNumber_Absolute(arg);
+    if (PyLong_Check(arg)) {
+        /* Calling int.__abs__() prevents calling arg.__abs__(), which might
+           return an invalid value. See issue #31478. */
+        n = PyLong_Type.tp_as_number->nb_absolute(arg);
+    }
     else {
         Py_hash_t hash = PyObject_Hash(arg);
         if (hash == -1)
@@ -249,44 +295,72 @@ random_seed(RandomObject *self, PyObject *args)
     keyused = bits == 0 ? 1 : (bits - 1) / 32 + 1;
 
     /* Convert seed to byte sequence. */
-    key_as_bytes = (unsigned char *)PyMem_Malloc((size_t)4 * keyused);
-    if (key_as_bytes == NULL) {
+    key = (uint32_t *)PyMem_Malloc((size_t)4 * keyused);
+    if (key == NULL) {
         PyErr_NoMemory();
         goto Done;
     }
     res = _PyLong_AsByteArray((PyLongObject *)n,
-                              key_as_bytes, keyused * 4,
-                              1,  /* little-endian */
+                              (unsigned char *)key, keyused * 4,
+                              PY_LITTLE_ENDIAN,
                               0); /* unsigned */
     if (res == -1) {
-        PyMem_Free(key_as_bytes);
         goto Done;
     }
 
-    /* Fill array of unsigned longs from byte sequence. */
-    key = (unsigned long *)PyMem_Malloc(sizeof(unsigned long) * keyused);
-    if (key == NULL) {
-        PyErr_NoMemory();
-        PyMem_Free(key_as_bytes);
-        goto Done;
+#if PY_BIG_ENDIAN
+    {
+        size_t i, j;
+        /* Reverse an array. */
+        for (i = 0, j = keyused - 1; i < j; i++, j--) {
+            uint32_t tmp = key[i];
+            key[i] = key[j];
+            key[j] = tmp;
+        }
     }
-    for (i = 0; i < keyused; i++) {
-        key[i] =
-            ((unsigned long)key_as_bytes[4*i + 0] << 0) +
-            ((unsigned long)key_as_bytes[4*i + 1] << 8) +
-            ((unsigned long)key_as_bytes[4*i + 2] << 16) +
-            ((unsigned long)key_as_bytes[4*i + 3] << 24);
-    }
-    PyMem_Free(key_as_bytes);
-    result = init_by_array(self, key, keyused);
+#endif
+    init_by_array(self, key, keyused);
+
+    Py_INCREF(Py_None);
+    result = Py_None;
+
 Done:
     Py_XDECREF(n);
     PyMem_Free(key);
     return result;
 }
 
+/*[clinic input]
+_random.Random.seed
+
+  self: self(type="RandomObject *")
+  n: object = None
+  /
+
+seed([n]) -> None.
+
+Defaults to use urandom and falls back to a combination
+of the current time and the process identifier.
+[clinic start generated code]*/
+
 static PyObject *
-random_getstate(RandomObject *self)
+_random_Random_seed_impl(RandomObject *self, PyObject *n)
+/*[clinic end generated code: output=0fad1e16ba883681 input=78d6ef0d52532a54]*/
+{
+    return random_seed(self, n);
+}
+
+/*[clinic input]
+_random.Random.getstate
+
+  self: self(type="RandomObject *")
+
+getstate() -> tuple containing the current state.
+[clinic start generated code]*/
+
+static PyObject *
+_random_Random_getstate_impl(RandomObject *self)
+/*[clinic end generated code: output=bf6cef0c092c7180 input=b937a487928c0e89]*/
 {
     PyObject *state;
     PyObject *element;
@@ -312,12 +386,25 @@ Fail:
     return NULL;
 }
 
+
+/*[clinic input]
+_random.Random.setstate
+
+  self: self(type="RandomObject *")
+  state: object
+  /
+
+setstate(state) -> None.  Restores generator state.
+[clinic start generated code]*/
+
 static PyObject *
-random_setstate(RandomObject *self, PyObject *state)
+_random_Random_setstate(RandomObject *self, PyObject *state)
+/*[clinic end generated code: output=fd1c3cd0037b6681 input=b3b4efbb1bc66af8]*/
 {
     int i;
     unsigned long element;
     long index;
+    uint32_t new_state[N];
 
     if (!PyTuple_Check(state)) {
         PyErr_SetString(PyExc_TypeError,
@@ -334,28 +421,42 @@ random_setstate(RandomObject *self, PyObject *state)
         element = PyLong_AsUnsignedLong(PyTuple_GET_ITEM(state, i));
         if (element == (unsigned long)-1 && PyErr_Occurred())
             return NULL;
-        self->state[i] = element & 0xffffffffUL; /* Make sure we get sane state */
+        new_state[i] = (uint32_t)element;
     }
 
     index = PyLong_AsLong(PyTuple_GET_ITEM(state, i));
     if (index == -1 && PyErr_Occurred())
         return NULL;
+    if (index < 0 || index > N) {
+        PyErr_SetString(PyExc_ValueError, "invalid state");
+        return NULL;
+    }
     self->index = (int)index;
+    for (i = 0; i < N; i++)
+        self->state[i] = new_state[i];
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
-static PyObject *
-random_getrandbits(RandomObject *self, PyObject *args)
-{
-    int k, i, bytes;
-    unsigned long r;
-    unsigned char *bytearray;
-    PyObject *result;
+/*[clinic input]
 
-    if (!PyArg_ParseTuple(args, "i:getrandbits", &k))
-        return NULL;
+_random.Random.getrandbits
+
+  self: self(type="RandomObject *")
+  k: int
+  /
+
+getrandbits(k) -> x.  Generates an int with k random bits.
+[clinic start generated code]*/
+
+static PyObject *
+_random_Random_getrandbits_impl(RandomObject *self, int k)
+/*[clinic end generated code: output=b402f82a2158887f input=8c0e6396dd176fc0]*/
+{
+    int i, words;
+    uint32_t r;
+    uint32_t *wordarray;
+    PyObject *result;
 
     if (k <= 0) {
         PyErr_SetString(PyExc_ValueError,
@@ -366,27 +467,30 @@ random_getrandbits(RandomObject *self, PyObject *args)
     if (k <= 32)  /* Fast path */
         return PyLong_FromUnsignedLong(genrand_int32(self) >> (32 - k));
 
-    bytes = ((k - 1) / 32 + 1) * 4;
-    bytearray = (unsigned char *)PyMem_Malloc(bytes);
-    if (bytearray == NULL) {
+    words = (k - 1) / 32 + 1;
+    wordarray = (uint32_t *)PyMem_Malloc(words * 4);
+    if (wordarray == NULL) {
         PyErr_NoMemory();
         return NULL;
     }
 
-    /* Fill-out whole words, byte-by-byte to avoid endianness issues */
-    for (i=0 ; i<bytes ; i+=4, k-=32) {
+    /* Fill-out bits of long integer, by 32-bit words, from least significant
+       to most significant. */
+#if PY_LITTLE_ENDIAN
+    for (i = 0; i < words; i++, k -= 32)
+#else
+    for (i = words - 1; i >= 0; i--, k -= 32)
+#endif
+    {
         r = genrand_int32(self);
         if (k < 32)
-            r >>= (32 - k);
-        bytearray[i+0] = (unsigned char)r;
-        bytearray[i+1] = (unsigned char)(r >> 8);
-        bytearray[i+2] = (unsigned char)(r >> 16);
-        bytearray[i+3] = (unsigned char)(r >> 24);
+            r >>= (32 - k);  /* Drop least significant bits */
+        wordarray[i] = r;
     }
 
-    /* little endian order to match bytearray assignment order */
-    result = _PyLong_FromByteArray(bytearray, bytes, 1, 0);
-    PyMem_Free(bytearray);
+    result = _PyLong_FromByteArray((unsigned char *)wordarray, words * 4,
+                                   PY_LITTLE_ENDIAN, 0 /* unsigned */);
+    PyMem_Free(wordarray);
     return result;
 }
 
@@ -396,7 +500,7 @@ random_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     RandomObject *self;
     PyObject *tmp;
 
-    if (type == &Random_Type && !_PyArg_NoKeywords("Random()", kwds))
+    if (type == &Random_Type && !_PyArg_NoKeywords("Random", kwds))
         return NULL;
 
     self = (RandomObject *)type->tp_alloc(type, 0);
@@ -412,17 +516,11 @@ random_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 }
 
 static PyMethodDef random_methods[] = {
-    {"random",          (PyCFunction)random_random,  METH_NOARGS,
-        PyDoc_STR("random() -> x in the interval [0, 1).")},
-    {"seed",            (PyCFunction)random_seed,  METH_VARARGS,
-        PyDoc_STR("seed([n]) -> None.  Defaults to current time.")},
-    {"getstate",        (PyCFunction)random_getstate,  METH_NOARGS,
-        PyDoc_STR("getstate() -> tuple containing the current state.")},
-    {"setstate",          (PyCFunction)random_setstate,  METH_O,
-        PyDoc_STR("setstate(state) -> None.  Restores generator state.")},
-    {"getrandbits",     (PyCFunction)random_getrandbits,  METH_VARARGS,
-        PyDoc_STR("getrandbits(k) -> x.  Generates an int with "
-                  "k random bits.")},
+    _RANDOM_RANDOM_RANDOM_METHODDEF
+    _RANDOM_RANDOM_SEED_METHODDEF
+    _RANDOM_RANDOM_GETSTATE_METHODDEF
+    _RANDOM_RANDOM_SETSTATE_METHODDEF
+    _RANDOM_RANDOM_GETRANDBITS_METHODDEF
     {NULL,              NULL}           /* sentinel */
 };
 
@@ -436,10 +534,10 @@ static PyTypeObject Random_Type = {
     0,                                  /*tp_itemsize*/
     /* methods */
     0,                                  /*tp_dealloc*/
-    0,                                  /*tp_print*/
+    0,                                  /*tp_vectorcall_offset*/
     0,                                  /*tp_getattr*/
     0,                                  /*tp_setattr*/
-    0,                                  /*tp_reserved*/
+    0,                                  /*tp_as_async*/
     0,                                  /*tp_repr*/
     0,                                  /*tp_as_number*/
     0,                                  /*tp_as_sequence*/

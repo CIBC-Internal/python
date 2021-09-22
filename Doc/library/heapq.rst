@@ -3,6 +3,7 @@
 
 .. module:: heapq
    :synopsis: Heap queue algorithm (a.k.a. priority queue).
+
 .. moduleauthor:: Kevin O'Connor
 .. sectionauthor:: Guido van Rossum <guido@python.org>
 .. sectionauthor:: François Pinard
@@ -47,7 +48,8 @@ The following functions are provided:
 .. function:: heappop(heap)
 
    Pop and return the smallest item from the *heap*, maintaining the heap
-   invariant.  If the heap is empty, :exc:`IndexError` is raised.
+   invariant.  If the heap is empty, :exc:`IndexError` is raised.  To access the
+   smallest item without popping it, use ``heap[0]``.
 
 
 .. function:: heappushpop(heap, item)
@@ -81,7 +83,7 @@ The following functions are provided:
 The module also offers three general purpose functions based on heaps.
 
 
-.. function:: merge(*iterables)
+.. function:: merge(*iterables, key=None, reverse=False)
 
    Merge multiple sorted inputs into a single sorted output (for example, merge
    timestamped entries from multiple log files).  Returns an :term:`iterator`
@@ -91,34 +93,49 @@ The module also offers three general purpose functions based on heaps.
    not pull the data into memory all at once, and assumes that each of the input
    streams is already sorted (smallest to largest).
 
+   Has two optional arguments which must be specified as keyword arguments.
+
+   *key* specifies a :term:`key function` of one argument that is used to
+   extract a comparison key from each input element.  The default value is
+   ``None`` (compare the elements directly).
+
+   *reverse* is a boolean value.  If set to ``True``, then the input elements
+   are merged as if each comparison were reversed. To achieve behavior similar
+   to ``sorted(itertools.chain(*iterables), reverse=True)``, all iterables must
+   be sorted from largest to smallest.
+
+   .. versionchanged:: 3.5
+      Added the optional *key* and *reverse* parameters.
+
 
 .. function:: nlargest(n, iterable, key=None)
 
    Return a list with the *n* largest elements from the dataset defined by
    *iterable*.  *key*, if provided, specifies a function of one argument that is
-   used to extract a comparison key from each element in the iterable:
-   ``key=str.lower`` Equivalent to:  ``sorted(iterable, key=key,
-   reverse=True)[:n]``
+   used to extract a comparison key from each element in *iterable* (for example,
+   ``key=str.lower``).  Equivalent to:  ``sorted(iterable, key=key,
+   reverse=True)[:n]``.
 
 
 .. function:: nsmallest(n, iterable, key=None)
 
    Return a list with the *n* smallest elements from the dataset defined by
    *iterable*.  *key*, if provided, specifies a function of one argument that is
-   used to extract a comparison key from each element in the iterable:
-   ``key=str.lower`` Equivalent to:  ``sorted(iterable, key=key)[:n]``
+   used to extract a comparison key from each element in *iterable* (for example,
+   ``key=str.lower``).  Equivalent to:  ``sorted(iterable, key=key)[:n]``.
 
 
 The latter two functions perform best for smaller values of *n*.  For larger
 values, it is more efficient to use the :func:`sorted` function.  Also, when
 ``n==1``, it is more efficient to use the built-in :func:`min` and :func:`max`
-functions.
+functions.  If repeated usage of these functions is required, consider turning
+the iterable into an actual heap.
 
 
 Basic Examples
 --------------
 
-A `heapsort <http://en.wikipedia.org/wiki/Heapsort>`_ can be implemented by
+A `heapsort <https://en.wikipedia.org/wiki/Heapsort>`_ can be implemented by
 pushing all values onto a heap and then popping off the smallest values one at a
 time::
 
@@ -149,7 +166,7 @@ Heap elements can be tuples.  This is useful for assigning comparison values
 Priority Queue Implementation Notes
 -----------------------------------
 
-A `priority queue <http://en.wikipedia.org/wiki/Priority_queue>`_ is common use
+A `priority queue <https://en.wikipedia.org/wiki/Priority_queue>`_ is common use
 for a heap, and it presents several implementation challenges:
 
 * Sort stability:  how do you get two tasks with equal priorities to be returned
@@ -169,6 +186,17 @@ including the priority, an entry count, and the task.  The entry count serves as
 a tie-breaker so that two tasks with the same priority are returned in the order
 they were added. And since no two entry counts are the same, the tuple
 comparison will never attempt to directly compare two tasks.
+
+Another solution to the problem of non-comparable tasks is to create a wrapper
+class that ignores the task item and only compares the priority field::
+
+    from dataclasses import dataclass, field
+    from typing import Any
+
+    @dataclass(order=True)
+    class PrioritizedItem:
+        priority: int
+        item: Any=field(compare=False)
 
 The remaining challenges revolve around finding a pending task and making
 changes to its priority or removing it entirely.  Finding a task can be done
@@ -228,7 +256,7 @@ for a tournament.  The numbers below are *k*, not ``a[k]``::
 
    15 16   17 18   19 20   21 22   23 24   25 26   27 28   29 30
 
-In the tree above, each cell *k* is topping ``2*k+1`` and ``2*k+2``. In an usual
+In the tree above, each cell *k* is topping ``2*k+1`` and ``2*k+2``. In a usual
 binary tournament we see in sports, each cell is the winner over the two cells
 it tops, and we can trace the winner down the tree to see all opponents s/he
 had.  However, in many computer applications of such tournaments, we do not need
