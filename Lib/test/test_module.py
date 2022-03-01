@@ -1,8 +1,8 @@
 # Test the module type
 import unittest
 import weakref
-from test.support import run_unittest, gc_collect
-from test.script_helper import assert_python_ok
+from test.support import gc_collect
+from test.support.script_helper import assert_python_ok
 
 import sys
 ModuleType = type(sys)
@@ -29,6 +29,22 @@ class ModuleTests(unittest.TestCase):
         except AttributeError:
             pass
         self.assertEqual(foo.__doc__, ModuleType.__doc__)
+
+    def test_uninitialized_missing_getattr(self):
+        # Issue 8297
+        # test the text in the AttributeError of an uninitialized module
+        foo = ModuleType.__new__(ModuleType)
+        self.assertRaisesRegex(
+                AttributeError, "module has no attribute 'not_here'",
+                getattr, foo, "not_here")
+
+    def test_missing_getattr(self):
+        # Issue 8297
+        # test the text in the AttributeError
+        foo = ModuleType("foo")
+        self.assertRaisesRegex(
+                AttributeError, "module 'foo' has no attribute 'not_here'",
+                getattr, foo, "not_here")
 
     def test_no_docstring(self):
         # Regularly initialized module, no docstring
@@ -107,6 +123,57 @@ a = A(destroyed)"""
         del m
         gc_collect()
         self.assertIs(wr(), None)
+
+    def test_module_getattr(self):
+        import test.good_getattr as gga
+        from test.good_getattr import test
+        self.assertEqual(test, "There is test")
+        self.assertEqual(gga.x, 1)
+        self.assertEqual(gga.y, 2)
+        with self.assertRaisesRegex(AttributeError,
+                                    "Deprecated, use whatever instead"):
+            gga.yolo
+        self.assertEqual(gga.whatever, "There is whatever")
+        del sys.modules['test.good_getattr']
+
+    def test_module_getattr_errors(self):
+        import test.bad_getattr as bga
+        from test import bad_getattr2
+        self.assertEqual(bga.x, 1)
+        self.assertEqual(bad_getattr2.x, 1)
+        with self.assertRaises(TypeError):
+            bga.nope
+        with self.assertRaises(TypeError):
+            bad_getattr2.nope
+        del sys.modules['test.bad_getattr']
+        if 'test.bad_getattr2' in sys.modules:
+            del sys.modules['test.bad_getattr2']
+
+    def test_module_dir(self):
+        import test.good_getattr as gga
+        self.assertEqual(dir(gga), ['a', 'b', 'c'])
+        del sys.modules['test.good_getattr']
+
+    def test_module_dir_errors(self):
+        import test.bad_getattr as bga
+        from test import bad_getattr2
+        with self.assertRaises(TypeError):
+            dir(bga)
+        with self.assertRaises(TypeError):
+            dir(bad_getattr2)
+        del sys.modules['test.bad_getattr']
+        if 'test.bad_getattr2' in sys.modules:
+            del sys.modules['test.bad_getattr2']
+
+    def test_module_getattr_tricky(self):
+        from test import bad_getattr3
+        # these lookups should not crash
+        with self.assertRaises(AttributeError):
+            bad_getattr3.one
+        with self.assertRaises(AttributeError):
+            bad_getattr3.delgetattr
+        if 'test.bad_getattr3' in sys.modules:
+            del sys.modules['test.bad_getattr3']
 
     def test_module_repr_minimal(self):
         # reprs when modules have no __file__, __name__, or __loader__
@@ -211,12 +278,16 @@ a = A(destroyed)"""
             b"len = len",
             b"shutil.rmtree = rmtree"})
 
+    def test_descriptor_errors_propagate(self):
+        class Descr:
+            def __get__(self, o, t):
+                raise RuntimeError
+        class M(ModuleType):
+            melon = Descr()
+        self.assertRaises(RuntimeError, getattr, M("mymod"), "melon")
+
     # frozen and namespace module reprs are tested in importlib.
 
 
-def test_main():
-    run_unittest(ModuleTests)
-
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

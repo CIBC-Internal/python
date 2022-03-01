@@ -1,19 +1,20 @@
 """Unittests for heapq."""
 
-import sys
 import random
 import unittest
+import doctest
 
 from test import support
 from unittest import TestCase, skipUnless
+from operator import itemgetter
 
 py_heapq = support.import_fresh_module('heapq', blocked=['_heapq'])
 c_heapq = support.import_fresh_module('heapq', fresh=['_heapq'])
 
 # _heapq.nlargest/nsmallest are saved in heapq._nlargest/_smallest when
 # _heapq is imported, so check them there
-func_names = ['heapify', 'heappop', 'heappush', 'heappushpop',
-              'heapreplace', '_nlargest', '_nsmallest']
+func_names = ['heapify', 'heappop', 'heappush', 'heappushpop', 'heapreplace',
+              '_heappop_max', '_heapreplace_max', '_heapify_max']
 
 class TestModules(TestCase):
     def test_py_functions(self):
@@ -25,6 +26,23 @@ class TestModules(TestCase):
         for fname in func_names:
             self.assertEqual(getattr(c_heapq, fname).__module__, '_heapq')
 
+
+def load_tests(loader, tests, ignore):
+    # The 'merge' function has examples in its docstring which we should test
+    # with 'doctest'.
+    #
+    # However, doctest can't easily find all docstrings in the module (loading
+    # it through import_fresh_module seems to confuse it), so we specifically
+    # create a finder which returns the doctests from the merge method.
+
+    class HeapqMergeDocTestFinder:
+        def find(self, *args, **kwargs):
+            dtf = doctest.DocTestFinder()
+            return dtf.find(py_heapq.merge)
+
+    tests.addTests(doctest.DocTestSuite(py_heapq,
+                                        test_finder=HeapqMergeDocTestFinder()))
+    return tests
 
 class TestHeap:
 
@@ -64,7 +82,7 @@ class TestHeap:
                 self.assertTrue(heap[parentpos] <= item)
 
     def test_heapify(self):
-        for size in range(30):
+        for size in list(range(30)) + [20000]:
             heap = [random.random() for dummy in range(size)]
             self.module.heapify(heap)
             self.check_invariant(heap)
@@ -127,13 +145,20 @@ class TestHeap:
         self.assertEqual(type(h[0]), int)
         self.assertEqual(type(x), float)
 
-        h = [10];
+        h = [10]
         x = self.module.heappushpop(h, 9)
         self.assertEqual((h, x), ([10], 9))
 
-        h = [10];
+        h = [10]
         x = self.module.heappushpop(h, 11)
         self.assertEqual((h, x), ([11], 10))
+
+    def test_heappop_max(self):
+        # _heapop_max has an optimization for one-item lists which isn't
+        # covered in other tests, so test that case explicitly here
+        h = [3, 2]
+        self.assertEqual(self.module._heappop_max(h), 3)
+        self.assertEqual(self.module._heappop_max(h), 2)
 
     def test_heapsort(self):
         # Exercise everything with repeated heapsort checks
@@ -152,11 +177,27 @@ class TestHeap:
 
     def test_merge(self):
         inputs = []
-        for i in range(random.randrange(5)):
-            row = sorted(random.randrange(1000) for j in range(random.randrange(10)))
+        for i in range(random.randrange(25)):
+            row = []
+            for j in range(random.randrange(100)):
+                tup = random.choice('ABC'), random.randrange(-500, 500)
+                row.append(tup)
             inputs.append(row)
-        self.assertEqual(sorted(chain(*inputs)), list(self.module.merge(*inputs)))
-        self.assertEqual(list(self.module.merge()), [])
+
+        for key in [None, itemgetter(0), itemgetter(1), itemgetter(1, 0)]:
+            for reverse in [False, True]:
+                seqs = []
+                for seq in inputs:
+                    seqs.append(sorted(seq, key=key, reverse=reverse))
+                self.assertEqual(sorted(chain(*inputs), key=key, reverse=reverse),
+                                 list(self.module.merge(*seqs, key=key, reverse=reverse)))
+                self.assertEqual(list(self.module.merge()), [])
+
+    def test_empty_merges(self):
+        # Merging two empty lists (with or without a key) should produce
+        # another empty list.
+        self.assertEqual(list(self.module.merge([], [])), [])
+        self.assertEqual(list(self.module.merge([], [], key=lambda: 6)), [])
 
     def test_merge_does_not_suppress_index_error(self):
         # Issue 19018: Heapq.merge suppresses IndexError from user generator
@@ -237,11 +278,6 @@ class TestHeapC(TestHeap, TestCase):
 class LenOnly:
     "Dummy sequence class defining __len__ but not __getitem__."
     def __len__(self):
-        return 10
-
-class GetOnly:
-    "Dummy sequence class defining __getitem__ but not __len__."
-    def __getitem__(self, ndx):
         return 10
 
 class CmpErr:
@@ -355,15 +391,7 @@ class TestErrorHandling:
         for f in (self.module.nlargest, self.module.nsmallest):
             self.assertRaises(TypeError, f, 2, LenOnly())
 
-    def test_get_only(self):
-        for f in (self.module.heapify, self.module.heappop):
-            self.assertRaises(TypeError, f, GetOnly())
-        for f in (self.module.heappush, self.module.heapreplace):
-            self.assertRaises(TypeError, f, GetOnly(), 10)
-        for f in (self.module.nlargest, self.module.nsmallest):
-            self.assertRaises(TypeError, f, 2, GetOnly())
-
-    def test_get_only(self):
+    def test_cmp_err(self):
         seq = [CmpErr(), CmpErr(), CmpErr()]
         for f in (self.module.heapify, self.module.heappop):
             self.assertRaises(ZeroDivisionError, f, seq)
@@ -404,6 +432,37 @@ class TestErrorHandling:
         with self.assertRaises((IndexError, RuntimeError)):
             self.module.heappop(heap)
 
+    def test_comparison_operator_modifiying_heap(self):
+        # See bpo-39421: Strong references need to be taken
+        # when comparing objects as they can alter the heap
+        class EvilClass(int):
+            def __lt__(self, o):
+                heap.clear()
+                return NotImplemented
+
+        heap = []
+        self.module.heappush(heap, EvilClass(0))
+        self.assertRaises(IndexError, self.module.heappushpop, heap, 1)
+
+    def test_comparison_operator_modifiying_heap_two_heaps(self):
+
+        class h(int):
+            def __lt__(self, o):
+                list2.clear()
+                return NotImplemented
+
+        class g(int):
+            def __lt__(self, o):
+                list1.clear()
+                return NotImplemented
+
+        list1, list2 = [], []
+
+        self.module.heappush(list1, h(0))
+        self.module.heappush(list2, g(0))
+
+        self.assertRaises((IndexError, RuntimeError), self.module.heappush, list1, g(1))
+        self.assertRaises((IndexError, RuntimeError), self.module.heappush, list2, h(1))
 
 class TestErrorHandlingPython(TestErrorHandling, TestCase):
     module = py_heapq

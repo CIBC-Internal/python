@@ -3,7 +3,6 @@
 import html.parser
 import pprint
 import unittest
-from test import support
 
 
 class EventCollector(html.parser.HTMLParser):
@@ -72,9 +71,6 @@ class EventCollectorExtra(EventCollector):
 
 class EventCollectorCharrefs(EventCollector):
 
-    def get_events(self):
-        return self.events
-
     def handle_charref(self, data):
         self.fail('This should never be called with convert_charrefs=True')
 
@@ -85,7 +81,7 @@ class EventCollectorCharrefs(EventCollector):
 class TestCaseBase(unittest.TestCase):
 
     def get_collector(self):
-        raise NotImplementedError
+        return EventCollector(convert_charrefs=False)
 
     def _run_check(self, source, expected_events, collector=None):
         if collector is None:
@@ -105,21 +101,8 @@ class TestCaseBase(unittest.TestCase):
         self._run_check(source, events,
                         EventCollectorExtra(convert_charrefs=False))
 
-    def _parse_error(self, source):
-        def parse(source=source):
-            parser = self.get_collector()
-            parser.feed(source)
-            parser.close()
-        with self.assertRaises(html.parser.HTMLParseError):
-            with self.assertWarns(DeprecationWarning):
-                parse()
 
-
-class HTMLParserStrictTestCase(TestCaseBase):
-
-    def get_collector(self):
-        with support.check_warnings(("", DeprecationWarning), quite=False):
-            return EventCollector(strict=True, convert_charrefs=False)
+class HTMLParserTestCase(TestCaseBase):
 
     def test_processing_instruction_only(self):
         self._run_check("<?processing instruction>", [
@@ -201,9 +184,6 @@ text
             ("data", "this < text > contains < bare>pointy< brackets"),
             ])
 
-    def test_illegal_declarations(self):
-        self._parse_error('<!spacer type="block" height="25">')
-
     def test_starttag_end_boundary(self):
         self._run_check("""<a b='<'>""", [("starttag", "a", [("b", "<")])])
         self._run_check("""<a b='>'>""", [("starttag", "a", [("b", ">")])])
@@ -238,25 +218,6 @@ text
         self._run_check(["<!--abc--", ">"], output)
         self._run_check(["<!--abc-->", ""], output)
 
-    def test_starttag_junk_chars(self):
-        self._parse_error("</>")
-        self._parse_error("</$>")
-        self._parse_error("</")
-        self._parse_error("</a")
-        self._parse_error("<a<a>")
-        self._parse_error("</a<a>")
-        self._parse_error("<!")
-        self._parse_error("<a")
-        self._parse_error("<a foo='bar'")
-        self._parse_error("<a foo='bar")
-        self._parse_error("<a foo='>'")
-        self._parse_error("<a foo='>")
-        self._parse_error("<a$>")
-        self._parse_error("<a$b>")
-        self._parse_error("<a$b/>")
-        self._parse_error("<a$b  >")
-        self._parse_error("<a$b  />")
-
     def test_valid_doctypes(self):
         # from http://www.w3.org/QA/2002/04/valid-dtd-list.html
         dtds = ['HTML',  # HTML5 doctype
@@ -280,9 +241,6 @@ text
         for dtd in dtds:
             self._run_check("<!DOCTYPE %s>" % dtd,
                             [('decl', 'DOCTYPE ' + dtd)])
-
-    def test_declaration_junk_chars(self):
-        self._parse_error("<!DOCTYPE foo $ >")
 
     def test_startendtag(self):
         self._run_check("<p/>", [
@@ -384,7 +342,8 @@ text
         self._run_check(html, expected)
 
     def test_convert_charrefs(self):
-        collector = lambda: EventCollectorCharrefs(convert_charrefs=True)
+        # default value for convert_charrefs is now True
+        collector = lambda: EventCollectorCharrefs()
         self.assertTrue(collector().convert_charrefs)
         charrefs = ['&quot;', '&#34;', '&#x22;', '&quot', '&#34', '&#x22']
         # check charrefs in the middle of the text/attributes
@@ -421,23 +380,8 @@ text
         self._run_check('no charrefs here', [('data', 'no charrefs here')],
                         collector=collector())
 
-
-class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
-
-    def get_collector(self):
-        return EventCollector(convert_charrefs=False)
-
-    def test_deprecation_warnings(self):
-        with self.assertWarns(DeprecationWarning):
-            EventCollector()  # convert_charrefs not passed explicitly
-        with self.assertWarns(DeprecationWarning):
-            EventCollector(strict=True)
-        with self.assertWarns(DeprecationWarning):
-            EventCollector(strict=False)
-        with self.assertRaises(html.parser.HTMLParseError):
-            with self.assertWarns(DeprecationWarning):
-                EventCollector().error('test')
-
+    # the remaining tests were for the "tolerant" parser (which is now
+    # the default), and check various kind of broken markup
     def test_tolerant_parsing(self):
         self._run_check('<html <html>te>>xt&a<<bc</a></html>\n'
                         '<img src="URL><//img></html</html>', [
@@ -507,42 +451,6 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
     def test_illegal_declarations(self):
         self._run_check('<!spacer type="block" height="25">',
                         [('comment', 'spacer type="block" height="25"')])
-
-    def test_with_unquoted_attributes(self):
-        # see #12008
-        html = ("<html><body bgcolor=d0ca90 text='181008'>"
-                "<table cellspacing=0 cellpadding=1 width=100% ><tr>"
-                "<td align=left><font size=-1>"
-                "- <a href=/rabota/><span class=en> software-and-i</span></a>"
-                "- <a href='/1/'><span class=en> library</span></a></table>")
-        expected = [
-            ('starttag', 'html', []),
-            ('starttag', 'body', [('bgcolor', 'd0ca90'), ('text', '181008')]),
-            ('starttag', 'table',
-                [('cellspacing', '0'), ('cellpadding', '1'), ('width', '100%')]),
-            ('starttag', 'tr', []),
-            ('starttag', 'td', [('align', 'left')]),
-            ('starttag', 'font', [('size', '-1')]),
-            ('data', '- '), ('starttag', 'a', [('href', '/rabota/')]),
-            ('starttag', 'span', [('class', 'en')]), ('data', ' software-and-i'),
-            ('endtag', 'span'), ('endtag', 'a'),
-            ('data', '- '), ('starttag', 'a', [('href', '/1/')]),
-            ('starttag', 'span', [('class', 'en')]), ('data', ' library'),
-            ('endtag', 'span'), ('endtag', 'a'), ('endtag', 'table')
-        ]
-        self._run_check(html, expected)
-
-    def test_comma_between_attributes(self):
-        self._run_check('<form action="/xxx.php?a=1&amp;b=2&amp", '
-                        'method="post">', [
-                            ('starttag', 'form',
-                                [('action', '/xxx.php?a=1&b=2&'),
-                                 (',', None), ('method', 'post')])])
-
-    def test_weird_chars_in_unquoted_attribute_values(self):
-        self._run_check('<form action=bogus|&#()value>', [
-                            ('starttag', 'form',
-                                [('action', 'bogus|&#()value')])])
 
     def test_invalid_end_tags(self):
         # A collection of broken end tags. <br> is used as separator.
@@ -629,13 +537,6 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
         for html, expected in data:
             self._run_check(html, expected)
 
-    def test_unescape_method(self):
-        from html import unescape
-        p = self.get_collector()
-        with self.assertWarns(DeprecationWarning):
-            s = '&quot;&#34;&#x22;&quot&#34&#x22&#bad;'
-            self.assertEqual(p.unescape(s), unescape(s))
-
     def test_broken_comments(self):
         html = ('<! not really a comment >'
                 '<! not a comment either -->'
@@ -685,12 +586,20 @@ class HTMLParserTolerantTestCase(HTMLParserStrictTestCase):
         ]
         self._run_check(html, expected)
 
+    def test_convert_charrefs_dropped_text(self):
+        # #23144: make sure that all the events are triggered when
+        # convert_charrefs is True, even if we don't call .close()
+        parser = EventCollector(convert_charrefs=True)
+        # before the fix, bar & baz was missing
+        parser.feed("foo <a>link</a> bar &amp; baz")
+        self.assertEqual(
+            parser.get_events(),
+            [('data', 'foo '), ('starttag', 'a', []), ('data', 'link'),
+             ('endtag', 'a'), ('data', ' bar & baz')]
+        )
 
-class AttributesStrictTestCase(TestCaseBase):
 
-    def get_collector(self):
-        with support.check_warnings(("", DeprecationWarning), quite=False):
-            return EventCollector(strict=True, convert_charrefs=False)
+class AttributesTestCase(TestCaseBase):
 
     def test_attr_syntax(self):
         output = [
@@ -747,15 +656,9 @@ class AttributesStrictTestCase(TestCaseBase):
             [("starttag", "html", [("foo", "\u20AC&aa&unsupported;")])])
 
 
-
-class AttributesTolerantTestCase(AttributesStrictTestCase):
-
-    def get_collector(self):
-        return EventCollector(convert_charrefs=False)
-
     def test_attr_funky_names2(self):
         self._run_check(
-            "<a $><b $=%><c \=/>",
+            r"<a $><b $=%><c \=/>",
             [("starttag", "a", [("$", None)]),
              ("starttag", "b", [("$", "%")]),
              ("starttag", "c", [("\\", "/")])])
@@ -827,6 +730,62 @@ class AttributesTolerantTestCase(AttributesStrictTestCase):
                           [("href", "http://www.example.org/\">;")]),
                          ("data", "spam"), ("endtag", "a")])
 
+    def test_with_unquoted_attributes(self):
+        # see #12008
+        html = ("<html><body bgcolor=d0ca90 text='181008'>"
+                "<table cellspacing=0 cellpadding=1 width=100% ><tr>"
+                "<td align=left><font size=-1>"
+                "- <a href=/rabota/><span class=en> software-and-i</span></a>"
+                "- <a href='/1/'><span class=en> library</span></a></table>")
+        expected = [
+            ('starttag', 'html', []),
+            ('starttag', 'body', [('bgcolor', 'd0ca90'), ('text', '181008')]),
+            ('starttag', 'table',
+                [('cellspacing', '0'), ('cellpadding', '1'), ('width', '100%')]),
+            ('starttag', 'tr', []),
+            ('starttag', 'td', [('align', 'left')]),
+            ('starttag', 'font', [('size', '-1')]),
+            ('data', '- '), ('starttag', 'a', [('href', '/rabota/')]),
+            ('starttag', 'span', [('class', 'en')]), ('data', ' software-and-i'),
+            ('endtag', 'span'), ('endtag', 'a'),
+            ('data', '- '), ('starttag', 'a', [('href', '/1/')]),
+            ('starttag', 'span', [('class', 'en')]), ('data', ' library'),
+            ('endtag', 'span'), ('endtag', 'a'), ('endtag', 'table')
+        ]
+        self._run_check(html, expected)
+
+    def test_comma_between_attributes(self):
+        # see bpo 41478
+        # HTMLParser preserves duplicate attributes, leaving the task of
+        # removing duplicate attributes to a conformant html tree builder
+        html = ('<div class=bar,baz=asd>'        # between attrs (unquoted)
+                '<div class="bar",baz="asd">'    # between attrs (quoted)
+                '<div class=bar, baz=asd,>'      # after values (unquoted)
+                '<div class="bar", baz="asd",>'  # after values (quoted)
+                '<div class="bar",>'             # one comma values (quoted)
+                '<div class=,bar baz=,asd>'      # before values (unquoted)
+                '<div class=,"bar" baz=,"asd">'  # before values (quoted)
+                '<div ,class=bar ,baz=asd>'      # before names
+                '<div class,="bar" baz,="asd">'  # after names
+        )
+        expected = [
+            ('starttag', 'div', [('class', 'bar,baz=asd'),]),
+            ('starttag', 'div', [('class', 'bar'), (',baz', 'asd')]),
+            ('starttag', 'div', [('class', 'bar,'), ('baz', 'asd,')]),
+            ('starttag', 'div', [('class', 'bar'), (',', None),
+                                 ('baz', 'asd'), (',', None)]),
+            ('starttag', 'div', [('class', 'bar'), (',', None)]),
+            ('starttag', 'div', [('class', ',bar'), ('baz', ',asd')]),
+            ('starttag', 'div', [('class', ',"bar"'), ('baz', ',"asd"')]),
+            ('starttag', 'div', [(',class', 'bar'), (',baz', 'asd')]),
+            ('starttag', 'div', [('class,', 'bar'), ('baz,', 'asd')]),
+        ]
+        self._run_check(html, expected)
+
+    def test_weird_chars_in_unquoted_attribute_values(self):
+        self._run_check('<form action=bogus|&#()value>', [
+                            ('starttag', 'form',
+                                [('action', 'bogus|&#()value')])])
 
 if __name__ == "__main__":
     unittest.main()

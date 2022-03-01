@@ -6,10 +6,10 @@ import operator
 import copy
 import pickle
 from random import randrange, shuffle
-import sys
 import warnings
 import collections
 import collections.abc
+import itertools
 
 class PassThru(Exception):
     pass
@@ -362,6 +362,9 @@ class TestJointOps:
         gc.collect()
         self.assertTrue(ref() is None, "Cycle was not collected")
 
+    def test_free_after_iterating(self):
+        support.check_free_after_iterating(self, iter, self.thetype)
+
 class TestSet(TestJointOps, unittest.TestCase):
     thetype = set
     basetype = set
@@ -372,8 +375,8 @@ class TestSet(TestJointOps, unittest.TestCase):
         self.assertEqual(s, set(self.word))
         s.__init__(self.otherword)
         self.assertEqual(s, set(self.otherword))
-        self.assertRaises(TypeError, s.__init__, s, 2);
-        self.assertRaises(TypeError, s.__init__, 1);
+        self.assertRaises(TypeError, s.__init__, s, 2)
+        self.assertRaises(TypeError, s.__init__, 1)
 
     def test_constructor_identity(self):
         s = self.thetype(range(3))
@@ -384,6 +387,21 @@ class TestSet(TestJointOps, unittest.TestCase):
         s = set([1,2,3])
         t = {1,2,3}
         self.assertEqual(s, t)
+
+    def test_set_literal_insertion_order(self):
+        # SF Issue #26020 -- Expect left to right insertion
+        s = {1, 1.0, True}
+        self.assertEqual(len(s), 1)
+        stored_value = s.pop()
+        self.assertEqual(type(stored_value), int)
+
+    def test_set_literal_evaluation_order(self):
+        # Expect left to right expression evaluation
+        events = []
+        def record(obj):
+            events.append(obj)
+        s = {record(1), record(2), record(3)}
+        self.assertEqual(events, [1, 2, 3])
 
     def test_hash(self):
         self.assertRaises(TypeError, hash, self.s)
@@ -588,6 +606,7 @@ class TestSet(TestJointOps, unittest.TestCase):
         p = weakref.proxy(s)
         self.assertEqual(str(p), str(s))
         s = None
+        support.gc_collect()  # For PyPy or other GCs.
         self.assertRaises(ReferenceError, str, p)
 
     def test_rich_compare(self):
@@ -710,6 +729,25 @@ class TestFrozenSet(TestJointOps, unittest.TestCase):
         for i in range(2**n):
             addhashvalue(hash(frozenset([e for e, m in elemmasks if m&i])))
         self.assertEqual(len(hashvalues), 2**n)
+
+        def zf_range(n):
+            # https://en.wikipedia.org/wiki/Set-theoretic_definition_of_natural_numbers
+            nums = [frozenset()]
+            for i in range(n-1):
+                num = frozenset(nums)
+                nums.append(num)
+            return nums[:n]
+
+        def powerset(s):
+            for i in range(len(s)+1):
+                yield from map(frozenset, itertools.combinations(s, i))
+
+        for n in range(18):
+            t = 2 ** n
+            mask = t - 1
+            for nums in (range, zf_range):
+                u = len({h & mask for h in map(hash, powerset(nums(n)))})
+                self.assertGreater(4*u, t)
 
 class FrozenSetSubclass(frozenset):
     pass
@@ -858,6 +896,12 @@ class TestBasicOps:
             self.assertEqual(self.set, copy,
                              "%s != %s" % (self.set, copy))
 
+    def test_issue_37219(self):
+        with self.assertRaises(TypeError):
+            set().difference(123)
+        with self.assertRaises(TypeError):
+            set().difference_update(123)
+
 #------------------------------------------------------------------------------
 
 class TestBasicOpsEmpty(TestBasicOps, unittest.TestCase):
@@ -931,7 +975,7 @@ class TestBasicOpsString(TestBasicOps, unittest.TestCase):
 
 class TestBasicOpsBytes(TestBasicOps, unittest.TestCase):
     def setUp(self):
-        self.case   = "string set"
+        self.case   = "bytes set"
         self.values = [b"a", b"b", b"c"]
         self.set    = set(self.values)
         self.dup    = set(self.values)
@@ -1731,6 +1775,30 @@ class TestWeirdBugs(unittest.TestCase):
         be_bad = True
         set1.symmetric_difference_update(dict2)
 
+    def test_iter_and_mutate(self):
+        # Issue #24581
+        s = set(range(100))
+        s.clear()
+        s.update(range(100))
+        si = iter(s)
+        s.clear()
+        a = list(range(100))
+        s.update(range(100))
+        list(si)
+
+    def test_merge_and_mutate(self):
+        class X:
+            def __hash__(self):
+                return hash(0)
+            def __eq__(self, o):
+                other.clear()
+                return False
+
+        other = set()
+        other = {X() for i in range(10)}
+        s = {0}
+        s.update(other)
+
 # Application tests (based on David Eppstein's graph recipes ====================================
 
 def powerset(U):
@@ -1809,7 +1877,7 @@ class TestGraphs(unittest.TestCase):
 
         # http://en.wikipedia.org/wiki/Cuboctahedron
         # 8 triangular faces and 6 square faces
-        # 12 indentical vertices each connecting a triangle and square
+        # 12 identical vertices each connecting a triangle and square
 
         g = cube(3)
         cuboctahedron = linegraph(g)            # V( --> {V1, V2, V3, V4}

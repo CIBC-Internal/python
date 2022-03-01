@@ -16,14 +16,13 @@ from io import StringIO
 from test import support
 
 
+import optparse
 from optparse import make_option, Option, \
      TitledHelpFormatter, OptionParser, OptionGroup, \
      SUPPRESS_USAGE, OptionError, OptionConflictError, \
      BadOptionError, OptionValueError, Values
 from optparse import _match_abbrev
 from optparse import _parse_num
-
-retype = type(re.compile(''))
 
 class InterceptedError(Exception):
     def __init__(self,
@@ -106,7 +105,7 @@ Args were %(args)s.""" % locals ())
             func(*args, **kwargs)
         except expected_exception as err:
             actual_message = str(err)
-            if isinstance(expected_message, retype):
+            if isinstance(expected_message, re.Pattern):
                 self.assertTrue(expected_message.search(actual_message),
                              """\
 expected exception message pattern:
@@ -1650,8 +1649,11 @@ class TestParseNumber(BaseTest):
                              "option -l: invalid integer value: '0x12x'")
 
 
-def test_main():
-    support.run_unittest(__name__)
+class MiscTestCase(unittest.TestCase):
+    def test__all__(self):
+        blacklist = {'check_builtin', 'AmbiguousOptionError', 'NO_DEFAULT'}
+        support.check__all__(self, optparse, blacklist=blacklist)
+
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()
