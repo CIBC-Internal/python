@@ -5,15 +5,22 @@ import subprocess
 import shutil
 from copy import copy
 
-from test.support import (run_unittest, TESTFN, unlink, check_warnings,
-                          captured_stdout, skip_unless_symlink)
+from test.support import (captured_stdout, PythonSymlink)
+from test.support.import_helper import import_module
+from test.support.os_helper import (TESTFN, unlink, skip_unless_symlink,
+                                    change_cwd)
+from test.support.warnings_helper import check_warnings
 
 import sysconfig
 from sysconfig import (get_paths, get_platform, get_config_vars,
                        get_path, get_path_names, _INSTALL_SCHEMES,
-                       _get_default_scheme, _expand_vars,
-                       get_scheme_names, get_config_var, _main)
+                       get_default_scheme, get_scheme_names, get_config_var,
+                       _expand_vars, _get_preferred_schemes, _main)
 import _osx_support
+
+
+HAS_USER_BASE = sysconfig._HAS_USER_BASE
+
 
 class TestSysConfig(unittest.TestCase):
 
@@ -87,17 +94,46 @@ class TestSysConfig(unittest.TestCase):
 
     def test_get_paths(self):
         scheme = get_paths()
-        default_scheme = _get_default_scheme()
+        default_scheme = get_default_scheme()
         wanted = _expand_vars(default_scheme, None)
         wanted = sorted(wanted.items())
         scheme = sorted(scheme.items())
         self.assertEqual(scheme, wanted)
 
     def test_get_path(self):
-        # XXX make real tests here
+        config_vars = get_config_vars()
         for scheme in _INSTALL_SCHEMES:
             for name in _INSTALL_SCHEMES[scheme]:
-                res = get_path(name, scheme)
+                expected = _INSTALL_SCHEMES[scheme][name].format(**config_vars)
+                self.assertEqual(
+                    os.path.normpath(get_path(name, scheme)),
+                    os.path.normpath(expected),
+                )
+
+    def test_get_default_scheme(self):
+        self.assertIn(get_default_scheme(), _INSTALL_SCHEMES)
+
+    def test_get_preferred_schemes(self):
+        expected_schemes = {'prefix', 'home', 'user'}
+
+        # Windows.
+        os.name = 'nt'
+        schemes = _get_preferred_schemes()
+        self.assertIsInstance(schemes, dict)
+        self.assertEqual(set(schemes), expected_schemes)
+
+        # Mac and Linux, shared library build.
+        os.name = 'posix'
+        schemes = _get_preferred_schemes()
+        self.assertIsInstance(schemes, dict)
+        self.assertEqual(set(schemes), expected_schemes)
+
+        # Mac, framework build.
+        os.name = 'posix'
+        sys.platform = 'darwin'
+        sys._framework = True
+        self.assertIsInstance(schemes, dict)
+        self.assertEqual(set(schemes), expected_schemes)
 
     def test_get_config_vars(self):
         cvars = get_config_vars()
@@ -118,13 +154,6 @@ class TestSysConfig(unittest.TestCase):
                        '[MSC v.1310 32 bit (Amd64)]')
         sys.platform = 'win32'
         self.assertEqual(get_platform(), 'win-amd64')
-
-        # windows XP, itanium
-        os.name = 'nt'
-        sys.version = ('2.4.4 (#71, Oct 18 2006, 08:34:43) '
-                       '[MSC v.1310 32 bit (Itanium)]')
-        sys.platform = 'win32'
-        self.assertEqual(get_platform(), 'win-ia64')
 
         # macbook
         os.name = 'posix'
@@ -234,37 +263,23 @@ class TestSysConfig(unittest.TestCase):
         self.assertTrue(os.path.isfile(config_h), config_h)
 
     def test_get_scheme_names(self):
-        wanted = ('nt', 'nt_user', 'osx_framework_user',
-                  'posix_home', 'posix_prefix', 'posix_user')
-        self.assertEqual(get_scheme_names(), wanted)
+        wanted = ['nt', 'posix_home', 'posix_prefix']
+        if HAS_USER_BASE:
+            wanted.extend(['nt_user', 'osx_framework_user', 'posix_user'])
+        self.assertEqual(get_scheme_names(), tuple(sorted(wanted)))
 
     @skip_unless_symlink
-    def test_symlink(self):
-        # On Windows, the EXE needs to know where pythonXY.dll is at so we have
-        # to add the directory to the path.
-        if sys.platform == "win32":
-            os.environ["PATH"] = "{};{}".format(
-                os.path.dirname(sys.executable), os.environ["PATH"])
-
-        # Issue 7880
-        def get(python):
-            cmd = [python, '-c',
-                   'import sysconfig; print(sysconfig.get_platform())']
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, env=os.environ)
-            return p.communicate()
-        real = os.path.realpath(sys.executable)
-        link = os.path.abspath(TESTFN)
-        os.symlink(real, link)
-        try:
-            self.assertEqual(get(real), get(link))
-        finally:
-            unlink(link)
+    def test_symlink(self): # Issue 7880
+        with PythonSymlink() as py:
+            cmd = "-c", "import sysconfig; print(sysconfig.get_platform())"
+            self.assertEqual(py.call_real(*cmd), py.call_link(*cmd))
 
     def test_user_similar(self):
         # Issue #8759: make sure the posix scheme for the users
         # is similar to the global posix_prefix one
         base = get_config_var('base')
-        user = get_config_var('userbase')
+        if HAS_USER_BASE:
+            user = get_config_var('userbase')
         # the global scheme mirrors the distinction between prefix and
         # exec-prefix but not the user scheme, so we have to adapt the paths
         # before comparing (issue #9100)
@@ -279,8 +294,19 @@ class TestSysConfig(unittest.TestCase):
                 # before comparing
                 global_path = global_path.replace(sys.base_prefix, sys.prefix)
                 base = base.replace(sys.base_prefix, sys.prefix)
-            user_path = get_path(name, 'posix_user')
-            self.assertEqual(user_path, global_path.replace(base, user, 1))
+            if HAS_USER_BASE:
+                user_path = get_path(name, 'posix_user')
+                expected = global_path.replace(base, user, 1)
+                # bpo-44860: platlib of posix_user doesn't use sys.platlibdir,
+                # whereas posix_prefix does.
+                if name == 'platlib':
+                    # Replace "/lib64/python3.11/site-packages" suffix
+                    # with "/lib/python3.11/site-packages".
+                    py_version_short = sysconfig.get_python_version()
+                    suffix = f'python{py_version_short}/site-packages'
+                    expected = expected.replace(f'/{sys.platlibdir}/{suffix}',
+                                                f'/lib/{suffix}')
+                self.assertEqual(user_path, expected)
 
     def test_main(self):
         # just making sure _main() runs and returns things in the stdout
@@ -361,12 +387,8 @@ class TestSysConfig(unittest.TestCase):
         # srcdir should be independent of the current working directory
         # See Issues #15322, #15364.
         srcdir = sysconfig.get_config_var('srcdir')
-        cwd = os.getcwd()
-        try:
-            os.chdir('..')
+        with change_cwd(os.pardir):
             srcdir2 = sysconfig.get_config_var('srcdir')
-        finally:
-            os.chdir(cwd)
         self.assertEqual(srcdir, srcdir2)
 
     @unittest.skipIf(sysconfig.get_config_var('EXT_SUFFIX') is None,
@@ -384,11 +406,35 @@ class TestSysConfig(unittest.TestCase):
 
     @unittest.skipIf(sysconfig.get_config_var('EXT_SUFFIX') is None,
                      'EXT_SUFFIX required for this test')
-    def test_SO_in_vars(self):
+    def test_EXT_SUFFIX_in_vars(self):
+        import _imp
         vars = sysconfig.get_config_vars()
         self.assertIsNotNone(vars['SO'])
         self.assertEqual(vars['SO'], vars['EXT_SUFFIX'])
+        self.assertEqual(vars['EXT_SUFFIX'], _imp.extension_suffixes()[0])
 
+    @unittest.skipUnless(sys.platform == 'linux' and
+                         hasattr(sys.implementation, '_multiarch'),
+                         'multiarch-specific test')
+    def test_triplet_in_ext_suffix(self):
+        ctypes = import_module('ctypes')
+        import platform, re
+        machine = platform.machine()
+        suffix = sysconfig.get_config_var('EXT_SUFFIX')
+        if re.match('(aarch64|arm|mips|ppc|powerpc|s390|sparc)', machine):
+            self.assertTrue('linux' in suffix, suffix)
+        if re.match('(i[3-6]86|x86_64)$', machine):
+            if ctypes.sizeof(ctypes.c_char_p()) == 4:
+                self.assertTrue(suffix.endswith('i386-linux-gnu.so') or
+                                suffix.endswith('x86_64-linux-gnux32.so'),
+                                suffix)
+            else: # 8 byte pointer size
+                self.assertTrue(suffix.endswith('x86_64-linux-gnu.so'), suffix)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'OS X-specific test')
+    def test_osx_ext_suffix(self):
+        suffix = sysconfig.get_config_var('EXT_SUFFIX')
+        self.assertTrue(suffix.endswith('-darwin.so'), suffix)
 
 class MakefileTests(unittest.TestCase):
 
@@ -406,6 +452,8 @@ class MakefileTests(unittest.TestCase):
             print("var3=42", file=makefile)
             print("var4=$/invalid", file=makefile)
             print("var5=dollar$$5", file=makefile)
+            print("var6=${var3}/lib/python3.5/config-$(VAR2)$(var5)"
+                  "-x86_64-linux-gnu", file=makefile)
         vars = sysconfig._parse_makefile(TESTFN)
         self.assertEqual(vars, {
             'var1': 'ab42',
@@ -413,11 +461,9 @@ class MakefileTests(unittest.TestCase):
             'var3': 42,
             'var4': '$/invalid',
             'var5': 'dollar$5',
+            'var6': '42/lib/python3.5/config-b42dollar$5-x86_64-linux-gnu',
         })
 
 
-def test_main():
-    run_unittest(TestSysConfig, MakefileTests)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

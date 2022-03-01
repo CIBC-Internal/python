@@ -10,6 +10,12 @@
 #include <shadow.h>
 #endif
 
+#include "clinic/spwdmodule.c.h"
+
+/*[clinic input]
+module spwd
+[clinic start generated code]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=c0b841b90a6a07ce]*/
 
 PyDoc_STRVAR(spwd__doc__,
 "This module provides access to the Unix shadow password database.\n\
@@ -53,9 +59,19 @@ static PyStructSequence_Desc struct_spwd_type_desc = {
     9,
 };
 
-static int initialized;
-static PyTypeObject StructSpwdType;
+typedef struct {
+    PyTypeObject *StructSpwdType;
+} spwdmodulestate;
 
+static inline spwdmodulestate*
+get_spwd_state(PyObject *module)
+{
+    void *state = PyModule_GetState(module);
+    assert(state != NULL);
+    return (spwdmodulestate *)state;
+}
+
+static struct PyModuleDef spwdmodule;
 
 static void
 sets(PyObject *v, int i, const char* val)
@@ -69,10 +85,10 @@ sets(PyObject *v, int i, const char* val)
   }
 }
 
-static PyObject *mkspent(struct spwd *p)
+static PyObject *mkspent(PyObject *module, struct spwd *p)
 {
     int setIndex = 0;
-    PyObject *v = PyStructSequence_New(&StructSpwdType);
+    PyObject *v = PyStructSequence_New(get_spwd_state(module)->StructSpwdType);
     if (v == NULL)
         return NULL;
 
@@ -107,29 +123,38 @@ static PyObject *mkspent(struct spwd *p)
 
 #ifdef HAVE_GETSPNAM
 
-PyDoc_STRVAR(spwd_getspnam__doc__,
-"getspnam(name) -> (sp_namp, sp_pwdp, sp_lstchg, sp_min, sp_max,\n\
-                    sp_warn, sp_inact, sp_expire, sp_flag)\n\
-Return the shadow password database entry for the given user name.\n\
-See spwd.__doc__ for more on shadow password database entries.");
+/*[clinic input]
+spwd.getspnam
 
-static PyObject* spwd_getspnam(PyObject *self, PyObject *args)
+    arg: unicode
+    /
+
+Return the shadow password database entry for the given user name.
+
+See `help(spwd)` for more on shadow password database entries.
+[clinic start generated code]*/
+
+static PyObject *
+spwd_getspnam_impl(PyObject *module, PyObject *arg)
+/*[clinic end generated code: output=701250cf57dc6ebe input=dd89429e6167a00f]*/
 {
     char *name;
     struct spwd *p;
-    PyObject *arg, *bytes, *retval = NULL;
+    PyObject *bytes, *retval = NULL;
 
-    if (!PyArg_ParseTuple(args, "U:getspnam", &arg))
-        return NULL;
     if ((bytes = PyUnicode_EncodeFSDefault(arg)) == NULL)
         return NULL;
+    /* check for embedded null bytes */
     if (PyBytes_AsStringAndSize(bytes, &name, NULL) == -1)
         goto out;
     if ((p = getspnam(name)) == NULL) {
-        PyErr_SetString(PyExc_KeyError, "getspnam(): name not found");
+        if (errno != 0)
+            PyErr_SetFromErrno(PyExc_OSError);
+        else
+            PyErr_SetString(PyExc_KeyError, "getspnam(): name not found");
         goto out;
     }
-    retval = mkspent(p);
+    retval = mkspent(module, p);
 out:
     Py_DECREF(bytes);
     return retval;
@@ -139,14 +164,17 @@ out:
 
 #ifdef HAVE_GETSPENT
 
-PyDoc_STRVAR(spwd_getspall__doc__,
-"getspall() -> list_of_entries\n\
-Return a list of all available shadow password database entries, \
-in arbitrary order.\n\
-See spwd.__doc__ for more on shadow password database entries.");
+/*[clinic input]
+spwd.getspall
+
+Return a list of all available shadow password database entries, in arbitrary order.
+
+See `help(spwd)` for more on shadow password database entries.
+[clinic start generated code]*/
 
 static PyObject *
-spwd_getspall(PyObject *self, PyObject *args)
+spwd_getspall_impl(PyObject *module)
+/*[clinic end generated code: output=4fda298d6bf6d057 input=b2c84b7857d622bd]*/
 {
     PyObject *d;
     struct spwd *p;
@@ -154,7 +182,7 @@ spwd_getspall(PyObject *self, PyObject *args)
         return NULL;
     setspent();
     while ((p = getspent()) != NULL) {
-        PyObject *v = mkspent(p);
+        PyObject *v = mkspent(module, p);
         if (v == NULL || PyList_Append(d, v) != 0) {
             Py_XDECREF(v);
             Py_DECREF(d);
@@ -171,42 +199,62 @@ spwd_getspall(PyObject *self, PyObject *args)
 
 static PyMethodDef spwd_methods[] = {
 #ifdef HAVE_GETSPNAM
-    {"getspnam",        spwd_getspnam, METH_VARARGS, spwd_getspnam__doc__},
+    SPWD_GETSPNAM_METHODDEF
 #endif
 #ifdef HAVE_GETSPENT
-    {"getspall",        spwd_getspall, METH_NOARGS, spwd_getspall__doc__},
+    SPWD_GETSPALL_METHODDEF
 #endif
     {NULL,              NULL}           /* sentinel */
 };
 
+static int
+spwdmodule_exec(PyObject *module)
+{
+    spwdmodulestate *state = get_spwd_state(module);
 
+    state->StructSpwdType = PyStructSequence_NewType(&struct_spwd_type_desc);
+    if (state->StructSpwdType == NULL) {
+        return -1;
+    }
+    if (PyModule_AddType(module, state->StructSpwdType) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static PyModuleDef_Slot spwdmodule_slots[] = {
+    {Py_mod_exec, spwdmodule_exec},
+    {0, NULL}
+};
+
+static int spwdmodule_traverse(PyObject *m, visitproc visit, void *arg) {
+    Py_VISIT(get_spwd_state(m)->StructSpwdType);
+    return 0;
+}
+
+static int spwdmodule_clear(PyObject *m) {
+    Py_CLEAR(get_spwd_state(m)->StructSpwdType);
+    return 0;
+}
+
+static void spwdmodule_free(void *m) {
+    spwdmodule_clear((PyObject *)m);
+}
 
 static struct PyModuleDef spwdmodule = {
     PyModuleDef_HEAD_INIT,
-    "spwd",
-    spwd__doc__,
-    -1,
-    spwd_methods,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    .m_name = "spwd",
+    .m_doc = spwd__doc__,
+    .m_size = sizeof(spwdmodulestate),
+    .m_methods = spwd_methods,
+    .m_slots = spwdmodule_slots,
+    .m_traverse = spwdmodule_traverse,
+    .m_clear = spwdmodule_clear,
+    .m_free = spwdmodule_free,
 };
 
 PyMODINIT_FUNC
 PyInit_spwd(void)
 {
-    PyObject *m;
-    m=PyModule_Create(&spwdmodule);
-    if (m == NULL)
-        return NULL;
-    if (!initialized) {
-        if (PyStructSequence_InitType2(&StructSpwdType,
-                                       &struct_spwd_type_desc) < 0)
-            return NULL;
-    }
-    Py_INCREF((PyObject *) &StructSpwdType);
-    PyModule_AddObject(m, "struct_spwd", (PyObject *) &StructSpwdType);
-    initialized = 1;
-    return m;
+    return PyModuleDef_Init(&spwdmodule);
 }

@@ -18,15 +18,19 @@ Sorting Basics
 ==============
 
 A simple ascending sort is very easy: just call the :func:`sorted` function. It
-returns a new sorted list::
+returns a new sorted list:
+
+.. doctest::
 
     >>> sorted([5, 2, 3, 1, 4])
     [1, 2, 3, 4, 5]
 
 You can also use the :meth:`list.sort` method. It modifies the list
-in-place (and returns *None* to avoid confusion). Usually it's less convenient
+in-place (and returns ``None`` to avoid confusion). Usually it's less convenient
 than :func:`sorted` - but if you don't need the original list, it's slightly
 more efficient.
+
+.. doctest::
 
     >>> a = [5, 2, 3, 1, 4]
     >>> a.sort()
@@ -36,6 +40,8 @@ more efficient.
 Another difference is that the :meth:`list.sort` method is only defined for
 lists. In contrast, the :func:`sorted` function accepts any iterable.
 
+.. doctest::
+
     >>> sorted({1: 'D', 2: 'B', 3: 'B', 4: 'E', 5: 'A'})
     [1, 2, 3, 4, 5]
 
@@ -43,43 +49,51 @@ Key Functions
 =============
 
 Both :meth:`list.sort` and :func:`sorted` have a *key* parameter to specify a
-function to be called on each list element prior to making comparisons.
+function (or other callable) to be called on each list element prior to making
+comparisons.
 
 For example, here's a case-insensitive string comparison:
+
+.. doctest::
 
     >>> sorted("This is a test string from Andrew".split(), key=str.lower)
     ['a', 'Andrew', 'from', 'is', 'string', 'test', 'This']
 
-The value of the *key* parameter should be a function that takes a single argument
-and returns a key to use for sorting purposes. This technique is fast because
-the key function is called exactly once for each input record.
+The value of the *key* parameter should be a function (or other callable) that
+takes a single argument and returns a key to use for sorting purposes. This
+technique is fast because the key function is called exactly once for each
+input record.
 
 A common pattern is to sort complex objects using some of the object's indices
 as keys. For example:
 
+.. doctest::
+
     >>> student_tuples = [
-        ('john', 'A', 15),
-        ('jane', 'B', 12),
-        ('dave', 'B', 10),
-    ]
+    ...     ('john', 'A', 15),
+    ...     ('jane', 'B', 12),
+    ...     ('dave', 'B', 10),
+    ... ]
     >>> sorted(student_tuples, key=lambda student: student[2])   # sort by age
     [('dave', 'B', 10), ('jane', 'B', 12), ('john', 'A', 15)]
 
 The same technique works for objects with named attributes. For example:
 
+.. doctest::
+
     >>> class Student:
-            def __init__(self, name, grade, age):
-                self.name = name
-                self.grade = grade
-                self.age = age
-            def __repr__(self):
-                return repr((self.name, self.grade, self.age))
+    ...     def __init__(self, name, grade, age):
+    ...         self.name = name
+    ...         self.grade = grade
+    ...         self.age = age
+    ...     def __repr__(self):
+    ...         return repr((self.name, self.grade, self.age))
 
     >>> student_objects = [
-        Student('john', 'A', 15),
-        Student('jane', 'B', 12),
-        Student('dave', 'B', 10),
-    ]
+    ...     Student('john', 'A', 15),
+    ...     Student('jane', 'B', 12),
+    ...     Student('dave', 'B', 10),
+    ... ]
     >>> sorted(student_objects, key=lambda student: student.age)   # sort by age
     [('dave', 'B', 10), ('jane', 'B', 12), ('john', 'A', 15)]
 
@@ -93,6 +107,8 @@ convenience functions to make accessor functions easier and faster. The
 
 Using those functions, the above examples become simpler and faster:
 
+.. doctest::
+
     >>> from operator import itemgetter, attrgetter
 
     >>> sorted(student_tuples, key=itemgetter(2))
@@ -103,6 +119,8 @@ Using those functions, the above examples become simpler and faster:
 
 The operator module functions allow multiple levels of sorting. For example, to
 sort by *grade* then by *age*:
+
+.. doctest::
 
     >>> sorted(student_tuples, key=itemgetter(1,2))
     [('john', 'A', 15), ('dave', 'B', 10), ('jane', 'B', 12)]
@@ -117,6 +135,8 @@ Both :meth:`list.sort` and :func:`sorted` accept a *reverse* parameter with a
 boolean value. This is used to flag descending sorts. For example, to get the
 student data in reverse *age* order:
 
+.. doctest::
+
     >>> sorted(student_tuples, key=itemgetter(2), reverse=True)
     [('john', 'A', 15), ('jane', 'B', 12), ('dave', 'B', 10)]
 
@@ -127,8 +147,10 @@ Sort Stability and Complex Sorts
 ================================
 
 Sorts are guaranteed to be `stable
-<http://en.wikipedia.org/wiki/Sorting_algorithm#Stability>`_\. That means that
+<https://en.wikipedia.org/wiki/Sorting_algorithm#Stability>`_\. That means that
 when multiple records have the same key, their original order is preserved.
+
+.. doctest::
 
     >>> data = [('red', 1), ('blue', 1), ('red', 2), ('blue', 2)]
     >>> sorted(data, key=itemgetter(0))
@@ -141,11 +163,26 @@ This wonderful property lets you build complex sorts in a series of sorting
 steps. For example, to sort the student data by descending *grade* and then
 ascending *age*, do the *age* sort first and then sort again using *grade*:
 
+.. doctest::
+
     >>> s = sorted(student_objects, key=attrgetter('age'))     # sort on secondary key
     >>> sorted(s, key=attrgetter('grade'), reverse=True)       # now sort on primary key, descending
     [('dave', 'B', 10), ('jane', 'B', 12), ('john', 'A', 15)]
 
-The `Timsort <http://en.wikipedia.org/wiki/Timsort>`_ algorithm used in Python
+This can be abstracted out into a wrapper function that can take a list and
+tuples of field and order to sort them on multiple passes.
+
+.. doctest::
+
+    >>> def multisort(xs, specs):
+    ...     for key, reverse in reversed(specs):
+    ...         xs.sort(key=attrgetter(key), reverse=reverse)
+    ...     return xs
+
+    >>> multisort(list(student_objects), (('grade', True), ('age', False)))
+    [('dave', 'B', 10), ('jane', 'B', 12), ('john', 'A', 15)]
+
+The `Timsort <https://en.wikipedia.org/wiki/Timsort>`_ algorithm used in Python
 does multiple sorts efficiently because it can take advantage of any ordering
 already present in a dataset.
 
@@ -184,7 +221,7 @@ decorated list, but including it gives two benefits:
   directly.
 
 Another name for this idiom is
-`Schwartzian transform <http://en.wikipedia.org/wiki/Schwartzian_transform>`_\,
+`Schwartzian transform <https://en.wikipedia.org/wiki/Schwartzian_transform>`_\,
 after Randal L. Schwartz, who popularized it among Perl programmers.
 
 Now that Python sorting provides key-functions, this technique is not often needed.
@@ -207,21 +244,27 @@ comparisons. That function should take two arguments to be compared and then
 return a negative value for less-than, return zero if they are equal, or return
 a positive value for greater-than. For example, we can do:
 
+.. doctest::
+
     >>> def numeric_compare(x, y):
-            return x - y
-    >>> sorted([5, 2, 4, 1, 3], cmp=numeric_compare)
+    ...     return x - y
+    >>> sorted([5, 2, 4, 1, 3], cmp=numeric_compare) # doctest: +SKIP
     [1, 2, 3, 4, 5]
 
 Or you can reverse the order of comparison with:
 
+.. doctest::
+
     >>> def reverse_numeric(x, y):
-            return y - x
-    >>> sorted([5, 2, 4, 1, 3], cmp=reverse_numeric)
+    ...     return y - x
+    >>> sorted([5, 2, 4, 1, 3], cmp=reverse_numeric) # doctest: +SKIP
     [5, 4, 3, 2, 1]
 
 When porting code from Python 2.x to 3.x, the situation can arise when you have
 the user supplying a comparison function and you need to convert that to a key
-function. The following wrapper makes that easy to do::
+function. The following wrapper makes that easy to do:
+
+.. testcode::
 
     def cmp_to_key(mycmp):
         'Convert a cmp= function into a key= function'
@@ -242,7 +285,19 @@ function. The following wrapper makes that easy to do::
                 return mycmp(self.obj, other.obj) != 0
         return K
 
+.. doctest::
+    :hide:
+
+    >>> sorted([5, 2, 4, 1, 3], key=cmp_to_key(reverse_numeric))
+    [5, 4, 3, 2, 1]
+
 To convert to a key function, just wrap the old comparison function:
+
+.. testsetup::
+
+    from functools import cmp_to_key
+
+.. doctest::
 
     >>> sorted([5, 2, 4, 1, 3], key=cmp_to_key(reverse_numeric))
     [5, 4, 3, 2, 1]
@@ -261,12 +316,20 @@ Odd and Ends
   simulated without the parameter by using the builtin :func:`reversed` function
   twice:
 
+  .. doctest::
+
     >>> data = [('red', 1), ('blue', 1), ('red', 2), ('blue', 2)]
-    >>> assert sorted(data, reverse=True) == list(reversed(sorted(reversed(data))))
+    >>> standard_way = sorted(data, key=itemgetter(0), reverse=True)
+    >>> double_reversed = list(reversed(sorted(reversed(data), key=itemgetter(0))))
+    >>> assert standard_way == double_reversed
+    >>> standard_way
+    [('red', 1), ('red', 2), ('blue', 1), ('blue', 2)]
 
 * The sort routines are guaranteed to use :meth:`__lt__` when making comparisons
   between two objects. So, it is easy to add a standard sort order to a class by
-  defining an :meth:`__lt__` method::
+  defining an :meth:`__lt__` method:
+
+  .. doctest::
 
     >>> Student.__lt__ = lambda self, other: self.age < other.age
     >>> sorted(student_objects)
@@ -276,6 +339,8 @@ Odd and Ends
   function can also access external resources. For instance, if the student grades
   are stored in a dictionary, they can be used to sort a separate list of student
   names:
+
+  .. doctest::
 
     >>> students = ['dave', 'john', 'jane']
     >>> newgrades = {'john': 'F', 'jane':'A', 'dave': 'C'}

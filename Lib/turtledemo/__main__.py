@@ -89,13 +89,12 @@ import sys
 import os
 
 from tkinter import *
-from idlelib.Percolator import Percolator
-from idlelib.ColorDelegator import ColorDelegator
-from idlelib.textView import view_text
+from idlelib.colorizer import ColorDelegator, color_config
+from idlelib.percolator import Percolator
+from idlelib.textview import view_text
 from turtledemo import __doc__ as about_turtledemo
 
 import turtle
-import time
 
 demo_dir = os.path.dirname(os.path.abspath(__file__))
 darwin = sys.platform == 'darwin'
@@ -124,6 +123,7 @@ help_entries = (  # (help_label,  help_doc)
     ('About turtle module', turtle.__doc__),
     )
 
+
 class DemoWindow(object):
 
     def __init__(self, filename=None):
@@ -135,7 +135,7 @@ class DemoWindow(object):
             import subprocess
             # Make sure we are the currently activated OS X application
             # so that our menu bar appears.
-            p = subprocess.Popen(
+            subprocess.run(
                     [
                         'osascript',
                         '-e', 'tell application "System Events"',
@@ -170,15 +170,23 @@ class DemoWindow(object):
         self.output_lbl = Label(root, height= 1, text=" --- ", bg="#ddf",
                                 font=("Arial", 16, 'normal'), borderwidth=2,
                                 relief=RIDGE)
-        self.start_btn = Button(root, text=" START ", font=btnfont,
-                                fg="white", disabledforeground = "#fed",
-                                command=self.startDemo)
-        self.stop_btn = Button(root, text=" STOP ", font=btnfont,
-                               fg="white", disabledforeground = "#fed",
-                               command=self.stopIt)
-        self.clear_btn = Button(root, text=" CLEAR ", font=btnfont,
-                                fg="white", disabledforeground="#fed",
-                                command = self.clearCanvas)
+        if darwin:  # Leave Mac button colors alone - #44254.
+            self.start_btn = Button(root, text=" START ", font=btnfont,
+                                    fg='#00cc22', command=self.startDemo)
+            self.stop_btn = Button(root, text=" STOP ", font=btnfont,
+                                   fg='#00cc22', command=self.stopIt)
+            self.clear_btn = Button(root, text=" CLEAR ", font=btnfont,
+                                    fg='#00cc22', command = self.clearCanvas)
+        else:
+            self.start_btn = Button(root, text=" START ", font=btnfont,
+                                    fg="white", disabledforeground = "#fed",
+                                    command=self.startDemo)
+            self.stop_btn = Button(root, text=" STOP ", font=btnfont,
+                                   fg="white", disabledforeground = "#fed",
+                                   command=self.stopIt)
+            self.clear_btn = Button(root, text=" CLEAR ", font=btnfont,
+                                    fg="white", disabledforeground="#fed",
+                                    command = self.clearCanvas)
         self.output_lbl.grid(row=1, column=0, sticky='news', padx=(0,5))
         self.start_btn.grid(row=1, column=1, sticky='ew')
         self.stop_btn.grid(row=1, column=2, sticky='ew')
@@ -204,6 +212,7 @@ class DemoWindow(object):
         self.text_frame = text_frame = Frame(root)
         self.text = text = Text(text_frame, name='text', padx=5,
                                 wrap='none', width=45)
+        color_config(text)
 
         self.vbar = vbar = Scrollbar(text_frame, name='vbar')
         vbar['command'] = text.yview
@@ -257,7 +266,7 @@ class DemoWindow(object):
         return 'break'
 
     def update_mousewheel(self, event):
-        # For wheel up, event.delte = 120 on Windows, -1 on darwin.
+        # For wheel up, event.delta = 120 on Windows, -1 on darwin.
         # X-11 sends Control-Button-4 event instead.
         if (event.delta < 0) == (not darwin):
             return self.decrease_size()
@@ -265,12 +274,17 @@ class DemoWindow(object):
             return self.increase_size()
 
     def configGUI(self, start, stop, clear, txt="", color="blue"):
-        self.start_btn.config(state=start,
-                              bg="#d00" if start == NORMAL else "#fca")
-        self.stop_btn.config(state=stop,
-                             bg="#d00" if stop == NORMAL else "#fca")
-        self.clear_btn.config(state=clear,
-                              bg="#d00" if clear == NORMAL else"#fca")
+        if darwin:  # Leave Mac button colors alone - #44254.
+            self.start_btn.config(state=start)
+            self.stop_btn.config(state=stop)
+            self.clear_btn.config(state=clear)
+        else:
+            self.start_btn.config(state=start,
+                                  bg="#d00" if start == NORMAL else "#fca")
+            self.stop_btn.config(state=stop,
+                                 bg="#d00" if stop == NORMAL else "#fca")
+            self.clear_btn.config(state=clear,
+                                  bg="#d00" if clear == NORMAL else "#fca")
         self.output_lbl.config(text=txt, fg=color)
 
     def makeLoadDemoMenu(self, master):
@@ -344,6 +358,8 @@ class DemoWindow(object):
             else:
                 self.state = DONE
         except turtle.Terminator:
+            if self.root is None:
+                return
             self.state = DONE
             result = "stopped!"
         if self.state == DONE:
@@ -369,7 +385,9 @@ class DemoWindow(object):
         turtle.TurtleScreen._RUNNING = False
 
     def _destroy(self):
+        turtle.TurtleScreen._RUNNING = False
         self.root.destroy()
+        self.root = None
 
 
 def main():

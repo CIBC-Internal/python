@@ -3,6 +3,7 @@
 
 .. module:: http.cookies
    :synopsis: Support for HTTP state management (cookies).
+
 .. moduleauthor:: Timothy O'Malley <timo@alum.mit.edu>
 .. sectionauthor:: Moshe Zadka <moshez@zadka.site.co.il>
 
@@ -54,8 +55,9 @@ in Cookie name (as :attr:`~Morsel.key`).
 .. class:: SimpleCookie([input])
 
    This class derives from :class:`BaseCookie` and overrides :meth:`value_decode`
-   and :meth:`value_encode` to be the identity and :func:`str` respectively.
-
+   and :meth:`value_encode`. SimpleCookie supports strings as cookie values.
+   When setting the value, SimpleCookie calls the builtin :func:`str()` to convert
+   the value to a string. Values received from HTTP are kept as strings.
 
 .. seealso::
 
@@ -75,16 +77,17 @@ Cookie Objects
 
 .. method:: BaseCookie.value_decode(val)
 
-   Return a decoded value from a string representation. Return value can be any
-   type. This method does nothing in :class:`BaseCookie` --- it exists so it can be
-   overridden.
+   Return a tuple ``(real_value, coded_value)`` from a string representation.
+   ``real_value`` can be any type. This method does no decoding in
+   :class:`BaseCookie` --- it exists so it can be overridden.
 
 
 .. method:: BaseCookie.value_encode(val)
 
-   Return an encoded value. *val* can be any type, but return value must be a
-   string. This method does nothing in :class:`BaseCookie` --- it exists so it can
-   be overridden
+   Return a tuple ``(real_value, coded_value)``. *val* can be any type, but
+   ``coded_value`` will always be converted to a string.
+   This method does no encoding in :class:`BaseCookie` --- it exists so it can
+   be overridden.
 
    In general, it should be the case that :meth:`value_encode` and
    :meth:`value_decode` are inverses on the range of *value_decode*.
@@ -136,12 +139,29 @@ Morsel Objects
    * ``secure``
    * ``version``
    * ``httponly``
+   * ``samesite``
 
    The attribute :attr:`httponly` specifies that the cookie is only transferred
    in HTTP requests, and is not accessible through JavaScript. This is intended
    to mitigate some forms of cross-site scripting.
 
-   The keys are case-insensitive.
+   The attribute :attr:`samesite` specifies that the browser is not allowed to
+   send the cookie along with cross-site requests. This helps to mitigate CSRF
+   attacks. Valid values for this attribute are "Strict" and "Lax".
+
+   The keys are case-insensitive and their default value is ``''``.
+
+   .. versionchanged:: 3.5
+      :meth:`~Morsel.__eq__` now takes :attr:`~Morsel.key` and :attr:`~Morsel.value`
+      into account.
+
+   .. versionchanged:: 3.7
+      Attributes :attr:`~Morsel.key`, :attr:`~Morsel.value` and
+      :attr:`~Morsel.coded_value` are read-only.  Use :meth:`~Morsel.set` for
+      setting them.
+
+   .. versionchanged:: 3.8
+      Added support for the :attr:`samesite` attribute.
 
 
 .. attribute:: Morsel.value
@@ -191,6 +211,30 @@ Morsel Objects
    JavaScript.
 
    The meaning for *attrs* is the same as in :meth:`output`.
+
+
+.. method:: Morsel.update(values)
+
+   Update the values in the Morsel dictionary with the values in the dictionary
+   *values*.  Raise an error if any of the keys in the *values* dict is not a
+   valid :rfc:`2109` attribute.
+
+   .. versionchanged:: 3.5
+      an error is raised for invalid keys.
+
+
+.. method:: Morsel.copy(value)
+
+   Return a shallow copy of the Morsel object.
+
+   .. versionchanged:: 3.5
+      return a Morsel object instead of a dict.
+
+
+.. method:: Morsel.setdefault(key, value=None)
+
+   Raise an error if key is not a valid :rfc:`2109` attribute, otherwise
+   behave the same as :meth:`dict.setdefault`.
 
 
 .. _cookie-example:

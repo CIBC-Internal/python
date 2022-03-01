@@ -93,7 +93,6 @@ __all__ = [
 ]
 
 import __future__
-import argparse
 import difflib
 import inspect
 import linecache
@@ -103,7 +102,7 @@ import re
 import sys
 import traceback
 import unittest
-from io import StringIO
+from io import StringIO, IncrementalNewlineDecoder
 from collections import namedtuple
 
 TestResults = namedtuple('TestResults', 'failed attempted')
@@ -212,17 +211,25 @@ def _normalize_module(module, depth=2):
     else:
         raise TypeError("Expected a module, string, or None")
 
+def _newline_convert(data):
+    # The IO module provides a handy decoder for universal newline conversion
+    return IncrementalNewlineDecoder(None, True).decode(data, True)
+
 def _load_testfile(filename, package, module_relative, encoding):
     if module_relative:
         package = _normalize_module(package, 3)
         filename = _module_relative_path(package, filename)
-        if getattr(package, '__loader__', None) is not None:
-            if hasattr(package.__loader__, 'get_data'):
-                file_contents = package.__loader__.get_data(filename)
-                file_contents = file_contents.decode(encoding)
-                # get_data() opens files as 'rb', so one must do the equivalent
-                # conversion as universal newlines would do.
-                return file_contents.replace(os.linesep, '\n'), filename
+        if (loader := getattr(package, '__loader__', None)) is None:
+            try:
+                loader = package.__spec__.loader
+            except AttributeError:
+                pass
+        if hasattr(loader, 'get_data'):
+            file_contents = loader.get_data(filename)
+            file_contents = file_contents.decode(encoding)
+            # get_data() opens files as 'rb', so one must do the equivalent
+            # conversion as universal newlines would do.
+            return _newline_convert(file_contents), filename
     with open(filename, encoding=encoding) as f:
         return f.read(), filename
 
@@ -381,11 +388,14 @@ class _OutputRedirectingPdb(pdb.Pdb):
             sys.stdout = save_stdout
 
 # [XX] Normalize with respect to os.path.pardir?
-def _module_relative_path(module, path):
+def _module_relative_path(module, test_path):
     if not inspect.ismodule(module):
         raise TypeError('Expected a module: %r' % module)
-    if path.startswith('/'):
+    if test_path.startswith('/'):
         raise ValueError('Module-relative files may not have absolute paths')
+
+    # Normalize the path. On Windows, replace "/" with "\".
+    test_path = os.path.join(*(test_path.split('/')))
 
     # Find the base directory for the path.
     if hasattr(module, '__file__'):
@@ -398,12 +408,19 @@ def _module_relative_path(module, path):
         else:
             basedir = os.curdir
     else:
-        # A module w/o __file__ (this includes builtins)
-        raise ValueError("Can't resolve paths relative to the module " +
-                         module + " (it has no __file__)")
+        if hasattr(module, '__path__'):
+            for directory in module.__path__:
+                fullpath = os.path.join(directory, test_path)
+                if os.path.exists(fullpath):
+                    return fullpath
 
-    # Combine the base directory and the path.
-    return os.path.join(basedir, *(path.split('/')))
+        # A module w/o __file__ (this includes builtins)
+        raise ValueError("Can't resolve paths relative to the module "
+                         "%r (it has no __file__)"
+                         % module.__name__)
+
+    # Combine the base directory and the test path.
+    return os.path.join(basedir, test_path)
 
 ######################################################################
 ## 2. Example & DocTest
@@ -530,8 +547,9 @@ class DocTest:
             examples = '1 example'
         else:
             examples = '%d examples' % len(self.examples)
-        return ('<DocTest %s from %s:%s (%s)>' %
-                (self.name, self.filename, self.lineno, examples))
+        return ('<%s %s from %s:%s (%s)>' %
+                (self.__class__.__name__,
+                 self.name, self.filename, self.lineno, examples))
 
     def __eq__(self, other):
         if type(self) is not type(other):
@@ -754,7 +772,7 @@ class DocTestParser:
 
     # This regular expression finds the indentation of every non-blank
     # line in a string.
-    _INDENT_RE = re.compile('^([ ]*)(?=\S)', re.MULTILINE)
+    _INDENT_RE = re.compile(r'^([ ]*)(?=\S)', re.MULTILINE)
 
     def _min_indent(self, s):
         "Return the minimum indentation of any non-blank line in `s`"
@@ -955,6 +973,17 @@ class DocTestFinder:
         else:
             raise ValueError("object must be a class or function")
 
+    def _is_routine(self, obj):
+        """
+        Safely unwrap objects and determine if they are functions.
+        """
+        maybe_routine = obj
+        try:
+            maybe_routine = inspect.unwrap(maybe_routine)
+        except ValueError:
+            pass
+        return inspect.isroutine(maybe_routine)
+
     def _find(self, tests, obj, name, module, source_lines, globs, seen):
         """
         Find tests for the given object and any contained objects, and
@@ -977,8 +1006,9 @@ class DocTestFinder:
         if inspect.ismodule(obj) and self._recurse:
             for valname, val in obj.__dict__.items():
                 valname = '%s.%s' % (name, valname)
+
                 # Recurse to functions & classes.
-                if ((inspect.isroutine(val) or inspect.isclass(val)) and
+                if ((self._is_routine(val) or inspect.isclass(val)) and
                     self._from_module(module, val)):
                     self._find(tests, val, valname, module, source_lines,
                                globs, seen)
@@ -1004,10 +1034,8 @@ class DocTestFinder:
         if inspect.isclass(obj) and self._recurse:
             for valname, val in obj.__dict__.items():
                 # Special handling for staticmethod/classmethod.
-                if isinstance(val, staticmethod):
-                    val = getattr(obj, valname)
-                if isinstance(val, classmethod):
-                    val = getattr(obj, valname).__func__
+                if isinstance(val, (staticmethod, classmethod)):
+                    val = val.__func__
 
                 # Recurse to methods, properties, and nested classes.
                 if ((inspect.isroutine(val) or inspect.isclass(val) or
@@ -1048,8 +1076,9 @@ class DocTestFinder:
         if module is None:
             filename = None
         else:
-            filename = getattr(module, '__file__', module.__name__)
-            if filename[-4:] in (".pyc", ".pyo"):
+            # __file__ can be None for namespace packages.
+            filename = getattr(module, '__file__', None) or module.__name__
+            if filename[-4:] == ".pyc":
                 filename = filename[:-1]
         return self._parser.get_doctest(docstring, globs, name,
                                         filename, lineno)
@@ -1094,7 +1123,7 @@ class DocTestFinder:
         if lineno is not None:
             if source_lines is None:
                 return lineno+1
-            pat = re.compile('(^|.*:)\s*\w*("|\')')
+            pat = re.compile(r'(^|.*:)\s*\w*("|\')')
             for lineno in range(lineno, len(source_lines)):
                 if pat.match(source_lines[lineno]):
                     return lineno
@@ -1315,7 +1344,7 @@ class DocTestRunner:
             try:
                 # Don't blink!  This is where the user's code gets run.
                 exec(compile(example.source, filename, "single",
-                             compileflags, 1), test.globs)
+                             compileflags, True), test.globs)
                 self.debugger.set_continue() # ==== Example Finished ====
                 exception = None
             except KeyboardInterrupt:
@@ -1573,7 +1602,7 @@ class OutputChecker:
 
         # If `want` contains hex-escaped character such as "\u1234",
         # then `want` is a string of six characters(e.g. [\,u,1,2,3,4]).
-        # On the other hand, `got` could be an another sequence of
+        # On the other hand, `got` could be another sequence of
         # characters such as [\u1234], so `want` and `got` should
         # be folded to hex-escaped ASCII string to compare.
         got = self._toAscii(got)
@@ -1596,11 +1625,11 @@ class OutputChecker:
         # blank line, unless the DONT_ACCEPT_BLANKLINE flag is used.
         if not (optionflags & DONT_ACCEPT_BLANKLINE):
             # Replace <BLANKLINE> in want with a blank line.
-            want = re.sub('(?m)^%s\s*?$' % re.escape(BLANKLINE_MARKER),
+            want = re.sub(r'(?m)^%s\s*?$' % re.escape(BLANKLINE_MARKER),
                           '', want)
             # If a line in got contains only spaces, then remove the
             # spaces.
-            got = re.sub('(?m)^\s*?$', '', got)
+            got = re.sub(r'(?m)^[^\S\n]+$', '', got)
             if got == want:
                 return True
 
@@ -1679,8 +1708,6 @@ class OutputChecker:
                 kind = 'ndiff with -expected +actual'
             else:
                 assert 0, 'Bad diff option'
-            # Remove trailing whitespace on diff output.
-            diff = [line.rstrip() + '\n' for line in diff]
             return 'Differences (%s):\n' % kind + _indent(''.join(diff))
 
         # If we're not using diff, then simply list the expected
@@ -2291,7 +2318,7 @@ class DocTestCase(unittest.TestCase):
         name = self._dt_test.name.split('.')
         return "%s (%s)" % (name[-1], '.'.join(name[:-1]))
 
-    __str__ = __repr__
+    __str__ = object.__str__
 
     def shortDescription(self):
         return "Doctest: " + self._dt_test.name
@@ -2367,15 +2394,6 @@ def DocTestSuite(module=None, globs=None, extraglobs=None, test_finder=None,
         suite = _DocTestSuite()
         suite.addTest(SkipDocTestCase(module))
         return suite
-    elif not tests:
-        # Why do we want to do this? Because it reveals a bug that might
-        # otherwise be hidden.
-        # It is probably a bug that this exception is not also raised if the
-        # number of doctest examples in tests is zero (i.e. if no doctest
-        # examples were found).  However, we should probably not be raising
-        # an exception at all here, though it is too late to make this change
-        # for a maintenance release.  See also issue #14649.
-        raise ValueError(module, "has no docstrings")
 
     tests.sort()
     suite = _DocTestSuite()
@@ -2385,7 +2403,7 @@ def DocTestSuite(module=None, globs=None, extraglobs=None, test_finder=None,
             continue
         if not test.filename:
             filename = module.__file__
-            if filename[-4:] in (".pyc", ".pyo"):
+            if filename[-4:] == ".pyc":
                 filename = filename[:-1]
             test.filename = filename
         suite.addTest(DocTestCase(test, **options))
@@ -2399,7 +2417,6 @@ class DocFileCase(DocTestCase):
 
     def __repr__(self):
         return self._dt_test.filename
-    __str__ = __repr__
 
     def format_failure(self, err):
         return ('Failed doctest test for %s\n  File "%s", line 0\n\n%s'
@@ -2738,6 +2755,8 @@ __test__ = {"_TestClass": _TestClass,
 
 
 def _test():
+    import argparse
+
     parser = argparse.ArgumentParser(description="doctest runner")
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='print very verbose output for all tests')

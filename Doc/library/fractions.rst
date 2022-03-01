@@ -3,6 +3,7 @@
 
 .. module:: fractions
    :synopsis: Rational numbers.
+
 .. moduleauthor:: Jeffrey Yasskin <jyasskin at gmail.com>
 .. sectionauthor:: Jeffrey Yasskin <jyasskin at gmail.com>
 
@@ -83,6 +84,10 @@ another rational number, or from a string.
       The :class:`Fraction` constructor now accepts :class:`float` and
       :class:`decimal.Decimal` instances.
 
+   .. versionchanged:: 3.9
+      The :func:`math.gcd` function is now used to normalize the *numerator*
+      and *denominator*. :func:`math.gcd` always return a :class:`int` type.
+      Previously, the GCD type depended on *numerator* and *denominator*.
 
    .. attribute:: numerator
 
@@ -93,11 +98,18 @@ another rational number, or from a string.
       Denominator of the Fraction in lowest term.
 
 
+   .. method:: as_integer_ratio()
+
+      Return a tuple of two integers, whose ratio is equal
+      to the Fraction and with a positive denominator.
+
+      .. versionadded:: 3.8
+
    .. method:: from_float(flt)
 
       This class method constructs a :class:`Fraction` representing the exact
       value of *flt*, which must be a :class:`float`. Beware that
-      ``Fraction.from_float(0.3)`` is not the same value as ``Fraction(3, 10)``
+      ``Fraction.from_float(0.3)`` is not the same value as ``Fraction(3, 10)``.
 
       .. note::
 
@@ -162,15 +174,6 @@ another rational number, or from a string.
       nearest multiple of ``Fraction(1, 10**ndigits)`` (logically, if
       ``ndigits`` is negative), again rounding half toward even.  This
       method can also be accessed through the :func:`round` function.
-
-
-.. function:: gcd(a, b)
-
-   Return the greatest common divisor of the integers *a* and *b*.  If either
-   *a* or *b* is nonzero, then the absolute value of ``gcd(a, b)`` is the
-   largest integer that divides both *a* and *b*.  ``gcd(a,b)`` has the same
-   sign as *b* if *b* is nonzero; otherwise it takes the sign of *a*.  ``gcd(0,
-   0)`` returns ``0``.
 
 
 .. seealso::

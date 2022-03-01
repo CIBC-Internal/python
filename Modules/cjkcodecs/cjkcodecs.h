@@ -72,7 +72,7 @@ static const struct dbcs_map *mapping_list;
 #define ENCODER(encoding)                                               \
     static Py_ssize_t encoding##_encode(                                \
         MultibyteCodec_State *state, const void *config,                \
-        int kind, void *data,                          \
+        int kind, const void *data,                                     \
         Py_ssize_t *inpos, Py_ssize_t inlen,                            \
         unsigned char **outbuf, Py_ssize_t outleft, int flags)
 #define ENCODER_RESET(encoding)                                         \
@@ -149,40 +149,42 @@ static const struct dbcs_map *mapping_list;
         writer->pos += 2;                                                  \
     } while (0)
 
-#define OUTBYTE1(c) \
-    do { ((*outbuf)[0]) = (c); } while (0)
-#define OUTBYTE2(c) \
-    do { ((*outbuf)[1]) = (c); } while (0)
-#define OUTBYTE3(c) \
-    do { ((*outbuf)[2]) = (c); } while (0)
-#define OUTBYTE4(c) \
-    do { ((*outbuf)[3]) = (c); } while (0)
+#define OUTBYTEI(c, i)                     \
+    do {                                   \
+        assert((unsigned char)(c) == (c)); \
+        ((*outbuf)[i]) = (c);              \
+    } while (0)
+
+#define OUTBYTE1(c) OUTBYTEI(c, 0)
+#define OUTBYTE2(c) OUTBYTEI(c, 1)
+#define OUTBYTE3(c) OUTBYTEI(c, 2)
+#define OUTBYTE4(c) OUTBYTEI(c, 3)
 
 #define WRITEBYTE1(c1)              \
     do {                            \
         REQUIRE_OUTBUF(1);          \
-        (*outbuf)[0] = (c1);        \
+        OUTBYTE1(c1);               \
     } while (0)
 #define WRITEBYTE2(c1, c2)          \
     do {                            \
         REQUIRE_OUTBUF(2);          \
-        (*outbuf)[0] = (c1);        \
-        (*outbuf)[1] = (c2);        \
+        OUTBYTE1(c1);               \
+        OUTBYTE2(c2);               \
     } while (0)
 #define WRITEBYTE3(c1, c2, c3)      \
     do {                            \
         REQUIRE_OUTBUF(3);          \
-        (*outbuf)[0] = (c1);        \
-        (*outbuf)[1] = (c2);        \
-        (*outbuf)[2] = (c3);        \
+        OUTBYTE1(c1);               \
+        OUTBYTE2(c2);               \
+        OUTBYTE3(c3);               \
     } while (0)
 #define WRITEBYTE4(c1, c2, c3, c4)  \
     do {                            \
         REQUIRE_OUTBUF(4);          \
-        (*outbuf)[0] = (c1);        \
-        (*outbuf)[1] = (c2);        \
-        (*outbuf)[2] = (c3);        \
-        (*outbuf)[3] = (c4);        \
+        OUTBYTE1(c1);               \
+        OUTBYTE2(c2);               \
+        OUTBYTE3(c3);               \
+        OUTBYTE4(c4);               \
     } while (0)
 
 #define _TRYMAP_ENC(m, assi, val)                               \
@@ -243,15 +245,13 @@ static const struct dbcs_map *mapping_list;
 static PyObject *
 getmultibytecodec(void)
 {
-    static PyObject *cofunc = NULL;
-
-    if (cofunc == NULL) {
-        PyObject *mod = PyImport_ImportModuleNoBlock("_multibytecodec");
-        if (mod == NULL)
-            return NULL;
-        cofunc = PyObject_GetAttrString(mod, "__create_codec");
-        Py_DECREF(mod);
+    PyObject *mod = PyImport_ImportModuleNoBlock("_multibytecodec");
+    if (mod == NULL) {
+        return NULL;
     }
+
+    PyObject *cofunc = PyObject_GetAttrString(mod, "__create_codec");
+    Py_DECREF(mod);
     return cofunc;
 }
 
@@ -267,7 +267,7 @@ getcodec(PyObject *self, PyObject *encoding)
                         "encoding name must be a string.");
         return NULL;
     }
-    enc = _PyUnicode_AsString(encoding);
+    enc = PyUnicode_AsUTF8(encoding);
     if (enc == NULL)
         return NULL;
 
@@ -289,16 +289,13 @@ getcodec(PyObject *self, PyObject *encoding)
     if (codecobj == NULL)
         return NULL;
 
-    r = PyObject_CallFunctionObjArgs(cofunc, codecobj, NULL);
+    r = PyObject_CallOneArg(cofunc, codecobj);
     Py_DECREF(codecobj);
+    Py_DECREF(cofunc);
 
     return r;
 }
 
-static struct PyMethodDef __methods[] = {
-    {"getcodec", (PyCFunction)getcodec, METH_O, ""},
-    {NULL, NULL},
-};
 
 static int
 register_maps(PyObject *module)
@@ -307,12 +304,17 @@ register_maps(PyObject *module)
 
     for (h = mapping_list; h->charset[0] != '\0'; h++) {
         char mhname[256] = "__map_";
-        int r;
         strcpy(mhname + sizeof("__map_") - 1, h->charset);
-        r = PyModule_AddObject(module, mhname,
-                        PyCapsule_New((void *)h, PyMultibyteCodec_CAPSULE_NAME, NULL));
-        if (r == -1)
+
+        PyObject *capsule = PyCapsule_New((void *)h,
+                                          PyMultibyteCodec_CAPSULE_NAME, NULL);
+        if (capsule == NULL) {
             return -1;
+        }
+        if (PyModule_AddObject(module, mhname, capsule) < 0) {
+            Py_DECREF(capsule);
+            return -1;
+        }
     }
     return 0;
 }
@@ -328,22 +330,26 @@ find_pairencmap(ucs2_t body, ucs2_t modifier,
     min = 0;
     max = haystacksize;
 
-    for (pos = haystacksize >> 1; min != max; pos = (min + max) >> 1)
+    for (pos = haystacksize >> 1; min != max; pos = (min + max) >> 1) {
         if (value < haystack[pos].uniseq) {
-            if (max == pos) break;
-            else max = pos;
+            if (max != pos) {
+                max = pos;
+                continue;
+            }
         }
         else if (value > haystack[pos].uniseq) {
-            if (min == pos) break;
-            else min = pos;
+            if (min != pos) {
+                min = pos;
+                continue;
+            }
         }
-        else
-            break;
+        break;
+    }
 
-        if (value == haystack[pos].uniseq)
-            return haystack[pos].code;
-        else
-            return DBCINV;
+    if (value == haystack[pos].uniseq) {
+        return haystack[pos].code;
+    }
+    return DBCINV;
 }
 #endif
 
@@ -362,7 +368,7 @@ importmap(const char *modname, const char *symbol,
     if (mod == NULL)
         return -1;
 
-    o = PyObject_GetAttrString(mod, (char*)symbol);
+    o = PyObject_GetAttrString(mod, symbol);
     if (o == NULL)
         goto errorexit;
     else if (!PyCapsule_IsValid(o, PyMultibyteCodec_CAPSULE_NAME)) {
@@ -389,25 +395,36 @@ errorexit:
 }
 #endif
 
+static int
+_cjk_exec(PyObject *module)
+{
+    return register_maps(module);
+}
+
+
+static struct PyMethodDef _cjk_methods[] = {
+    {"getcodec", (PyCFunction)getcodec, METH_O, ""},
+    {NULL, NULL},
+};
+
+static PyModuleDef_Slot _cjk_slots[] = {
+    {Py_mod_exec, _cjk_exec},
+    {0, NULL}
+};
+
 #define I_AM_A_MODULE_FOR(loc)                                          \
-    static struct PyModuleDef __module = {                              \
+    static struct PyModuleDef _cjk_module = {                           \
         PyModuleDef_HEAD_INIT,                                          \
-        "_codecs_"#loc,                                                 \
-        NULL,                                                           \
-        0,                                                              \
-        __methods,                                                      \
-        NULL,                                                           \
-        NULL,                                                           \
-        NULL,                                                           \
-        NULL                                                            \
+        .m_name = "_codecs_"#loc,                                       \
+        .m_size = 0,                                                    \
+        .m_methods = _cjk_methods,                                      \
+        .m_slots = _cjk_slots,                                          \
     };                                                                  \
-    PyObject*                                                           \
+                                                                        \
+    PyMODINIT_FUNC                                                      \
     PyInit__codecs_##loc(void)                                          \
     {                                                                   \
-        PyObject *m = PyModule_Create(&__module);                       \
-        if (m != NULL)                                                  \
-            (void)register_maps(m);                                     \
-        return m;                                                       \
+        return PyModuleDef_Init(&_cjk_module);                          \
     }
 
 #endif

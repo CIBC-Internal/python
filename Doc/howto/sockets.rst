@@ -45,7 +45,7 @@ likely to be other forms of IPC that are faster, but for
 cross-platform communication, sockets are about the only game in town.
 
 They were invented in Berkeley as part of the BSD flavor of Unix. They spread
-like wildfire with the Internet. With good reason --- the combination of sockets
+like wildfire with the internet. With good reason --- the combination of sockets
 with INET makes talking to arbitrary machines around the world unbelievably easy
 (at least compared to other schemes).
 
@@ -106,7 +106,7 @@ mainloop of the web server::
 There's actually 3 general ways in which this loop could work - dispatching a
 thread to handle ``clientsocket``, create a new process to handle
 ``clientsocket``, or restructure this app to use non-blocking sockets, and
-mulitplex between our "server" socket and any active ``clientsocket``\ s using
+multiplex between our "server" socket and any active ``clientsocket``\ s using
 ``select``. More about that later. The important thing to understand now is
 this: this is *all* a "server" socket does. It doesn't send any data. It doesn't
 receive any data. It just produces "client" sockets. Each ``clientsocket`` is
@@ -234,7 +234,7 @@ messages to be sent back to back (without some kind of reply), and you pass
 following message. You'll need to put that aside and hold onto it, until it's
 needed.
 
-Prefixing the message with it's length (say, as 5 numeric characters) gets more
+Prefixing the message with its length (say, as 5 numeric characters) gets more
 complex, because (believe it or not), you may not get all 5 characters in one
 ``recv``. In playing around, you'll get away with it; but in high network loads,
 your code will very quickly break unless you use two ``recv`` loops - the first
@@ -317,9 +317,9 @@ know about the mechanics of using sockets. You'll still use the same calls, in
 much the same ways. It's just that, if you do it right, your app will be almost
 inside-out.
 
-In Python, you use ``socket.setblocking(0)`` to make it non-blocking. In C, it's
+In Python, you use ``socket.setblocking(False)`` to make it non-blocking. In C, it's
 more complex, (for one thing, you'll need to choose between the BSD flavor
-``O_NONBLOCK`` and the almost indistinguishable Posix flavor ``O_NDELAY``, which
+``O_NONBLOCK`` and the almost indistinguishable POSIX flavor ``O_NDELAY``, which
 is completely different from ``TCP_NODELAY``), but it's the exact same idea. You
 do this after creating the socket, but before using it. (Actually, if you're
 nuts, you can switch back and forth.)

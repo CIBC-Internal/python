@@ -1,17 +1,19 @@
 """Do a minimal test of all the modules that aren't otherwise tested."""
 import importlib
+import platform
 import sys
 from test import support
+from test.support import import_helper
+from test.support import warnings_helper
 import unittest
 
 class TestUntestedModules(unittest.TestCase):
     def test_untested_modules_can_be_imported(self):
-        untested = ('bdb', 'encodings', 'formatter',
-                    'nturl2path', 'tabnanny')
-        with support.check_warnings(quiet=True):
+        untested = ('encodings',)
+        with warnings_helper.check_warnings(quiet=True):
             for name in untested:
                 try:
-                    support.import_module('test.test_{}'.format(name))
+                    import_helper.import_module('test.test_{}'.format(name))
                 except unittest.SkipTest:
                     importlib.import_module(name)
                 else:
@@ -22,17 +24,14 @@ class TestUntestedModules(unittest.TestCase):
             import distutils.ccompiler
             import distutils.cygwinccompiler
             import distutils.filelist
-            if sys.platform.startswith('win'):
-                import distutils.msvccompiler
             import distutils.text_file
             import distutils.unixccompiler
 
             import distutils.command.bdist_dumb
-            if sys.platform.startswith('win'):
+            if sys.platform.startswith('win') and not platform.win32_is_iot():
                 import distutils.command.bdist_msi
             import distutils.command.bdist
             import distutils.command.bdist_rpm
-            import distutils.command.bdist_wininst
             import distutils.command.build_clib
             import distutils.command.build_ext
             import distutils.command.build

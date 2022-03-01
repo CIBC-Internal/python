@@ -6,7 +6,8 @@ import warnings
 import zipfile
 from os.path import join
 from textwrap import dedent
-from test.support import captured_stdout, check_warnings, run_unittest
+from test.support import captured_stdout, run_unittest
+from test.support.warnings_helper import check_warnings
 
 try:
     import zlib
@@ -23,7 +24,7 @@ except ImportError:
 
 from distutils.command.sdist import sdist, show_formats
 from distutils.core import Distribution
-from distutils.tests.test_config import PyPIRCCommandTestCase
+from distutils.tests.test_config import BasePyPIRCCommandTestCase
 from distutils.errors import DistutilsOptionError
 from distutils.spawn import find_executable
 from distutils.log import WARN
@@ -52,7 +53,7 @@ somecode%(sep)sdoc.dat
 somecode%(sep)sdoc.txt
 """
 
-class SDistTestCase(PyPIRCCommandTestCase):
+class SDistTestCase(BasePyPIRCCommandTestCase):
 
     def setUp(self):
         # PyPIRCCommandTestCase creates a temp dir already
@@ -128,7 +129,9 @@ class SDistTestCase(PyPIRCCommandTestCase):
             zip_file.close()
 
         # making sure everything has been pruned correctly
-        self.assertEqual(len(content), 4)
+        expected = ['', 'PKG-INFO', 'README', 'setup.py',
+                    'somecode/', 'somecode/__init__.py']
+        self.assertEqual(sorted(content), ['fake-1.0/' + x for x in expected])
 
     @unittest.skipUnless(ZLIB_SUPPORT, 'Need zlib support to run')
     @unittest.skipIf(find_executable('tar') is None,
@@ -226,7 +229,13 @@ class SDistTestCase(PyPIRCCommandTestCase):
             zip_file.close()
 
         # making sure everything was added
-        self.assertEqual(len(content), 12)
+        expected = ['', 'PKG-INFO', 'README', 'buildout.cfg',
+                    'data/', 'data/data.dt', 'inroot.txt',
+                    'scripts/', 'scripts/script.py', 'setup.py',
+                    'some/', 'some/file.txt', 'some/other_file.txt',
+                    'somecode/', 'somecode/__init__.py', 'somecode/doc.dat',
+                    'somecode/doc.txt']
+        self.assertEqual(sorted(content), ['fake-1.0/' + x for x in expected])
 
         # checking the MANIFEST
         f = open(join(self.tmp_dir, 'MANIFEST'))

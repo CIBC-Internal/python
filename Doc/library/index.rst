@@ -20,7 +20,7 @@ everyday programming. Some of these modules are explicitly designed to
 encourage and enhance the portability of Python programs by abstracting
 away platform-specifics into platform-neutral APIs.
 
-The Python installers for the Windows platform usually includes
+The Python installers for the Windows platform usually include
 the entire standard library and often also include many additional
 components. For Unix-like operating systems Python is normally provided
 as a collection of packages, so it may be necessary to use the packaging
@@ -30,12 +30,13 @@ optional components.
 In addition to the standard library, there is a growing collection of
 several thousand components (from individual programs and modules to
 packages and entire application development frameworks), available from
-the `Python Package Index <https://pypi.python.org/pypi>`_.
+the `Python Package Index <https://pypi.org>`_.
 
-
+.. We don't use :numbered: option for the TOC below as it enforces
+   numbered sections for the entire stdlib docs.  If desired,
+   :numbered: can be enabled on a per-module basis.
 .. toctree::
    :maxdepth: 2
-   :numbered:
 
    intro.rst
    functions.rst
@@ -70,8 +71,8 @@ the `Python Package Index <https://pypi.python.org/pypi>`_.
    custominterp.rst
    modules.rst
    language.rst
-   misc.rst
    windows.rst
    unix.rst
    superseded.rst
    undoc.rst
+   security_warnings.rst

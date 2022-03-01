@@ -45,6 +45,7 @@ class TestResult(object):
         self.unexpectedSuccesses = []
         self.shouldStop = False
         self.buffer = False
+        self.tb_locals = False
         self._stdout_buffer = None
         self._stderr_buffer = None
         self._original_stdout = sys.stdout
@@ -147,7 +148,7 @@ class TestResult(object):
         self.skipped.append((test, reason))
 
     def addExpectedFailure(self, test, err):
-        """Called when an expected failure/error occured."""
+        """Called when an expected failure/error occurred."""
         self.expectedFailures.append(
             (test, self._exc_info_to_string(err, test)))
 
@@ -160,7 +161,7 @@ class TestResult(object):
         """Tells whether or not this result was a success."""
         # The hasattr check is for test_result's OldResult test.  That
         # way this method works on objects that lack the attribute.
-        # (where would such result intances come from? old stored pickles?)
+        # (where would such result instances come from? old stored pickles?)
         return ((len(self.failures) == len(self.errors) == 0) and
                 (not hasattr(self, 'unexpectedSuccesses') or
                  len(self.unexpectedSuccesses) == 0))
@@ -179,9 +180,12 @@ class TestResult(object):
         if exctype is test.failureException:
             # Skip assert*() traceback levels
             length = self._count_relevant_tb_levels(tb)
-            msgLines = traceback.format_exception(exctype, value, tb, length)
         else:
-            msgLines = traceback.format_exception(exctype, value, tb)
+            length = None
+        tb_e = traceback.TracebackException(
+            exctype, value, tb,
+            limit=length, capture_locals=self.tb_locals, compact=True)
+        msgLines = list(tb_e.format())
 
         if self.buffer:
             output = sys.stdout.getvalue()

@@ -4,8 +4,9 @@
 .. module:: array
    :synopsis: Space efficient arrays of uniformly typed numeric values.
 
-
 .. index:: single: arrays
+
+--------------
 
 This module defines an object type which can compactly represent an array of
 basic values: characters, integers, floating point numbers.  Arrays are sequence
@@ -21,7 +22,7 @@ defined:
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'B'``   | unsigned char      | int               | 1                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
-| ``'u'``   | Py_UNICODE         | Unicode character | 2                     | \(1)  |
+| ``'u'``   | wchar_t            | Unicode character | 2                     | \(1)  |
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'h'``   | signed short       | int               | 2                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
@@ -35,9 +36,9 @@ defined:
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'L'``   | unsigned long      | int               | 4                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
-| ``'q'``   | signed long long   | int               | 8                     | \(2)  |
+| ``'q'``   | signed long long   | int               | 8                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
-| ``'Q'``   | unsigned long long | int               | 8                     | \(2)  |
+| ``'Q'``   | unsigned long long | int               | 8                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
 | ``'f'``   | float              | float             | 4                     |       |
 +-----------+--------------------+-------------------+-----------------------+-------+
@@ -47,21 +48,15 @@ defined:
 Notes:
 
 (1)
-   The ``'u'`` type code corresponds to Python's obsolete unicode character
-   (:c:type:`Py_UNICODE` which is :c:type:`wchar_t`). Depending on the
-   platform, it can be 16 bits or 32 bits.
+   It can be 16 bits or 32 bits depending on the platform.
 
-   ``'u'`` will be removed together with the rest of the :c:type:`Py_UNICODE`
-   API.
+   .. versionchanged:: 3.9
+      ``array('u')`` now uses ``wchar_t`` as C type instead of deprecated
+      ``Py_UNICODE``. This change doesn't affect to its behavior because
+      ``Py_UNICODE`` is alias of ``wchar_t`` since Python 3.3.
 
    .. deprecated-removed:: 3.3 4.0
 
-(2)
-   The ``'q'`` and ``'Q'`` type codes are available only if
-   the platform C compiler used to build Python supports C :c:type:`long long`,
-   or, on Windows, :c:type:`__int64`.
-
-   .. versionadded:: 3.3
 
 The actual representation of values is determined by the machine architecture
 (strictly speaking, by the C implementation).  The actual size can be accessed
@@ -82,6 +77,7 @@ The module defines the following type:
    to add initial items to the array.  Otherwise, the iterable initializer is
    passed to the :meth:`extend` method.
 
+   .. audit-event:: array.__new__ typecode,initializer array.array
 
 .. data:: typecodes
 
@@ -91,7 +87,7 @@ Array objects support the ordinary sequence operations of indexing, slicing,
 concatenation, and multiplication.  When using slice assignment, the assigned
 value must be an array object with the same type code; in all other cases,
 :exc:`TypeError` is raised. Array objects also implement the buffer interface,
-and may be used wherever :term:`bytes-like object`\ s are supported.
+and may be used wherever :term:`bytes-like objects <bytes-like object>` are supported.
 
 The following data items and methods are also supported:
 
@@ -164,19 +160,13 @@ The following data items and methods are also supported:
    Read *n* items (as machine values) from the :term:`file object` *f* and append
    them to the end of the array.  If less than *n* items are available,
    :exc:`EOFError` is raised, but the items that were available are still
-   inserted into the array. *f* must be a real built-in file object; something
-   else with a :meth:`read` method won't do.
+   inserted into the array.
 
 
 .. method:: array.fromlist(list)
 
    Append items from the list.  This is equivalent to ``for x in list:
    a.append(x)`` except that if there is a type error, the array is unchanged.
-
-
-.. method:: array.fromstring()
-
-   Deprecated alias for :meth:`frombytes`.
 
 
 .. method:: array.fromunicode(s)
@@ -187,11 +177,15 @@ The following data items and methods are also supported:
    array of some other type.
 
 
-.. method:: array.index(x)
+.. method:: array.index(x[, start[, stop]])
 
    Return the smallest *i* such that *i* is the index of the first occurrence of
-   *x* in the array.
+   *x* in the array.  The optional arguments *start* and *stop* can be
+   specified to search for *x* within a subsection of the array.  Raise
+   :exc:`ValueError` if *x* is not found.
 
+   .. versionchanged:: 3.10
+      Added optional *start* and *stop* parameters.
 
 .. method:: array.insert(i, x)
 
@@ -236,11 +230,6 @@ The following data items and methods are also supported:
    Convert the array to an ordinary list with the same items.
 
 
-.. method:: array.tostring()
-
-   Deprecated alias for :meth:`tobytes`.
-
-
 .. method:: array.tounicode()
 
    Convert the array to a unicode string.  The array must be a type ``'u'`` array;
@@ -253,7 +242,7 @@ When an array object is printed or converted to a string, it is represented as
 empty, otherwise it is a string if the *typecode* is ``'u'``, otherwise it is a
 list of numbers.  The string is guaranteed to be able to be converted back to an
 array with the same type and value using :func:`eval`, so long as the
-:func:`array` function has been imported using ``from array import array``.
+:class:`~array.array` class has been imported using ``from array import array``.
 Examples::
 
    array('l')
@@ -271,7 +260,6 @@ Examples::
       Packing and unpacking of External Data Representation (XDR) data as used in some
       remote procedure call systems.
 
-   `The Numerical Python Documentation <http://docs.scipy.org/doc/>`_
-      The Numeric Python extension (NumPy) defines another array type; see
-      http://www.numpy.org/ for further information about Numerical Python.
+   `NumPy <https://numpy.org/>`_
+      The NumPy package defines another array type.
 

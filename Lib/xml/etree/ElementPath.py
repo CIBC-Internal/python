@@ -48,7 +48,7 @@
 # --------------------------------------------------------------------
 
 # Licensed to PSF under a Contributor Agreement.
-# See http://www.python.org/psf/license for licensing details.
+# See https://www.python.org/psf/license for licensing details.
 
 ##
 # Implementation module for XPath support.  There's usually no reason
@@ -59,30 +59,41 @@
 import re
 
 xpath_tokenizer_re = re.compile(
-    "("
-    "'[^']*'|\"[^\"]*\"|"
-    "::|"
-    "//?|"
-    "\.\.|"
-    "\(\)|"
-    "[/.*:\[\]\(\)@=])|"
-    "((?:\{[^}]+\})?[^/\[\]\(\)@=\s]+)|"
-    "\s+"
+    r"("
+    r"'[^']*'|\"[^\"]*\"|"
+    r"::|"
+    r"//?|"
+    r"\.\.|"
+    r"\(\)|"
+    r"!=|"
+    r"[/.*:\[\]\(\)@=])|"
+    r"((?:\{[^}]+\})?[^/\[\]\(\)@!=\s]+)|"
+    r"\s+"
     )
 
 def xpath_tokenizer(pattern, namespaces=None):
+    default_namespace = namespaces.get('') if namespaces else None
+    parsing_attribute = False
     for token in xpath_tokenizer_re.findall(pattern):
-        tag = token[1]
-        if tag and tag[0] != "{" and ":" in tag:
-            try:
+        ttype, tag = token
+        if tag and tag[0] != "{":
+            if ":" in tag:
                 prefix, uri = tag.split(":", 1)
-                if not namespaces:
-                    raise KeyError
-                yield token[0], "{%s}%s" % (namespaces[prefix], uri)
-            except KeyError:
-                raise SyntaxError("prefix %r not found in prefix map" % prefix)
+                try:
+                    if not namespaces:
+                        raise KeyError
+                    yield ttype, "{%s}%s" % (namespaces[prefix], uri)
+                except KeyError:
+                    raise SyntaxError("prefix %r not found in prefix map" % prefix) from None
+            elif default_namespace and not parsing_attribute:
+                yield ttype, "{%s}%s" % (default_namespace, tag)
+            else:
+                yield token
+            parsing_attribute = False
         else:
             yield token
+            parsing_attribute = ttype == '@'
+
 
 def get_parent_map(context):
     parent_map = context.parent_map
@@ -93,13 +104,69 @@ def get_parent_map(context):
                 parent_map[e] = p
     return parent_map
 
+
+def _is_wildcard_tag(tag):
+    return tag[:3] == '{*}' or tag[-2:] == '}*'
+
+
+def _prepare_tag(tag):
+    _isinstance, _str = isinstance, str
+    if tag == '{*}*':
+        # Same as '*', but no comments or processing instructions.
+        # It can be a surprise that '*' includes those, but there is no
+        # justification for '{*}*' doing the same.
+        def select(context, result):
+            for elem in result:
+                if _isinstance(elem.tag, _str):
+                    yield elem
+    elif tag == '{}*':
+        # Any tag that is not in a namespace.
+        def select(context, result):
+            for elem in result:
+                el_tag = elem.tag
+                if _isinstance(el_tag, _str) and el_tag[0] != '{':
+                    yield elem
+    elif tag[:3] == '{*}':
+        # The tag in any (or no) namespace.
+        suffix = tag[2:]  # '}name'
+        no_ns = slice(-len(suffix), None)
+        tag = tag[3:]
+        def select(context, result):
+            for elem in result:
+                el_tag = elem.tag
+                if el_tag == tag or _isinstance(el_tag, _str) and el_tag[no_ns] == suffix:
+                    yield elem
+    elif tag[-2:] == '}*':
+        # Any tag in the given namespace.
+        ns = tag[:-1]
+        ns_only = slice(None, len(ns))
+        def select(context, result):
+            for elem in result:
+                el_tag = elem.tag
+                if _isinstance(el_tag, _str) and el_tag[ns_only] == ns:
+                    yield elem
+    else:
+        raise RuntimeError(f"internal parser error, got {tag}")
+    return select
+
+
 def prepare_child(next, token):
     tag = token[1]
-    def select(context, result):
-        for elem in result:
-            for e in elem:
-                if e.tag == tag:
-                    yield e
+    if _is_wildcard_tag(tag):
+        select_tag = _prepare_tag(tag)
+        def select(context, result):
+            def select_child(result):
+                for elem in result:
+                    yield from elem
+            return select_tag(context, select_child(result))
+    else:
+        if tag[:2] == '{}':
+            tag = tag[2:]  # '{}tag' == 'tag'
+        def select(context, result):
+            for elem in result:
+                for e in elem:
+                    if e.tag == tag:
+                        yield e
     return select
 
 def prepare_star(next, token):
@@ -114,18 +181,34 @@ def prepare_self(next, token):
     return select
 
 def prepare_descendant(next, token):
-    token = next()
+    try:
+        token = next()
+    except StopIteration:
+        return
     if token[0] == "*":
         tag = "*"
     elif not token[0]:
         tag = token[1]
     else:
         raise SyntaxError("invalid descendant")
-    def select(context, result):
-        for elem in result:
-            for e in elem.iter(tag):
-                if e is not elem:
-                    yield e
+
+    if _is_wildcard_tag(tag):
+        select_tag = _prepare_tag(tag)
+        def select(context, result):
+            def select_child(result):
+                for elem in result:
+                    for e in elem.iter():
+                        if e is not elem:
+                            yield e
+            return select_tag(context, select_child(result))
+    else:
+        if tag[:2] == '{}':
+            tag = tag[2:]  # '{}tag' == 'tag'
+        def select(context, result):
+            for elem in result:
+                for e in elem.iter(tag):
+                    if e is not elem:
+                        yield e
     return select
 
 def prepare_parent(next, token):
@@ -148,9 +231,15 @@ def prepare_predicate(next, token):
     signature = []
     predicate = []
     while 1:
-        token = next()
+        try:
+            token = next()
+        except StopIteration:
+            return
         if token[0] == "]":
             break
+        if token == ('', ''):
+            # ignore whitespace
+            continue
         if token[0] and token[0][:1] in "'\"":
             token = "'", token[0][1:-1]
         signature.append(token[0] or "-")
@@ -165,16 +254,20 @@ def prepare_predicate(next, token):
                 if elem.get(key) is not None:
                     yield elem
         return select
-    if signature == "@-='":
-        # [@attribute='value']
+    if signature == "@-='" or signature == "@-!='":
+        # [@attribute='value'] or [@attribute!='value']
         key = predicate[1]
         value = predicate[-1]
         def select(context, result):
             for elem in result:
                 if elem.get(key) == value:
                     yield elem
-        return select
-    if signature == "-" and not re.match("\-?\d+$", predicate[0]):
+        def select_negated(context, result):
+            for elem in result:
+                if (attr_value := elem.get(key)) is not None and attr_value != value:
+                    yield elem
+        return select_negated if '!=' in signature else select
+    if signature == "-" and not re.match(r"\-?\d+$", predicate[0]):
         # [tag]
         tag = predicate[0]
         def select(context, result):
@@ -182,17 +275,35 @@ def prepare_predicate(next, token):
                 if elem.find(tag) is not None:
                     yield elem
         return select
-    if signature == "-='" and not re.match("\-?\d+$", predicate[0]):
-        # [tag='value']
+    if signature == ".='" or signature == ".!='" or (
+            (signature == "-='" or signature == "-!='")
+            and not re.match(r"\-?\d+$", predicate[0])):
+        # [.='value'] or [tag='value'] or [.!='value'] or [tag!='value']
         tag = predicate[0]
         value = predicate[-1]
-        def select(context, result):
-            for elem in result:
-                for e in elem.findall(tag):
-                    if "".join(e.itertext()) == value:
+        if tag:
+            def select(context, result):
+                for elem in result:
+                    for e in elem.findall(tag):
+                        if "".join(e.itertext()) == value:
+                            yield elem
+                            break
+            def select_negated(context, result):
+                for elem in result:
+                    for e in elem.iterfind(tag):
+                        if "".join(e.itertext()) != value:
+                            yield elem
+                            break
+        else:
+            def select(context, result):
+                for elem in result:
+                    if "".join(elem.itertext()) == value:
                         yield elem
-                        break
-        return select
+            def select_negated(context, result):
+                for elem in result:
+                    if "".join(elem.itertext()) != value:
+                        yield elem
+        return select_negated if '!=' in signature else select
     if signature == "-" or signature == "-()" or signature == "-()-":
         # [index] or [last()] or [last()-index]
         if signature == "-":
@@ -249,10 +360,13 @@ class _SelectorContext:
 
 def iterfind(elem, path, namespaces=None):
     # compile selector pattern
-    cache_key = (path, None if namespaces is None
-                            else tuple(sorted(namespaces.items())))
     if path[-1:] == "/":
         path = path + "*" # implicit all (FIXME: keep this?)
+
+    cache_key = (path,)
+    if namespaces:
+        cache_key += tuple(sorted(namespaces.items()))
+
     try:
         selector = _cache[cache_key]
     except KeyError:
@@ -261,13 +375,16 @@ def iterfind(elem, path, namespaces=None):
         if path[:1] == "/":
             raise SyntaxError("cannot use absolute path on element")
         next = iter(xpath_tokenizer(path, namespaces)).__next__
-        token = next()
+        try:
+            token = next()
+        except StopIteration:
+            return
         selector = []
         while 1:
             try:
                 selector.append(ops[token[0]](next, token))
             except StopIteration:
-                raise SyntaxError("invalid path")
+                raise SyntaxError("invalid path") from None
             try:
                 token = next()
                 if token[0] == "/":
@@ -286,10 +403,7 @@ def iterfind(elem, path, namespaces=None):
 # Find first matching object.
 
 def find(elem, path, namespaces=None):
-    try:
-        return next(iterfind(elem, path, namespaces))
-    except StopIteration:
-        return None
+    return next(iterfind(elem, path, namespaces), None)
 
 ##
 # Find all matching objects.

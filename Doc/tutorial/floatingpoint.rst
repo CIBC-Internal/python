@@ -1,3 +1,7 @@
+.. testsetup::
+
+    import math
+
 .. _tut-fp-issues:
 
 **************************************************
@@ -129,7 +133,7 @@ with inexact values become comparable to one another::
 
 Binary floating-point arithmetic holds many surprises like this.  The problem
 with "0.1" is explained in precise detail below, in the "Representation Error"
-section.  See `The Perils of Floating Point <http://www.lahey.com/float.htm>`_
+section.  See `The Perils of Floating Point <https://www.lahey.com/float.htm>`_
 for a more complete account of other common surprises.
 
 As that says near the end, "there are no easy answers."  Still, don't be unduly
@@ -154,8 +158,8 @@ which implements arithmetic based on rational numbers (so the numbers like
 1/3 can be represented exactly).
 
 If you are a heavy user of floating point operations you should take a look
-at the Numerical Python package and many other packages for mathematical and
-statistical operations supplied by the SciPy project. See <http://scipy.org>.
+at the NumPy package and many other packages for mathematical and
+statistical operations supplied by the SciPy project. See <https://scipy.org>.
 
 Python provides tools that may help on those rare occasions when you really
 *do* want to know the exact value of a float.  The

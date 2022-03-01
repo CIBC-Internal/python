@@ -4,10 +4,13 @@
 .. module:: numbers
    :synopsis: Numeric abstract base classes (Complex, Real, Integral, etc.).
 
+**Source code:** :source:`Lib/numbers.py`
+
+--------------
 
 The :mod:`numbers` module (:pep:`3141`) defines a hierarchy of numeric
 :term:`abstract base classes <abstract base class>` which progressively define
-more operations.  None of the types defined in this module can be instantiated.
+more operations.  None of the types defined in this module are intended to be instantiated.
 
 
 .. class:: Number
@@ -24,8 +27,8 @@ The numeric tower
    Subclasses of this type describe complex numbers and include the operations
    that work on the built-in :class:`complex` type. These are: conversions to
    :class:`complex` and :class:`bool`, :attr:`.real`, :attr:`.imag`, ``+``,
-   ``-``, ``*``, ``/``, :func:`abs`, :meth:`conjugate`, ``==``, and ``!=``. All
-   except ``-`` and ``!=`` are abstract.
+   ``-``, ``*``, ``/``, ``**``, :func:`abs`, :meth:`conjugate`, ``==``, and
+   ``!=``. All except ``-`` and ``!=`` are abstract.
 
    .. attribute:: real
 
@@ -35,7 +38,7 @@ The numeric tower
 
       Abstract. Retrieves the imaginary component of this number.
 
-   .. method:: conjugate()
+   .. abstractmethod:: conjugate()
 
       Abstract. Returns the complex conjugate. For example, ``(1+3j).conjugate()
       == (1-3j)``.
@@ -73,8 +76,9 @@ The numeric tower
 
    Subtypes :class:`Rational` and adds a conversion to :class:`int`.  Provides
    defaults for :func:`float`, :attr:`~Rational.numerator`, and
-   :attr:`~Rational.denominator`.  Adds abstract methods for ``**`` and
-   bit-string operations: ``<<``, ``>>``, ``&``, ``^``, ``|``, ``~``.
+   :attr:`~Rational.denominator`.  Adds abstract methods for :func:`pow` with
+   modulus and bit-string operations: ``<<``, ``>>``, ``&``, ``^``, ``|``,
+   ``~``.
 
 
 Notes for type implementors

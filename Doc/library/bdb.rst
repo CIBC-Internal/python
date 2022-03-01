@@ -231,7 +231,7 @@ The :mod:`bdb` module also defines two classes:
    .. method:: set_until(frame)
 
       Stop when the line with the line no greater than the current one is
-      reached or when returning from current frame
+      reached or when returning from current frame.
 
    .. method:: set_trace([frame])
 
@@ -241,7 +241,7 @@ The :mod:`bdb` module also defines two classes:
    .. method:: set_continue()
 
       Stop only at breakpoints or when finished.  If there are no breakpoints,
-      set the system trace function to None.
+      set the system trace function to ``None``.
 
    .. method:: set_quit()
 
@@ -343,7 +343,7 @@ The :mod:`bdb` module also defines two classes:
 
       For backwards compatibility.  Calls the :meth:`run` method.
 
-   .. method:: runcall(func, *args, **kwds)
+   .. method:: runcall(func, /, *args, **kwds)
 
       Debug a single function call, and return its result.
 

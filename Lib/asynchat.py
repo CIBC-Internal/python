@@ -48,6 +48,14 @@ you - by calling your self.found_terminator() method.
 import asyncore
 from collections import deque
 
+from warnings import warn
+warn(
+    'The asynchat module is deprecated. '
+    'The recommended replacement is asyncio',
+    DeprecationWarning,
+    stacklevel=2)
+
+
 
 class async_chat(asyncore.dispatcher):
     """This is an abstract class.  You must derive from this class, and add
@@ -117,7 +125,7 @@ class async_chat(asyncore.dispatcher):
             data = self.recv(self.ac_in_buffer_size)
         except BlockingIOError:
             return
-        except OSError as why:
+        except OSError:
             self.handle_error()
             return
 
@@ -283,32 +291,6 @@ class simple_producer:
             result = self.data
             self.data = b''
             return result
-
-
-class fifo:
-    def __init__(self, list=None):
-        if not list:
-            self.list = deque()
-        else:
-            self.list = deque(list)
-
-    def __len__(self):
-        return len(self.list)
-
-    def is_empty(self):
-        return not self.list
-
-    def first(self):
-        return self.list[0]
-
-    def push(self, data):
-        self.list.append(data)
-
-    def pop(self):
-        if self.list:
-            return (1, self.list.popleft())
-        else:
-            return (0, None)
 
 
 # Given 'haystack', see if any prefix of 'needle' is at its end.  This

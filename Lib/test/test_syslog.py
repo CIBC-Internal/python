@@ -1,6 +1,5 @@
-
-from test import support
-syslog = support.import_module("syslog") #skip if not supported
+from test.support import import_helper
+syslog = import_helper.import_module("syslog") #skip if not supported
 import unittest
 
 # XXX(nnorwitz): This test sucks.  I don't know of a platform independent way
@@ -36,8 +35,5 @@ class Test(unittest.TestCase):
         syslog.openlog()
         syslog.syslog('test message from python test_syslog')
 
-def test_main():
-    support.run_unittest(__name__)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

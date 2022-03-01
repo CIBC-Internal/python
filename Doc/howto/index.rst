@@ -25,8 +25,9 @@ Currently, the HOWTOs are:
    sorting.rst
    unicode.rst
    urllib2.rst
-   webservers.rst
    argparse.rst
    ipaddress.rst
    clinic.rst
+   instrumentation.rst
+   annotations.rst
 

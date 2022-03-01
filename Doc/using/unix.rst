@@ -1,4 +1,4 @@
-.. highlightlang:: sh
+.. highlight:: sh
 
 .. _using-on-unix:
 
@@ -26,11 +26,11 @@ following links:
 
 .. seealso::
 
-   http://www.debian.org/doc/manuals/maint-guide/first.en.html
+   https://www.debian.org/doc/manuals/maint-guide/first.en.html
       for Debian users
-   http://en.opensuse.org/Portal:Packaging
+   https://en.opensuse.org/Portal:Packaging
       for OpenSuse users
-   http://docs.fedoraproject.org/en-US/Fedora_Draft_Documentation/0.1/html/RPM_Guide/ch-creating-rpms.html
+   https://docs-old.fedoraproject.org/en-US/Fedora_Draft_Documentation/0.1/html/RPM_Guide/ch-creating-rpms.html
       for Fedora users
    http://www.slackbook.org/html/package-management-making-packages.html
       for Slackware users
@@ -41,9 +41,11 @@ On FreeBSD and OpenBSD
 
 * FreeBSD users, to add the package use::
 
-     pkg_add -r python
+     pkg install python3
 
-* OpenBSD users use::
+* OpenBSD users, to add the package use::
+
+     pkg_add -r python
 
      pkg_add ftp://ftp.openbsd.org/pub/OpenBSD/4.2/packages/<insert your architecture here>/python-<version>.tgz
 
@@ -55,7 +57,7 @@ On FreeBSD and OpenBSD
 On OpenSolaris
 --------------
 
-You can get Python from `OpenCSW <http://www.opencsw.org/>`_.  Various versions
+You can get Python from `OpenCSW <https://www.opencsw.org/>`_.  Various versions
 of Python are available and can be installed with e.g. ``pkgutil -i python27``.
 
 
@@ -65,20 +67,20 @@ Building Python
 ===============
 
 If you want to compile CPython yourself, first thing you should do is get the
-`source <https://www.python.org/download/source/>`_. You can download either the
+`source <https://www.python.org/downloads/source/>`_. You can download either the
 latest release's source or just grab a fresh `clone
-<https://docs.python.org/devguide/setup.html#getting-the-source-code>`_.  (If you want
+<https://devguide.python.org/setup/#getting-the-source-code>`_.  (If you want
 to contribute patches, you will need a clone.)
 
-The build process consists in the usual ::
+The build process consists of the usual commands::
 
    ./configure
    make
    make install
 
-invocations. Configuration options and caveats for specific Unix platforms are
-extensively documented in the :source:`README` file in the root of the Python
-source tree.
+:ref:`Configuration options <configure-options>` and caveats for specific Unix
+platforms are extensively documented in the :source:`README.rst` file in the
+root of the Python source tree.
 
 .. warning::
 
@@ -116,7 +118,9 @@ Miscellaneous
 =============
 
 To easily use Python scripts on Unix, you need to make them executable,
-e.g. with ::
+e.g. with
+
+.. code-block:: shell-session
 
    $ chmod +x script
 
@@ -131,18 +135,55 @@ some Unices may not have the :program:`env` command, so you may need to hardcode
 
 To use shell commands in your Python scripts, look at the :mod:`subprocess` module.
 
+.. _unix_custom_openssl:
 
-Editors
-=======
+Custom OpenSSL
+==============
 
-Vim and Emacs are excellent editors which support Python very well.  For more
-information on how to code in Python in these editors, look at:
+1. To use your vendor's OpenSSL configuration and system trust store, locate
+   the directory with ``openssl.cnf`` file or symlink in ``/etc``. On most
+   distribution the file is either in ``/etc/ssl`` or ``/etc/pki/tls``. The
+   directory should also contain a ``cert.pem`` file and/or a ``certs``
+   directory.
 
-* http://www.vim.org/scripts/script.php?script_id=790
-* http://sourceforge.net/projects/python-mode
+   .. code-block:: shell-session
 
-Geany is an excellent IDE with support for a lot of languages. For more
-information, read: http://www.geany.org/
+      $ find /etc/ -name openssl.cnf -printf "%h\n"
+      /etc/ssl
 
-Komodo edit is another extremely good IDE.  It also has support for a lot of
-languages. For more information, read http://komodoide.com/.
+2. Download, build, and install OpenSSL. Make sure you use ``install_sw`` and
+   not ``install``. The ``install_sw`` target does not override
+   ``openssl.cnf``.
+
+   .. code-block:: shell-session
+
+      $ curl -O https://www.openssl.org/source/openssl-VERSION.tar.gz
+         $ tar xzf openssl-VERSION
+         $ pushd openssl-VERSION
+         $ ./config \
+              --prefix=/usr/local/custom-openssl \
+              --libdir=lib \
+              --openssldir=/etc/ssl
+         $ make -j1 depend
+         $ make -j8
+         $ make install_sw
+         $ popd
+
+3. Build Python with custom OpenSSL
+   (see the configure `--with-openssl` and `--with-openssl-rpath` options)
+
+   .. code-block:: shell-session
+
+      $ pushd python-3.x.x
+      $ ./configure -C \
+          --with-openssl=/usr/local/custom-openssl \
+          --with-openssl-rpath=auto \
+          --prefix=/usr/local/python-3.x.x
+      $ make -j8
+      $ make altinstall
+
+.. note::
+
+   Patch releases of OpenSSL have a backwards compatible ABI. You don't need
+   to recompile Python to update OpenSSL. It's sufficient to replace the
+   custom OpenSSL installation with a newer version.

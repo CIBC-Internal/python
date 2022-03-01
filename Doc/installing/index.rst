@@ -1,10 +1,10 @@
-.. highlightlang:: none
+.. highlight:: none
 
 .. _installing-index:
 
-*****************************
-  Installing Python Modules
-*****************************
+*************************
+Installing Python Modules
+*************************
 
 :Email: distutils-sig@python.org
 
@@ -34,26 +34,26 @@ Key terms
 
 * ``pip`` is the preferred installer program. Starting with Python 3.4, it
   is included by default with the Python binary installers.
-* a virtual environment is a semi-isolated Python environment that allows
+* A *virtual environment* is a semi-isolated Python environment that allows
   packages to be installed for use by a particular application, rather than
-  being installed system wide
-* ``pyvenv`` is the standard tool for creating virtual environments, and has
+  being installed system wide.
+* ``venv`` is the standard tool for creating virtual environments, and has
   been part of Python since Python 3.3. Starting with Python 3.4, it
-  defaults to installing ``pip`` into all created virtual environments
+  defaults to installing ``pip`` into all created virtual environments.
 * ``virtualenv`` is a third party alternative (and predecessor) to
-  ``pyvenv``. It allows virtual environments to be used on versions of
-  Python prior to 3.4, which either don't provide ``pyvenv`` at all, or
+  ``venv``. It allows virtual environments to be used on versions of
+  Python prior to 3.4, which either don't provide ``venv`` at all, or
   aren't able to automatically install ``pip`` into created environments.
-* the `Python Packaging Index <https://pypi.python.org/pypi>`__ is a public
+* The `Python Package Index <https://pypi.org>`__ is a public
   repository of open source licensed packages made available for use by
-  other Python users
+  other Python users.
 * the `Python Packaging Authority
-  <https://packaging.python.org/en/latest/future.html>`__ are the group of
+  <https://www.pypa.io/>`__ is the group of
   developers and documentation authors responsible for the maintenance and
   evolution of the standard packaging tools and the associated metadata and
-  file format standards. They maintain a variety of tools, documentation
+  file format standards. They maintain a variety of tools, documentation,
   and issue trackers on both `GitHub <https://github.com/pypa>`__ and
-  `BitBucket <https://bitbucket.org/pypa/>`__.
+  `Bitbucket <https://bitbucket.org/pypa/>`__.
 * ``distutils`` is the original build and distribution system first added to
   the Python standard library in 1998. While direct use of ``distutils`` is
   being phased out, it still laid the foundation for the current packaging
@@ -61,6 +61,14 @@ Key terms
   standard library, but its name lives on in other ways (such as the name
   of the mailing list used to coordinate Python packaging standards
   development).
+
+.. versionchanged:: 3.5
+   The use of ``venv`` is now recommended for creating virtual environments.
+
+.. seealso::
+
+   `Python Packaging User Guide: Creating and using virtual environments
+   <https://packaging.python.org/installing/#creating-virtual-environments>`__
 
 
 Basic usage
@@ -70,13 +78,13 @@ The standard packaging tools are all designed to be used from the command
 line.
 
 The following command will install the latest version of a module and its
-dependencies from the Python Packaging Index::
+dependencies from the Python Package Index::
 
     python -m pip install SomePackage
 
 .. note::
 
-   For POSIX users (including Mac OS X and Linux users), the examples in
+   For POSIX users (including macOS and Linux users), the examples in
    this guide assume the use of a :term:`virtual environment`.
 
    For Windows users, the examples in this guide assume that the option to
@@ -84,10 +92,12 @@ dependencies from the Python Packaging Index::
    Python.
 
 It's also possible to specify an exact or minimum version directly on the
-command line::
+command line. When using comparator operators such as ``>``, ``<`` or some other
+special character which get interpreted by shell, the package name and the
+version should be enclosed within double quotes::
 
     python -m pip install SomePackage==1.0.4    # specific version
-    python -m pip install 'SomePackage>=1.0.4'  # minimum version
+    python -m pip install "SomePackage>=1.0.4"  # minimum version
 
 Normally, if a suitable module is already installed, attempting to install
 it again will have no effect. Upgrading existing modules must be requested
@@ -98,13 +108,14 @@ explicitly::
 More information and resources regarding ``pip`` and its capabilities can be
 found in the `Python Packaging User Guide <https://packaging.python.org>`__.
 
-``pyvenv`` has its own documentation at :ref:`scripts-pyvenv`. Installing
-into an active virtual environment uses the commands shown above.
+Creation of virtual environments is done through the :mod:`venv` module.
+Installing packages into an active virtual environment uses the commands shown
+above.
 
 .. seealso::
 
     `Python Packaging User Guide: Installing Python Distribution Packages
-    <https://packaging.python.org/en/latest/installing.html#installing-python-distribution-packages>`__
+    <https://packaging.python.org/installing/>`__
 
 
 How do I ...?
@@ -121,8 +132,8 @@ User Guide.
 
 .. seealso::
 
-   `Python Packaging User Guide: Setup for Installing Distribution Packages
-   <https://packaging.python.org/en/latest/installing.html#setup-for-installing-distribution-packages>`__
+   `Python Packaging User Guide: Requirements for Installing Packages
+   <https://packaging.python.org/installing/#requirements-for-installing-packages>`__
 
 
 .. installing-per-user-installation:
@@ -140,20 +151,19 @@ package just for the current user, rather than for all users of the system.
 A number of scientific Python packages have complex binary dependencies, and
 aren't currently easy to install using ``pip`` directly. At this point in
 time, it will often be easier for users to install these packages by
-`other means
-<https://packaging.python.org/en/latest/science.html>`__
+`other means <https://packaging.python.org/science/>`__
 rather than attempting to install them with ``pip``.
 
 .. seealso::
 
    `Python Packaging User Guide: Installing Scientific Packages
-   <https://packaging.python.org/en/latest/science.html>`__
+   <https://packaging.python.org/science/>`__
 
 
 ... work with multiple versions of Python installed in parallel?
 ----------------------------------------------------------------
 
-On Linux, Mac OS X and other POSIX systems, use the versioned Python commands
+On Linux, macOS, and other POSIX systems, use the versioned Python commands
 in combination with the ``-m`` switch to run the appropriate copy of
 ``pip``::
 
@@ -162,7 +172,7 @@ in combination with the ``-m`` switch to run the appropriate copy of
    python3   -m pip install SomePackage  # default Python 3
    python3.4 -m pip install SomePackage  # specifically Python 3.4
 
-(appropriately versioned ``pip`` commands may also be available)
+Appropriately versioned ``pip`` commands may also be available.
 
 On Windows, use the ``py`` Python launcher in combination with the ``-m``
 switch::
@@ -177,7 +187,7 @@ switch::
    Once the Development & Deployment part of PPUG is fleshed out, some of
    those sections should be linked from new questions here (most notably,
    we should have a question about avoiding depending on PyPI that links to
-   https://packaging.python.org/en/latest/deployment.html#pypi-mirrors-and-caches)
+   https://packaging.python.org/en/latest/mirrors/)
 
 
 Common installation issues
@@ -196,6 +206,17 @@ On such systems, it is often better to use a virtual environment or a
 per-user installation when installing packages with ``pip``.
 
 
+Pip not installed
+-----------------
+
+It is possible that ``pip`` does not get installed by default. One potential fix is::
+
+    python -m ensurepip --default-pip
+
+There are also additional resources for `installing pip.
+<https://packaging.python.org/tutorials/installing-packages/#install-pip-setuptools-and-wheel>`__
+
+
 Installing binary extensions
 ----------------------------
 
@@ -204,17 +225,17 @@ users being expected to compile extension modules from source as part of
 the installation process.
 
 With the introduction of support for the binary ``wheel`` format, and the
-ability to publish wheels for at least Windows and Mac OS X through the
-Python Packaging Index, this problem is expected to diminish over time,
+ability to publish wheels for at least Windows and macOS through the
+Python Package Index, this problem is expected to diminish over time,
 as users are more regularly able to install pre-built extensions rather
 than needing to build them themselves.
 
 Some of the solutions for installing `scientific software
-<https://packaging.python.org/en/latest/science.html>`__
-that is not yet available as pre-built ``wheel`` files may also help with
+<https://packaging.python.org/science/>`__
+that are not yet available as pre-built ``wheel`` files may also help with
 obtaining other binary extensions without needing to build them locally.
 
 .. seealso::
 
    `Python Packaging User Guide: Binary Extensions
-   <https://packaging.python.org/en/latest/extensions.html>`__
+   <https://packaging.python.org/extensions/>`__

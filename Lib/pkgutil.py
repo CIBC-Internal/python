@@ -1,5 +1,6 @@
 """Utilities to support packages."""
 
+from collections import namedtuple
 from functools import singledispatch as simplegeneric
 import importlib
 import importlib.util
@@ -14,7 +15,12 @@ __all__ = [
     'get_importer', 'iter_importers', 'get_loader', 'find_loader',
     'walk_packages', 'iter_modules', 'get_data',
     'ImpImporter', 'ImpLoader', 'read_code', 'extend_path',
+    'ModuleInfo',
 ]
+
+
+ModuleInfo = namedtuple('ModuleInfo', 'module_finder name ispkg')
+ModuleInfo.__doc__ = 'A namedtuple with minimal info about a module.'
 
 
 def _get_spec(finder, name):
@@ -40,12 +46,12 @@ def read_code(stream):
     if magic != importlib.util.MAGIC_NUMBER:
         return None
 
-    stream.read(8) # Skip timestamp and size
+    stream.read(12) # Skip rest of the header
     return marshal.load(stream)
 
 
 def walk_packages(path=None, prefix='', onerror=None):
-    """Yields (module_loader, name, ispkg) for all modules recursively
+    """Yields ModuleInfo for all modules recursively
     on path, or, if path is None, all accessible modules.
 
     'path' should be either None or a list of paths to look for
@@ -78,31 +84,31 @@ def walk_packages(path=None, prefix='', onerror=None):
             return True
         m[p] = True
 
-    for importer, name, ispkg in iter_modules(path, prefix):
-        yield importer, name, ispkg
+    for info in iter_modules(path, prefix):
+        yield info
 
-        if ispkg:
+        if info.ispkg:
             try:
-                __import__(name)
+                __import__(info.name)
             except ImportError:
                 if onerror is not None:
-                    onerror(name)
+                    onerror(info.name)
             except Exception:
                 if onerror is not None:
-                    onerror(name)
+                    onerror(info.name)
                 else:
                     raise
             else:
-                path = getattr(sys.modules[name], '__path__', None) or []
+                path = getattr(sys.modules[info.name], '__path__', None) or []
 
                 # don't traverse path items we've seen before
                 path = [p for p in path if not seen(p)]
 
-                yield from walk_packages(path, name+'.', onerror)
+                yield from walk_packages(path, info.name+'.', onerror)
 
 
 def iter_modules(path=None, prefix=''):
-    """Yields (module_loader, name, ispkg) for all submodules on path,
+    """Yields ModuleInfo for all submodules on path,
     or, if path is None, all top-level modules on sys.path.
 
     'path' should be either None or a list of paths to look for
@@ -111,9 +117,11 @@ def iter_modules(path=None, prefix=''):
     'prefix' is a string to output on the front of every module name
     on output.
     """
-
     if path is None:
         importers = iter_importers()
+    elif isinstance(path, str):
+        raise ValueError("path must be None or list of paths to look for "
+                        "modules in")
     else:
         importers = map(get_importer, path)
 
@@ -122,7 +130,7 @@ def iter_modules(path=None, prefix=''):
         for name, ispkg in iter_importer_modules(i, prefix):
             if name not in yielded:
                 yielded[name] = 1
-                yield i, name, ispkg
+                yield ModuleInfo(i, name, ispkg)
 
 
 @simplegeneric
@@ -180,14 +188,14 @@ iter_importer_modules.register(
 def _import_imp():
     global imp
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', PendingDeprecationWarning)
+        warnings.simplefilter('ignore', DeprecationWarning)
         imp = importlib.import_module('imp')
 
 class ImpImporter:
-    """PEP 302 Importer that wraps Python's "classic" import algorithm
+    """PEP 302 Finder that wraps Python's "classic" import algorithm
 
-    ImpImporter(dirname) produces a PEP 302 importer that searches that
-    directory.  ImpImporter(None) produces a PEP 302 importer that searches
+    ImpImporter(dirname) produces a PEP 302 finder that searches that
+    directory.  ImpImporter(None) produces a PEP 302 finder that searches
     the current sys.path, plus any modules that are frozen or built-in.
 
     Note that ImpImporter does not currently support being used by placement
@@ -196,7 +204,8 @@ class ImpImporter:
 
     def __init__(self, path=None):
         global imp
-        warnings.warn("This emulation is deprecated, use 'importlib' instead",
+        warnings.warn("This emulation is deprecated and slated for removal "
+                      "in Python 3.12; use 'importlib' instead",
              DeprecationWarning)
         _import_imp()
         self.path = path
@@ -263,7 +272,8 @@ class ImpLoader:
     code = source = None
 
     def __init__(self, fullname, file, filename, etc):
-        warnings.warn("This emulation is deprecated, use 'importlib' instead",
+        warnings.warn("This emulation is deprecated and slated for removal in "
+                      "Python 3.12; use 'importlib' instead",
                       DeprecationWarning)
         _import_imp()
         self.file = file
@@ -375,7 +385,7 @@ try:
             if len(fn)==2 and fn[1].startswith('__init__.py'):
                 if fn[0] not in yielded:
                     yielded[fn[0]] = 1
-                    yield fn[0], True
+                    yield prefix + fn[0], True
 
             if len(fn)!=1:
                 continue
@@ -395,9 +405,9 @@ except ImportError:
 
 
 def get_importer(path_item):
-    """Retrieve a PEP 302 importer for the given path item
+    """Retrieve a finder for the given path item
 
-    The returned importer is cached in sys.path_importer_cache
+    The returned finder is cached in sys.path_importer_cache
     if it was newly created by a path hook.
 
     The cache (or part of it) can be cleared manually if a
@@ -419,16 +429,16 @@ def get_importer(path_item):
 
 
 def iter_importers(fullname=""):
-    """Yield PEP 302 importers for the given module name
+    """Yield finders for the given module name
 
-    If fullname contains a '.', the importers will be for the package
+    If fullname contains a '.', the finders will be for the package
     containing fullname, otherwise they will be all registered top level
-    importers (i.e. those on both sys.meta_path and sys.path_hooks).
+    finders (i.e. those on both sys.meta_path and sys.path_hooks).
 
     If the named module is in a package, that package is imported as a side
     effect of invoking this function.
 
-    If no module name is specified, all top level importers are produced.
+    If no module name is specified, all top level finders are produced.
     """
     if fullname.startswith('.'):
         msg = "Relative module name {!r} not supported".format(fullname)
@@ -448,7 +458,7 @@ def iter_importers(fullname=""):
 
 
 def get_loader(module_or_name):
-    """Get a PEP 302 "loader" object for module_or_name
+    """Get a "loader" object for module_or_name
 
     Returns None if the module cannot be found or imported.
     If the named module is not already imported, its containing package
@@ -472,7 +482,7 @@ def get_loader(module_or_name):
 
 
 def find_loader(fullname):
-    """Find a PEP 302 "loader" object for fullname
+    """Find a "loader" object for fullname
 
     This is a backwards compatibility wrapper around
     importlib.util.find_spec that converts most failures to ImportError
@@ -616,7 +626,7 @@ def get_data(package, resource):
         return None
     # XXX needs test
     mod = (sys.modules.get(package) or
-           importlib._bootstrap._SpecMethods(spec).load())
+           importlib._bootstrap._load(spec))
     if mod is None or not hasattr(mod, '__file__'):
         return None
 
@@ -627,3 +637,79 @@ def get_data(package, resource):
     parts.insert(0, os.path.dirname(mod.__file__))
     resource_name = os.path.join(*parts)
     return loader.get_data(resource_name)
+
+
+_NAME_PATTERN = None
+
+def resolve_name(name):
+    """
+    Resolve a name to an object.
+
+    It is expected that `name` will be a string in one of the following
+    formats, where W is shorthand for a valid Python identifier and dot stands
+    for a literal period in these pseudo-regexes:
+
+    W(.W)*
+    W(.W)*:(W(.W)*)?
+
+    The first form is intended for backward compatibility only. It assumes that
+    some part of the dotted name is a package, and the rest is an object
+    somewhere within that package, possibly nested inside other objects.
+    Because the place where the package stops and the object hierarchy starts
+    can't be inferred by inspection, repeated attempts to import must be done
+    with this form.
+
+    In the second form, the caller makes the division point clear through the
+    provision of a single colon: the dotted name to the left of the colon is a
+    package to be imported, and the dotted name to the right is the object
+    hierarchy within that package. Only one import is needed in this form. If
+    it ends with the colon, then a module object is returned.
+
+    The function will return an object (which might be a module), or raise one
+    of the following exceptions:
+
+    ValueError - if `name` isn't in a recognised format
+    ImportError - if an import failed when it shouldn't have
+    AttributeError - if a failure occurred when traversing the object hierarchy
+                     within the imported package to get to the desired object.
+    """
+    global _NAME_PATTERN
+    if _NAME_PATTERN is None:
+        # Lazy import to speedup Python startup time
+        import re
+        dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+        _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                   f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                   re.UNICODE)
+
+    m = _NAME_PATTERN.match(name)
+    if not m:
+        raise ValueError(f'invalid format: {name!r}')
+    gd = m.groupdict()
+    if gd.get('cln'):
+        # there is a colon - a one-step import is all that's needed
+        mod = importlib.import_module(gd['pkg'])
+        parts = gd.get('obj')
+        parts = parts.split('.') if parts else []
+    else:
+        # no colon - have to iterate to find the package boundary
+        parts = name.split('.')
+        modname = parts.pop(0)
+        # first part *must* be a module/package.
+        mod = importlib.import_module(modname)
+        while parts:
+            p = parts[0]
+            s = f'{modname}.{p}'
+            try:
+                mod = importlib.import_module(s)
+                parts.pop(0)
+                modname = s
+            except ImportError:
+                break
+    # if we reach this point, mod is the module, already imported, and
+    # parts is the list of parts in the object hierarchy to be traversed, or
+    # an empty list if just the module is wanted.
+    result = mod
+    for p in parts:
+        result = getattr(result, p)
+    return result

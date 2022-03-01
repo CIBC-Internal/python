@@ -124,8 +124,9 @@ function calls leading up to the error, in the order they occurred.</p>'''
         args, varargs, varkw, locals = inspect.getargvalues(frame)
         call = ''
         if func != '?':
-            call = 'in ' + strong(func) + \
-                inspect.formatargvalues(args, varargs, varkw, locals,
+            call = 'in ' + strong(pydoc.html.escape(func))
+            if func != "<module>":
+                call += inspect.formatargvalues(args, varargs, varkw, locals,
                     formatvalue=lambda value: '=' + pydoc.html.repr(value))
 
         highlight = {}
@@ -180,8 +181,8 @@ function calls leading up to the error, in the order they occurred.</p>'''
 
 
 <!-- The above is a description of an error in a Python program, formatted
-     for a Web browser because the 'cgitb' module was enabled.  In case you
-     are not reading this in a Web browser, here is the original traceback:
+     for a web browser because the 'cgitb' module was enabled.  In case you
+     are not reading this in a web browser, here is the original traceback:
 
 %s
 -->
@@ -207,8 +208,9 @@ function calls leading up to the error, in the order they occurred.
         args, varargs, varkw, locals = inspect.getargvalues(frame)
         call = ''
         if func != '?':
-            call = 'in ' + func + \
-                inspect.formatargvalues(args, varargs, varkw, locals,
+            call = 'in ' + func
+            if func != "<module>":
+                call += inspect.formatargvalues(args, varargs, varkw, locals,
                     formatvalue=lambda value: '=' + pydoc.text.repr(value))
 
         highlight = {}
@@ -282,7 +284,7 @@ class Hook:
 
         if self.display:
             if plain:
-                doc = doc.replace('&', '&amp;').replace('<', '&lt;')
+                doc = pydoc.html.escape(doc)
                 self.file.write('<pre>' + doc + '</pre>\n')
             else:
                 self.file.write(doc + '\n')
@@ -294,9 +296,8 @@ class Hook:
             (fd, path) = tempfile.mkstemp(suffix=suffix, dir=self.logdir)
 
             try:
-                file = os.fdopen(fd, 'w')
-                file.write(doc)
-                file.close()
+                with os.fdopen(fd, 'w') as file:
+                    file.write(doc)
                 msg = '%s contains the description of this error.' % path
             except:
                 msg = 'Tried to save traceback to %s, but failed.' % path
