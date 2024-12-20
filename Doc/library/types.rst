@@ -1,5 +1,5 @@
-:mod:`types` --- Dynamic type creation and names for built-in types
-===================================================================
+:mod:`!types` --- Dynamic type creation and names for built-in types
+====================================================================
 
 .. module:: types
    :synopsis: Names for built-in types.
@@ -8,7 +8,7 @@
 
 --------------
 
-This module defines utility function to assist in dynamic creation of
+This module defines utility functions to assist in dynamic creation of
 new types.
 
 It also defines names for some object types that are used by the standard
@@ -34,7 +34,7 @@ Dynamic Type Creation
    freshly created class namespace. It should accept the class namespace
    as its sole argument and update the namespace directly with the class
    contents. If no callback is provided, it has the same effect as passing
-   in ``lambda ns: ns``.
+   in ``lambda ns: None``.
 
    .. versionadded:: 3.3
 
@@ -55,6 +55,12 @@ Dynamic Type Creation
 
    .. versionadded:: 3.3
 
+   .. versionchanged:: 3.6
+
+      The default value for the ``namespace`` element of the returned
+      tuple has changed.  Now an insertion-order-preserving mapping is
+      used when the metaclass does not have a ``__prepare__`` method.
+
 .. seealso::
 
    :ref:`metaclasses`
@@ -62,6 +68,63 @@ Dynamic Type Creation
 
    :pep:`3115` - Metaclasses in Python 3000
       Introduced the ``__prepare__`` namespace hook
+
+.. function:: resolve_bases(bases)
+
+   Resolve MRO entries dynamically as specified by :pep:`560`.
+
+   This function looks for items in *bases* that are not instances of
+   :class:`type`, and returns a tuple where each such object that has
+   an :meth:`~object.__mro_entries__` method is replaced with an unpacked result of
+   calling this method.  If a *bases* item is an instance of :class:`type`,
+   or it doesn't have an :meth:`!__mro_entries__` method, then it is included in
+   the return tuple unchanged.
+
+   .. versionadded:: 3.7
+
+.. function:: get_original_bases(cls, /)
+
+    Return the tuple of objects originally given as the bases of *cls* before
+    the :meth:`~object.__mro_entries__` method has been called on any bases
+    (following the mechanisms laid out in :pep:`560`). This is useful for
+    introspecting :ref:`Generics <user-defined-generics>`.
+
+    For classes that have an ``__orig_bases__`` attribute, this
+    function returns the value of ``cls.__orig_bases__``.
+    For classes without the ``__orig_bases__`` attribute,
+    :attr:`cls.__bases__ <type.__bases__>` is returned.
+
+    Examples::
+
+        from typing import TypeVar, Generic, NamedTuple, TypedDict
+
+        T = TypeVar("T")
+        class Foo(Generic[T]): ...
+        class Bar(Foo[int], float): ...
+        class Baz(list[str]): ...
+        Eggs = NamedTuple("Eggs", [("a", int), ("b", str)])
+        Spam = TypedDict("Spam", {"a": int, "b": str})
+
+        assert Bar.__bases__ == (Foo, float)
+        assert get_original_bases(Bar) == (Foo[int], float)
+
+        assert Baz.__bases__ == (list,)
+        assert get_original_bases(Baz) == (list[str],)
+
+        assert Eggs.__bases__ == (tuple,)
+        assert get_original_bases(Eggs) == (NamedTuple,)
+
+        assert Spam.__bases__ == (dict,)
+        assert get_original_bases(Spam) == (TypedDict,)
+
+        assert int.__bases__ == (object,)
+        assert get_original_bases(int) == (object,)
+
+    .. versionadded:: 3.12
+
+.. seealso::
+
+   :pep:`560` - Core support for typing module and generic types
 
 
 Standard Interpreter Types
@@ -75,7 +138,17 @@ the types that arise only incidentally during processing such as the
 Typical use of these names is for :func:`isinstance` or
 :func:`issubclass` checks.
 
+
+If you instantiate any of these types, note that signatures may vary between Python versions.
+
 Standard names are defined for the following types:
+
+.. data:: NoneType
+
+   The type of :data:`None`.
+
+   .. versionadded:: 3.10
+
 
 .. data:: FunctionType
           LambdaType
@@ -83,18 +156,52 @@ Standard names are defined for the following types:
    The type of user-defined functions and functions created by
    :keyword:`lambda`  expressions.
 
+   .. audit-event:: function.__new__ code types.FunctionType
+
+   The audit event only occurs for direct instantiation of function objects,
+   and is not raised for normal compilation.
+
 
 .. data:: GeneratorType
 
-   The type of :term:`generator`-iterator objects, produced by calling a
-   generator function.
+   The type of :term:`generator`-iterator objects, created by
+   generator functions.
 
 
-.. data:: CodeType
+.. data:: CoroutineType
 
-   .. index:: builtin: compile
+   The type of :term:`coroutine` objects, created by
+   :keyword:`async def` functions.
 
-   The type for code objects such as returned by :func:`compile`.
+   .. versionadded:: 3.5
+
+
+.. data:: AsyncGeneratorType
+
+   The type of :term:`asynchronous generator`-iterator objects, created by
+   asynchronous generator functions.
+
+   .. versionadded:: 3.6
+
+
+.. class:: CodeType(**kwargs)
+
+   .. index:: pair: built-in function; compile
+
+   The type of :ref:`code objects <code-objects>` such as returned by :func:`compile`.
+
+   .. audit-event:: code.__new__ code,filename,name,argcount,posonlyargcount,kwonlyargcount,nlocals,stacksize,flags types.CodeType
+
+   Note that the audited arguments may not match the names or positions
+   required by the initializer.  The audit event only occurs for direct
+   instantiation of code objects, and is not raised for normal compilation.
+
+.. data:: CellType
+
+   The type for cell objects: such objects are used as containers for
+   a function's free variables.
+
+   .. versionadded:: 3.8
 
 
 .. data:: MethodType
@@ -110,52 +217,123 @@ Standard names are defined for the following types:
    C".)
 
 
+.. data:: WrapperDescriptorType
+
+   The type of methods of some built-in data types and base classes such as
+   :meth:`object.__init__` or :meth:`object.__lt__`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: MethodWrapperType
+
+   The type of *bound* methods of some built-in data types and base classes.
+   For example it is the type of :code:`object().__str__`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: NotImplementedType
+
+   The type of :data:`NotImplemented`.
+
+   .. versionadded:: 3.10
+
+
+.. data:: MethodDescriptorType
+
+   The type of methods of some built-in data types such as :meth:`str.join`.
+
+   .. versionadded:: 3.7
+
+
+.. data:: ClassMethodDescriptorType
+
+   The type of *unbound* class methods of some built-in data types such as
+   ``dict.__dict__['fromkeys']``.
+
+   .. versionadded:: 3.7
+
+
 .. class:: ModuleType(name, doc=None)
 
-   The type of :term:`modules <module>`. Constructor takes the name of the
+   The type of :term:`modules <module>`. The constructor takes the name of the
    module to be created and optionally its :term:`docstring`.
 
-   .. attribute:: __doc__
+   .. seealso::
 
-      The :term:`docstring` of the module. Defaults to ``None``.
+      :ref:`Documentation on module objects <module-objects>`
+         Provides details on the special attributes that can be found on
+         instances of :class:`!ModuleType`.
 
-   .. attribute:: __loader__
+      :func:`importlib.util.module_from_spec`
+         Modules created using the :class:`!ModuleType` constructor are
+         created with many of their special attributes unset or set to default
+         values. :func:`!module_from_spec` provides a more robust way of
+         creating :class:`!ModuleType` instances which ensures the various
+         attributes are set appropriately.
 
-      The :term:`loader` which loaded the module. Defaults to ``None``.
+.. data:: EllipsisType
 
-      .. versionchanged:: 3.4
-         Defaults to ``None``. Previously the attribute was optional.
+   The type of :data:`Ellipsis`.
 
-   .. attribute:: __name__
+   .. versionadded:: 3.10
 
-      The name of the module.
+.. class:: GenericAlias(t_origin, t_args)
 
-   .. attribute:: __package__
+   The type of :ref:`parameterized generics <types-genericalias>` such as
+   ``list[int]``.
 
-      Which :term:`package` a module belongs to. If the module is top-level
-      (i.e. not a part of any specific package) then the attribute should be set
-      to ``''``, else it should be set to the name of the package (which can be
-      :attr:`__name__` if the module is a package itself). Defaults to ``None``.
+   ``t_origin`` should be a non-parameterized generic class, such as ``list``,
+   ``tuple`` or ``dict``.  ``t_args`` should be a :class:`tuple` (possibly of
+   length 1) of types which parameterize ``t_origin``::
 
-      .. versionchanged:: 3.4
-         Defaults to ``None``. Previously the attribute was optional.
+      >>> from types import GenericAlias
 
+      >>> list[int] == GenericAlias(list, (int,))
+      True
+      >>> dict[str, int] == GenericAlias(dict, (str, int))
+      True
 
-.. data:: TracebackType
+   .. versionadded:: 3.9
 
-   The type of traceback objects such as found in ``sys.exc_info()[2]``.
+   .. versionchanged:: 3.9.2
+      This type can now be subclassed.
+
+   .. seealso::
+
+      :ref:`Generic Alias Types<types-genericalias>`
+         In-depth documentation on instances of :class:`!types.GenericAlias`
+
+      :pep:`585` - Type Hinting Generics In Standard Collections
+         Introducing the :class:`!types.GenericAlias` class
+
+.. class:: UnionType
+
+   The type of :ref:`union type expressions<types-union>`.
+
+   .. versionadded:: 3.10
+
+.. class:: TracebackType(tb_next, tb_frame, tb_lasti, tb_lineno)
+
+   The type of traceback objects such as found in ``sys.exception().__traceback__``.
+
+   See :ref:`the language reference <traceback-objects>` for details of the
+   available attributes and operations, and guidance on creating tracebacks
+   dynamically.
 
 
 .. data:: FrameType
 
-   The type of frame objects such as found in ``tb.tb_frame`` if ``tb`` is a
-   traceback object.
+   The type of :ref:`frame objects <frame-objects>` such as found in
+   :attr:`tb.tb_frame <traceback.tb_frame>` if ``tb`` is a traceback object.
 
 
 .. data:: GetSetDescriptorType
 
    The type of objects defined in extension modules with ``PyGetSetDef``, such
-   as ``FrameType.f_locals`` or ``array.array.typecode``.  This type is used as
+   as :attr:`FrameType.f_locals <frame.f_locals>` or ``array.array.typecode``.
+   This type is used as
    descriptor for object attributes; it has the same purpose as the
    :class:`property` type, but for classes defined in extension modules.
 
@@ -166,6 +344,10 @@ Standard names are defined for the following types:
    as ``datetime.timedelta.days``.  This type is used as descriptor for simple C
    data members which use standard conversion functions; it has the same purpose
    as the :class:`property` type, but for classes defined in extension modules.
+
+   In addition, when a class is defined with a :attr:`~object.__slots__` attribute, then for
+   each slot, an instance of :class:`!MemberDescriptorType` will be added as an attribute
+   on the class. This allows the slot to appear in the class's :attr:`~type.__dict__`.
 
    .. impl-detail::
 
@@ -179,6 +361,11 @@ Standard names are defined for the following types:
    changes.
 
    .. versionadded:: 3.3
+
+   .. versionchanged:: 3.9
+
+      Updated to support the new union (``|``) operator from :pep:`584`, which
+      simply delegates to the underlying mapping.
 
    .. describe:: key in proxy
 
@@ -222,6 +409,18 @@ Standard names are defined for the following types:
 
       Return a new view of the underlying mapping's values.
 
+   .. describe:: reversed(proxy)
+
+      Return a reverse iterator over the keys of the underlying mapping.
+
+      .. versionadded:: 3.9
+
+   .. describe:: hash(proxy)
+
+      Return a hash of the underlying mapping.
+
+      .. versionadded:: 3.12
+
 
 Additional Utility Classes and Functions
 ----------------------------------------
@@ -238,14 +437,17 @@ Additional Utility Classes and Functions
    The type is roughly equivalent to the following code::
 
        class SimpleNamespace:
-           def __init__(self, **kwargs):
+           def __init__(self, /, **kwargs):
                self.__dict__.update(kwargs)
+
            def __repr__(self):
-               keys = sorted(self.__dict__)
-               items = ("{}={!r}".format(k, self.__dict__[k]) for k in keys)
+               items = (f"{k}={v!r}" for k, v in self.__dict__.items())
                return "{}({})".format(type(self).__name__, ", ".join(items))
+
            def __eq__(self, other):
-               return self.__dict__ == other.__dict__
+               if isinstance(self, SimpleNamespace) and isinstance(other, SimpleNamespace):
+                  return self.__dict__ == other.__dict__
+               return NotImplemented
 
    ``SimpleNamespace`` may be useful as a replacement for ``class NS: pass``.
    However, for a structured record type use :func:`~collections.namedtuple`
@@ -253,6 +455,9 @@ Additional Utility Classes and Functions
 
    .. versionadded:: 3.3
 
+   .. versionchanged:: 3.9
+      Attribute order in the repr changed from alphabetical to insertion (like
+      ``dict``).
 
 .. function:: DynamicClassAttribute(fget=None, fset=None, fdel=None, doc=None)
 
@@ -264,6 +469,28 @@ Additional Utility Classes and Functions
    class's __getattr__ method; this is done by raising AttributeError.
 
    This allows one to have properties active on an instance, and have virtual
-   attributes on the class with the same name (see Enum for an example).
+   attributes on the class with the same name (see :class:`enum.Enum` for an example).
 
    .. versionadded:: 3.4
+
+
+Coroutine Utility Functions
+---------------------------
+
+.. function:: coroutine(gen_func)
+
+   This function transforms a :term:`generator` function into a
+   :term:`coroutine function` which returns a generator-based coroutine.
+   The generator-based coroutine is still a :term:`generator iterator`,
+   but is also considered to be a :term:`coroutine` object and is
+   :term:`awaitable`.  However, it may not necessarily implement
+   the :meth:`~object.__await__` method.
+
+   If *gen_func* is a generator function, it will be modified in-place.
+
+   If *gen_func* is not a generator function, it will be wrapped. If it
+   returns an instance of :class:`collections.abc.Generator`, the instance
+   will be wrapped in an *awaitable* proxy object.  All other types
+   of objects will be returned as is.
+
+   .. versionadded:: 3.5

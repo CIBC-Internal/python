@@ -1,11 +1,13 @@
-:mod:`gc` --- Garbage Collector interface
-=========================================
+:mod:`!gc` --- Garbage Collector interface
+==========================================
 
 .. module:: gc
    :synopsis: Interface to the cycle-detecting garbage collector.
+
 .. moduleauthor:: Neil Schemenauer <nas@arctrix.com>
 .. sectionauthor:: Neil Schemenauer <nas@arctrix.com>
 
+--------------
 
 This module provides an interface to the optional garbage collector.  It
 provides the ability to disable the collector, tune the collection frequency,
@@ -33,10 +35,10 @@ The :mod:`gc` module provides the following functions:
 
 .. function:: isenabled()
 
-   Returns true if automatic collection is enabled.
+   Return ``True`` if automatic collection is enabled.
 
 
-.. function:: collect(generations=2)
+.. function:: collect(generation=2)
 
    With no arguments, run a full collection.  The optional argument *generation*
    may be an integer specifying which generation to collect (from 0 to 2).  A
@@ -47,6 +49,9 @@ The :mod:`gc` module provides the following functions:
    whenever a full collection or collection of the highest generation (2)
    is run.  Not all items in some free lists may be freed due to the
    particular implementation, in particular :class:`float`.
+
+   The effect of calling ``gc.collect()`` while the interpreter is already
+   performing a collection is undefined.
 
 
 .. function:: set_debug(flags)
@@ -61,11 +66,16 @@ The :mod:`gc` module provides the following functions:
    Return the debugging flags currently set.
 
 
-.. function:: get_objects()
+.. function:: get_objects(generation=None)
 
    Returns a list of all objects tracked by the collector, excluding the list
-   returned.
+   returned. If *generation* is not ``None``, return only the objects tracked by
+   the collector that are in that generation.
 
+   .. versionchanged:: 3.8
+      New *generation* parameter.
+
+   .. audit-event:: gc.get_objects generation gc.get_objects
 
 .. function:: get_stats()
 
@@ -101,9 +111,9 @@ The :mod:`gc` module provides the following functions:
    allocations minus the number of deallocations exceeds *threshold0*, collection
    starts.  Initially only generation ``0`` is examined.  If generation ``0`` has
    been examined more than *threshold1* times since generation ``1`` has been
-   examined, then generation ``1`` is examined as well.  Similarly, *threshold2*
-   controls the number of collections of generation ``1`` before collecting
-   generation ``2``.
+   examined, then generation ``1`` is examined as well.
+   With the third generation, things are a bit more complicated,
+   see `Collecting the oldest generation <https://devguide.python.org/garbage_collector/#collecting-the-oldest-generation>`_ for more information.
 
 
 .. function:: get_count()
@@ -130,10 +140,13 @@ The :mod:`gc` module provides the following functions:
    resulting referrers.  To get only currently live objects, call :func:`collect`
    before calling :func:`get_referrers`.
 
-   Care must be taken when using objects returned by :func:`get_referrers` because
-   some of them could still be under construction and hence in a temporarily
-   invalid state. Avoid using :func:`get_referrers` for any purpose other than
-   debugging.
+   .. warning::
+      Care must be taken when using objects returned by :func:`get_referrers` because
+      some of them could still be under construction and hence in a temporarily
+      invalid state. Avoid using :func:`get_referrers` for any purpose other than
+      debugging.
+
+   .. audit-event:: gc.get_referrers objs gc.get_referrers
 
 
 .. function:: get_referents(*objs)
@@ -146,6 +159,7 @@ The :mod:`gc` module provides the following functions:
    be involved in a cycle.  So, for example, if an integer is directly reachable
    from an argument, that integer object may or may not appear in the result list.
 
+   .. audit-event:: gc.get_referents objs gc.get_referents
 
 .. function:: is_tracked(obj)
 
@@ -172,6 +186,59 @@ The :mod:`gc` module provides the following functions:
    .. versionadded:: 3.1
 
 
+.. function:: is_finalized(obj)
+
+   Returns ``True`` if the given object has been finalized by the
+   garbage collector, ``False`` otherwise. ::
+
+      >>> x = None
+      >>> class Lazarus:
+      ...     def __del__(self):
+      ...         global x
+      ...         x = self
+      ...
+      >>> lazarus = Lazarus()
+      >>> gc.is_finalized(lazarus)
+      False
+      >>> del lazarus
+      >>> gc.is_finalized(x)
+      True
+
+   .. versionadded:: 3.9
+
+
+.. function:: freeze()
+
+   Freeze all the objects tracked by the garbage collector; move them to a
+   permanent generation and ignore them in all the future collections.
+
+   If a process will ``fork()`` without ``exec()``, avoiding unnecessary
+   copy-on-write in child processes will maximize memory sharing and reduce
+   overall memory usage. This requires both avoiding creation of freed "holes"
+   in memory pages in the parent process and ensuring that GC collections in
+   child processes won't touch the ``gc_refs`` counter of long-lived objects
+   originating in the parent process. To accomplish both, call ``gc.disable()``
+   early in the parent process, ``gc.freeze()`` right before ``fork()``, and
+   ``gc.enable()`` early in child processes.
+
+   .. versionadded:: 3.7
+
+
+.. function:: unfreeze()
+
+   Unfreeze the objects in the permanent generation, put them back into the
+   oldest generation.
+
+   .. versionadded:: 3.7
+
+
+.. function:: get_freeze_count()
+
+   Return the number of objects in the permanent generation.
+
+   .. versionadded:: 3.7
+
+
 The following variables are provided for read-only access (you can mutate the
 values but should not rebind them):
 
@@ -180,20 +247,20 @@ values but should not rebind them):
    A list of objects which the collector found to be unreachable but could
    not be freed (uncollectable objects).  Starting with Python 3.4, this
    list should be empty most of the time, except when using instances of
-   C extension types with a non-NULL ``tp_del`` slot.
+   C extension types with a non-``NULL`` ``tp_del`` slot.
 
    If :const:`DEBUG_SAVEALL` is set, then all unreachable objects will be
    added to this list rather than freed.
 
    .. versionchanged:: 3.2
-      If this list is non-empty at interpreter shutdown, a
+      If this list is non-empty at :term:`interpreter shutdown`, a
       :exc:`ResourceWarning` is emitted, which is silent by default.  If
       :const:`DEBUG_UNCOLLECTABLE` is set, in addition all uncollectable objects
       are printed.
 
    .. versionchanged:: 3.4
-      Following :pep:`442`, objects with a :meth:`__del__` method don't end
-      up in :attr:`gc.garbage` anymore.
+      Following :pep:`442`, objects with a :meth:`~object.__del__` method don't end
+      up in :data:`gc.garbage` anymore.
 
 .. data:: callbacks
 
@@ -252,8 +319,8 @@ The following constants are provided for use with :func:`set_debug`:
    to the ``garbage`` list.
 
    .. versionchanged:: 3.2
-      Also print the contents of the :data:`garbage` list at interpreter
-      shutdown, if it isn't empty.
+      Also print the contents of the :data:`garbage` list at
+      :term:`interpreter shutdown`, if it isn't empty.
 
 .. data:: DEBUG_SAVEALL
 

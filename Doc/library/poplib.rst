@@ -1,14 +1,15 @@
-:mod:`poplib` --- POP3 protocol client
-======================================
+:mod:`!poplib` --- POP3 protocol client
+=======================================
 
 .. module:: poplib
    :synopsis: POP3 protocol client (requires sockets).
+
 .. sectionauthor:: Andrew T. Csillag
 .. revised by ESR, January 2000
 
-.. index:: pair: POP3; protocol
-
 **Source code:** :source:`Lib/poplib.py`
+
+.. index:: pair: POP3; protocol
 
 --------------
 
@@ -27,6 +28,8 @@ quality of POP3 servers varies widely, and too many are quite poor. If your
 mailserver supports IMAP, you would be better off using the
 :class:`imaplib.IMAP4` class, as IMAP servers tend to be better implemented.
 
+.. include:: ../includes/wasm-notavail.rst
+
 The :mod:`poplib` module provides two classes:
 
 
@@ -38,8 +41,19 @@ The :mod:`poplib` module provides two classes:
    connection attempt (if not specified, the global default timeout setting will
    be used).
 
+   .. audit-event:: poplib.connect self,host,port poplib.POP3
 
-.. class:: POP3_SSL(host, port=POP3_SSL_PORT, keyfile=None, certfile=None, timeout=None, context=None)
+   .. audit-event:: poplib.putline self,line poplib.POP3
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``poplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
+
+   .. versionchanged:: 3.9
+      If the *timeout* parameter is set to be zero, it will raise a
+      :class:`ValueError` to prevent the creation of a non-blocking socket.
+
+.. class:: POP3_SSL(host, port=POP3_SSL_PORT, *, timeout=None, context=None)
 
    This is a subclass of :class:`POP3` that connects to the server over an SSL
    encrypted socket.  If *port* is not specified, 995, the standard POP3-over-SSL
@@ -49,9 +63,13 @@ The :mod:`poplib` module provides two classes:
    single (potentially long-lived) structure.  Please read :ref:`ssl-security`
    for best practices.
 
-   *keyfile* and *certfile* are a legacy alternative to *context* - they can
-   point to PEM-formatted private key and certificate chain files,
-   respectively, for the SSL connection.
+   .. audit-event:: poplib.connect self,host,port poplib.POP3_SSL
+
+   .. audit-event:: poplib.putline self,line poplib.POP3_SSL
+
+      All commands will raise an :ref:`auditing event <auditing>`
+      ``poplib.putline`` with arguments ``self`` and ``line``,
+      where ``line`` is the bytes about to be sent to the remote host.
 
    .. versionchanged:: 3.2
       *context* parameter added.
@@ -59,7 +77,14 @@ The :mod:`poplib` module provides two classes:
    .. versionchanged:: 3.4
       The class now supports hostname check with
       :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
-      :data:`ssl.HAS_SNI`).
+      :const:`ssl.HAS_SNI`).
+
+   .. versionchanged:: 3.9
+      If the *timeout* parameter is set to be zero, it will raise a
+      :class:`ValueError` to prevent the creation of a non-blocking socket.
+
+   .. versionchanged:: 3.12
+      The deprecated *keyfile* and *certfile* parameters have been removed.
 
 One exception is defined as an attribute of the :mod:`poplib` module:
 
@@ -87,10 +112,10 @@ One exception is defined as an attribute of the :mod:`poplib` module:
 POP3 Objects
 ------------
 
-All POP3 commands are represented by methods of the same name, in lower-case;
+All POP3 commands are represented by methods of the same name, in lowercase;
 most return the response text sent by the server.
 
-An :class:`POP3` instance has the following methods:
+A :class:`POP3` instance has the following methods:
 
 
 .. method:: POP3.set_debuglevel(level)
@@ -123,7 +148,7 @@ An :class:`POP3` instance has the following methods:
 .. method:: POP3.pass_(password)
 
    Send password, response includes message count and mailbox size. Note: the
-   mailbox on the server is locked until :meth:`~poplib.quit` is called.
+   mailbox on the server is locked until :meth:`~POP3.quit` is called.
 
 
 .. method:: POP3.apop(user, secret)
@@ -194,6 +219,15 @@ An :class:`POP3` instance has the following methods:
    the unique id for that message in the form ``'response mesgnum uid``, otherwise
    result is list ``(response, ['mesgnum uid', ...], octets)``.
 
+
+.. method:: POP3.utf8()
+
+   Try to switch to UTF-8 mode. Returns the server response if successful,
+   raises :class:`error_proto` if not. Specified in :RFC:`6856`.
+
+   .. versionadded:: 3.5
+
+
 .. method:: POP3.stls(context=None)
 
    Start a TLS session on the active connection as specified in :rfc:`2595`.
@@ -206,7 +240,7 @@ An :class:`POP3` instance has the following methods:
 
    This method supports hostname checking via
    :attr:`ssl.SSLContext.check_hostname` and *Server Name Indication* (see
-   :data:`ssl.HAS_SNI`).
+   :const:`ssl.HAS_SNI`).
 
    .. versionadded:: 3.4
 
@@ -235,4 +269,3 @@ retrieves and prints all messages::
 
 At the end of the module, there is a test section that contains a more extensive
 example of usage.
-

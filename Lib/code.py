@@ -40,7 +40,7 @@ class InteractiveInterpreter:
 
         Arguments are as for compile_command().
 
-        One several things can happen:
+        One of several things can happen:
 
         1) The input is incorrect; compile_command() raised an
         exception (SyntaxError or OverflowError).  A syntax traceback
@@ -105,28 +105,21 @@ class InteractiveInterpreter:
         The output is written by self.write(), below.
 
         """
-        type, value, tb = sys.exc_info()
-        sys.last_type = type
-        sys.last_value = value
-        sys.last_traceback = tb
-        if filename and type is SyntaxError:
-            # Work hard to stuff the correct filename in the exception
-            try:
-                msg, (dummy_filename, lineno, offset, line) = value.args
-            except ValueError:
-                # Not the format we expect; leave it alone
-                pass
-            else:
-                # Stuff in the right filename
-                value = SyntaxError(msg, (filename, lineno, offset, line))
-                sys.last_value = value
-        if sys.excepthook is sys.__excepthook__:
-            lines = traceback.format_exception_only(type, value)
-            self.write(''.join(lines))
-        else:
-            # If someone has set sys.excepthook, we let that take precedence
-            # over self.write
-            sys.excepthook(type, value, tb)
+        try:
+            typ, value, tb = sys.exc_info()
+            if filename and typ is SyntaxError:
+                # Work hard to stuff the correct filename in the exception
+                try:
+                    msg, (dummy_filename, lineno, offset, line) = value.args
+                except ValueError:
+                    # Not the format we expect; leave it alone
+                    pass
+                else:
+                    # Stuff in the right filename
+                    value = SyntaxError(msg, (filename, lineno, offset, line))
+            self._showtraceback(typ, value, None)
+        finally:
+            typ = value = tb = None
 
     def showtraceback(self):
         """Display the exception that just occurred.
@@ -137,24 +130,33 @@ class InteractiveInterpreter:
 
         """
         try:
-            type, value, tb = sys.exc_info()
-            sys.last_type = type
-            sys.last_value = value
-            sys.last_traceback = tb
-            tblist = traceback.extract_tb(tb)
-            del tblist[:1]
-            lines = traceback.format_list(tblist)
-            if lines:
-                lines.insert(0, "Traceback (most recent call last):\n")
-            lines.extend(traceback.format_exception_only(type, value))
+            typ, value, tb = sys.exc_info()
+            self._showtraceback(typ, value, tb.tb_next)
         finally:
-            tblist = tb = None
+            typ = value = tb = None
+
+    def _showtraceback(self, typ, value, tb):
+        sys.last_type = typ
+        sys.last_traceback = tb
+        sys.last_exc = sys.last_value = value = value.with_traceback(tb)
         if sys.excepthook is sys.__excepthook__:
+            lines = traceback.format_exception(typ, value, tb)
             self.write(''.join(lines))
         else:
             # If someone has set sys.excepthook, we let that take precedence
             # over self.write
-            sys.excepthook(type, value, tb)
+            try:
+                sys.excepthook(typ, value, tb)
+            except SystemExit:
+                raise
+            except BaseException as e:
+                e.__context__ = None
+                e = e.with_traceback(e.__traceback__.tb_next)
+                print('Error in sys.excepthook:', file=sys.stderr)
+                sys.__excepthook__(type(e), e, e.__traceback__)
+                print(file=sys.stderr)
+                print('Original exception was:', file=sys.stderr)
+                sys.__excepthook__(typ, value, tb)
 
     def write(self, data):
         """Write a string.
@@ -192,7 +194,7 @@ class InteractiveConsole(InteractiveInterpreter):
         """Reset the input buffer."""
         self.buffer = []
 
-    def interact(self, banner=None):
+    def interact(self, banner=None, exitmsg=None):
         """Closely emulate the interactive Python console.
 
         The optional banner argument specifies the banner to print
@@ -201,6 +203,11 @@ class InteractiveConsole(InteractiveInterpreter):
         followed by the current class name in parentheses (so as not
         to confuse this with the real interpreter -- since it's so
         close!).
+
+        The optional exitmsg argument specifies the exit message
+        printed when exiting. Pass the empty string to suppress
+        printing an exit message. If exitmsg is not given or None,
+        a default message is printed.
 
         """
         try:
@@ -236,6 +243,10 @@ class InteractiveConsole(InteractiveInterpreter):
                 self.write("\nKeyboardInterrupt\n")
                 self.resetbuffer()
                 more = 0
+        if exitmsg is None:
+            self.write('now exiting %s...\n' % self.__class__.__name__)
+        elif exitmsg != '':
+            self.write('%s\n' % exitmsg)
 
     def push(self, line):
         """Push a line to the interpreter.
@@ -273,7 +284,7 @@ class InteractiveConsole(InteractiveInterpreter):
 
 
 
-def interact(banner=None, readfunc=None, local=None):
+def interact(banner=None, readfunc=None, local=None, exitmsg=None):
     """Closely emulate the interactive Python interpreter.
 
     This is a backwards compatible interface to the InteractiveConsole
@@ -285,6 +296,7 @@ def interact(banner=None, readfunc=None, local=None):
     banner -- passed to InteractiveConsole.interact()
     readfunc -- if not None, replaces InteractiveConsole.raw_input()
     local -- passed to InteractiveInterpreter.__init__()
+    exitmsg -- passed to InteractiveConsole.interact()
 
     """
     console = InteractiveConsole(local)
@@ -295,8 +307,18 @@ def interact(banner=None, readfunc=None, local=None):
             import readline
         except ImportError:
             pass
-    console.interact(banner)
+    console.interact(banner, exitmsg)
 
 
 if __name__ == "__main__":
-    interact()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-q', action='store_true',
+                       help="don't print version and copyright messages")
+    args = parser.parse_args()
+    if args.q or sys.flags.quiet:
+        banner = ''
+    else:
+        banner = None
+    interact(banner)

@@ -4,20 +4,24 @@ csv.py - read/write/investigate CSV files
 """
 
 import re
+import types
 from _csv import Error, __version__, writer, reader, register_dialect, \
                  unregister_dialect, get_dialect, list_dialects, \
                  field_size_limit, \
                  QUOTE_MINIMAL, QUOTE_ALL, QUOTE_NONNUMERIC, QUOTE_NONE, \
+                 QUOTE_STRINGS, QUOTE_NOTNULL, \
                  __doc__
 from _csv import Dialect as _Dialect
 
 from io import StringIO
 
-__all__ = [ "QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE",
-            "Error", "Dialect", "__doc__", "excel", "excel_tab",
-            "field_size_limit", "reader", "writer",
-            "register_dialect", "get_dialect", "list_dialects", "Sniffer",
-            "unregister_dialect", "__version__", "DictReader", "DictWriter" ]
+__all__ = ["QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE",
+           "QUOTE_STRINGS", "QUOTE_NOTNULL",
+           "Error", "Dialect", "__doc__", "excel", "excel_tab",
+           "field_size_limit", "reader", "writer",
+           "register_dialect", "get_dialect", "list_dialects", "Sniffer",
+           "unregister_dialect", "__version__", "DictReader", "DictWriter",
+           "unix_dialect"]
 
 class Dialect:
     """Describe a CSV dialect.
@@ -79,6 +83,8 @@ register_dialect("unix", unix_dialect)
 class DictReader:
     def __init__(self, f, fieldnames=None, restkey=None, restval=None,
                  dialect="excel", *args, **kwds):
+        if fieldnames is not None and iter(fieldnames) is fieldnames:
+            fieldnames = list(fieldnames)
         self._fieldnames = fieldnames   # list of keys for the dict
         self.restkey = restkey          # key to catch long rows
         self.restval = restval          # default value for short rows
@@ -125,13 +131,18 @@ class DictReader:
                 d[key] = self.restval
         return d
 
+    __class_getitem__ = classmethod(types.GenericAlias)
+
 
 class DictWriter:
     def __init__(self, f, fieldnames, restval="", extrasaction="raise",
                  dialect="excel", *args, **kwds):
+        if fieldnames is not None and iter(fieldnames) is fieldnames:
+            fieldnames = list(fieldnames)
         self.fieldnames = fieldnames    # list of keys for the dict
         self.restval = restval          # for writing short dicts
-        if extrasaction.lower() not in ("raise", "ignore"):
+        extrasaction = extrasaction.lower()
+        if extrasaction not in ("raise", "ignore"):
             raise ValueError("extrasaction (%s) must be 'raise' or 'ignore'"
                              % extrasaction)
         self.extrasaction = extrasaction
@@ -139,30 +150,24 @@ class DictWriter:
 
     def writeheader(self):
         header = dict(zip(self.fieldnames, self.fieldnames))
-        self.writerow(header)
+        return self.writerow(header)
 
     def _dict_to_list(self, rowdict):
         if self.extrasaction == "raise":
-            wrong_fields = [k for k in rowdict if k not in self.fieldnames]
+            wrong_fields = rowdict.keys() - self.fieldnames
             if wrong_fields:
                 raise ValueError("dict contains fields not in fieldnames: "
                                  + ", ".join([repr(x) for x in wrong_fields]))
-        return [rowdict.get(key, self.restval) for key in self.fieldnames]
+        return (rowdict.get(key, self.restval) for key in self.fieldnames)
 
     def writerow(self, rowdict):
         return self.writer.writerow(self._dict_to_list(rowdict))
 
     def writerows(self, rowdicts):
-        rows = []
-        for rowdict in rowdicts:
-            rows.append(self._dict_to_list(rowdict))
-        return self.writer.writerows(rows)
+        return self.writer.writerows(map(self._dict_to_list, rowdicts))
 
-# Guard Sniffer's type checking against builds that exclude complex()
-try:
-    complex
-except NameError:
-    complex = float
+    __class_getitem__ = classmethod(types.GenericAlias)
+
 
 class Sniffer:
     '''
@@ -216,10 +221,10 @@ class Sniffer:
         """
 
         matches = []
-        for restr in ('(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?P=delim)', # ,".*?",
-                      '(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?P<delim>[^\w\n"\'])(?P<space> ?)',   #  ".*?",
-                      '(?P<delim>>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?:$|\n)',  # ,".*?"
-                      '(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?:$|\n)'):                            #  ".*?" (no delim, no space)
+        for restr in (r'(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?P=delim)', # ,".*?",
+                      r'(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?P<delim>[^\w\n"\'])(?P<space> ?)',   #  ".*?",
+                      r'(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?:$|\n)',   # ,".*?"
+                      r'(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?:$|\n)'):                            #  ".*?" (no delim, no space)
             regexp = re.compile(restr, re.DOTALL | re.MULTILINE)
             matches = regexp.findall(data)
             if matches:
@@ -231,20 +236,21 @@ class Sniffer:
         quotes = {}
         delims = {}
         spaces = 0
+        groupindex = regexp.groupindex
         for m in matches:
-            n = regexp.groupindex['quote'] - 1
+            n = groupindex['quote'] - 1
             key = m[n]
             if key:
                 quotes[key] = quotes.get(key, 0) + 1
             try:
-                n = regexp.groupindex['delim'] - 1
+                n = groupindex['delim'] - 1
                 key = m[n]
             except KeyError:
                 continue
             if key and (delimiters is None or key in delimiters):
                 delims[key] = delims.get(key, 0) + 1
             try:
-                n = regexp.groupindex['space'] - 1
+                n = groupindex['space'] - 1
             except KeyError:
                 continue
             if m[n]:
@@ -307,7 +313,7 @@ class Sniffer:
         charFrequency = {}
         modes = {}
         delims = {}
-        start, end = 0, min(chunkLength, len(data))
+        start, end = 0, chunkLength
         while start < len(data):
             iteration += 1
             for line in data[start:end]:
@@ -336,7 +342,7 @@ class Sniffer:
 
             # build a list of possible delimiters
             modeList = modes.items()
-            total = float(chunkLength * iteration)
+            total = float(min(chunkLength * iteration, len(data)))
             # (rows of consistent data) / (number of rows) = 100%
             consistency = 1.0
             # minimum consistency threshold
@@ -410,14 +416,10 @@ class Sniffer:
                 continue # skip rows that have irregular number of columns
 
             for col in list(columnTypes.keys()):
-
-                for thisType in [int, float, complex]:
-                    try:
-                        thisType(row[col])
-                        break
-                    except (ValueError, OverflowError):
-                        pass
-                else:
+                thisType = complex
+                try:
+                    thisType(row[col])
+                except (ValueError, OverflowError):
                     # fallback to length of string
                     thisType = len(row[col])
 
@@ -433,7 +435,7 @@ class Sniffer:
         # on whether it's a header
         hasHeader = 0
         for col, colType in columnTypes.items():
-            if type(colType) == type(0): # it's a length
+            if isinstance(colType, int): # it's a length
                 if len(header[col]) != colType:
                     hasHeader += 1
                 else:

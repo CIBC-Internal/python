@@ -5,9 +5,8 @@ thus has no external changes made to import-related attributes in sys.
 
 """
 from test.test_importlib import util
-from test.test_importlib.source import util as source_util
 import decimal
-import imp
+from importlib.util import cache_from_source
 import importlib
 import importlib.machinery
 import json
@@ -16,6 +15,7 @@ import py_compile
 import sys
 import tabnanny
 import timeit
+import types
 
 
 def bench(name, cleanup=lambda: None, *, seconds=1, repeat=3):
@@ -41,7 +41,7 @@ def bench(name, cleanup=lambda: None, *, seconds=1, repeat=3):
 def from_cache(seconds, repeat):
     """sys.modules"""
     name = '<benchmark import>'
-    module = imp.new_module(name)
+    module = types.ModuleType(name)
     module.__file__ = '<test>'
     module.__package__ = ''
     with util.uncache(name):
@@ -65,11 +65,11 @@ def source_wo_bytecode(seconds, repeat):
     try:
         name = '__importlib_test_benchmark__'
         # Clears out sys.modules and puts an entry at the front of sys.path.
-        with source_util.create_modules(name) as mapping:
-            assert not os.path.exists(imp.cache_from_source(mapping[name]))
+        with util.create_modules(name) as mapping:
+            assert not os.path.exists(cache_from_source(mapping[name]))
             sys.meta_path.append(importlib.machinery.PathFinder)
             loader = (importlib.machinery.SourceFileLoader,
-                      importlib.machinery.SOURCE_SUFFIXES, True)
+                      importlib.machinery.SOURCE_SUFFIXES)
             sys.path_hooks.append(importlib.machinery.FileFinder.path_hook(loader))
             yield from bench(name, lambda: sys.modules.pop(name), repeat=repeat,
                              seconds=seconds)
@@ -81,7 +81,7 @@ def _wo_bytecode(module):
     name = module.__name__
     def benchmark_wo_bytecode(seconds, repeat):
         """Source w/o bytecode: {}"""
-        bytecode_path = imp.cache_from_source(module.__file__)
+        bytecode_path = cache_from_source(module.__file__)
         if os.path.exists(bytecode_path):
             os.unlink(bytecode_path)
         sys.dont_write_bytecode = True
@@ -102,16 +102,16 @@ def source_writing_bytecode(seconds, repeat):
     """Source writing bytecode: small"""
     assert not sys.dont_write_bytecode
     name = '__importlib_test_benchmark__'
-    with source_util.create_modules(name) as mapping:
+    with util.create_modules(name) as mapping:
         sys.meta_path.append(importlib.machinery.PathFinder)
         loader = (importlib.machinery.SourceFileLoader,
-                  importlib.machinery.SOURCE_SUFFIXES, True)
+                  importlib.machinery.SOURCE_SUFFIXES)
         sys.path_hooks.append(importlib.machinery.FileFinder.path_hook(loader))
         def cleanup():
             sys.modules.pop(name)
-            os.unlink(imp.cache_from_source(mapping[name]))
+            os.unlink(cache_from_source(mapping[name]))
         for result in bench(name, cleanup, repeat=repeat, seconds=seconds):
-            assert not os.path.exists(imp.cache_from_source(mapping[name]))
+            assert not os.path.exists(cache_from_source(mapping[name]))
             yield result
 
 
@@ -122,7 +122,7 @@ def _writing_bytecode(module):
         assert not sys.dont_write_bytecode
         def cleanup():
             sys.modules.pop(name)
-            os.unlink(imp.cache_from_source(module.__file__))
+            os.unlink(cache_from_source(module.__file__))
         yield from bench(name, cleanup, repeat=repeat, seconds=seconds)
 
     writing_bytecode_benchmark.__doc__ = (
@@ -136,13 +136,13 @@ decimal_writing_bytecode = _writing_bytecode(decimal)
 def source_using_bytecode(seconds, repeat):
     """Source w/ bytecode: small"""
     name = '__importlib_test_benchmark__'
-    with source_util.create_modules(name) as mapping:
+    with util.create_modules(name) as mapping:
         sys.meta_path.append(importlib.machinery.PathFinder)
         loader = (importlib.machinery.SourceFileLoader,
-                importlib.machinery.SOURCE_SUFFIXES, True)
+                  importlib.machinery.SOURCE_SUFFIXES)
         sys.path_hooks.append(importlib.machinery.FileFinder.path_hook(loader))
         py_compile.compile(mapping[name])
-        assert os.path.exists(imp.cache_from_source(mapping[name]))
+        assert os.path.exists(cache_from_source(mapping[name]))
         yield from bench(name, lambda: sys.modules.pop(name), repeat=repeat,
                          seconds=seconds)
 
@@ -184,8 +184,8 @@ def main(import_, options):
                 benchmarks = [b]
                 break
         else:
-            print('Unknown benchmark: {!r}'.format(options.benchmark,
-                  file=sys.stderr))
+            print('Unknown benchmark: {!r}'.format(options.benchmark),
+                  file=sys.stderr)
             sys.exit(1)
     seconds = 1
     seconds_plural = 's' if seconds > 1 else ''

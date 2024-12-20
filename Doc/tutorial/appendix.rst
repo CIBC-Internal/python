@@ -20,12 +20,12 @@ In interactive mode, it then returns to the primary prompt; when input came from
 a file, it exits with a nonzero exit status after printing the stack trace.
 (Exceptions handled by an :keyword:`except` clause in a :keyword:`try` statement
 are not errors in this context.)  Some errors are unconditionally fatal and
-cause an exit with a nonzero exit; this applies to internal inconsistencies and
+cause an exit with a nonzero exit status; this applies to internal inconsistencies and
 some cases of running out of memory.  All error messages are written to the
 standard error stream; normal output from executed commands is written to
 standard output.
 
-Typing the interrupt character (usually Control-C or DEL) to the primary or
+Typing the interrupt character (usually :kbd:`Control-C` or :kbd:`Delete`) to the primary or
 secondary prompt cancels the input and returns to the primary prompt. [#]_
 Typing an interrupt while a command is executing raises the
 :exc:`KeyboardInterrupt` exception, which may be handled by a :keyword:`try`
@@ -40,7 +40,7 @@ Executable Python Scripts
 On BSD'ish Unix systems, Python scripts can be made directly executable, like
 shell scripts, by putting the line ::
 
-   #!/usr/bin/env python3.4
+   #!/usr/bin/env python3
 
 (assuming that the interpreter is on the user's :envvar:`PATH`) at the beginning
 of the script and giving the file an executable mode.  The ``#!`` must be the
@@ -52,7 +52,7 @@ comment in Python.
 The script can be given an executable mode, or permission, using the
 :program:`chmod` command.
 
-.. code-block:: bash
+.. code-block:: shell-session
 
    $ chmod +x myscript.py
 
@@ -92,7 +92,7 @@ in the script::
    filename = os.environ.get('PYTHONSTARTUP')
    if filename and os.path.isfile(filename):
        with open(filename) as fobj:
-          startup_file = fobj.read()
+           startup_file = fobj.read()
        exec(startup_file)
 
 
@@ -101,21 +101,21 @@ in the script::
 The Customization Modules
 -------------------------
 
-Python provides two hooks to let you customize it: :mod:`sitecustomize` and
-:mod:`usercustomize`.  To see how it works, you need first to find the location
+Python provides two hooks to let you customize it: :index:`sitecustomize` and
+:index:`usercustomize`.  To see how it works, you need first to find the location
 of your user site-packages directory.  Start Python and run this code::
 
    >>> import site
    >>> site.getusersitepackages()
-   '/home/user/.local/lib/python3.4/site-packages'
+   '/home/user/.local/lib/python3.x/site-packages'
 
 Now you can create a file named :file:`usercustomize.py` in that directory and
 put anything you want in it.  It will affect every invocation of Python, unless
 it is started with the :option:`-s` option to disable the automatic import.
 
-:mod:`sitecustomize` works in the same way, but is typically created by an
+:index:`sitecustomize` works in the same way, but is typically created by an
 administrator of the computer in the global site-packages directory, and is
-imported before :mod:`usercustomize`.  See the documentation of the :mod:`site`
+imported before :index:`usercustomize`.  See the documentation of the :mod:`site`
 module for more details.
 
 

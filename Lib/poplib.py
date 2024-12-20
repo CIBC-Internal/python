@@ -16,6 +16,7 @@ Based on the J. Myers POP3 draft, Jan. 96
 import errno
 import re
 import socket
+import sys
 
 try:
     import ssl
@@ -71,6 +72,7 @@ class POP3:
             UIDL [msg]              uidl(msg = None)
             CAPA                    capa()
             STLS                    stls()
+            UTF8                    utf8()
 
     Raises one exception: 'error_proto'.
 
@@ -98,16 +100,20 @@ class POP3:
         self.host = host
         self.port = port
         self._tls_established = False
+        sys.audit("poplib.connect", self, host, port)
         self.sock = self._create_socket(timeout)
         self.file = self.sock.makefile('rb')
         self._debugging = 0
         self.welcome = self._getresp()
 
     def _create_socket(self, timeout):
+        if timeout is not None and not timeout:
+            raise ValueError('Non-blocking socket (timeout=0) is not supported')
         return socket.create_connection((self.host, self.port), timeout)
 
     def _putline(self, line):
         if self._debugging > 1: print('*put*', repr(line))
+        sys.audit("poplib.putline", self, line)
         self.sock.sendall(line + CRLF)
 
 
@@ -136,7 +142,7 @@ class POP3:
         # so only possibilities are ...LF, ...CRLF, CR...LF
         if line[-2:] == CRLF:
             return line[:-2], octets
-        if line[0] == CR:
+        if line[:1] == CR:
             return line[1:-1], octets
         return line[:-1], octets
 
@@ -276,18 +282,26 @@ class POP3:
 
     def close(self):
         """Close the connection without assuming anything about it."""
-        if self.file is not None:
-            self.file.close()
-        if self.sock is not None:
-            try:
-                self.sock.shutdown(socket.SHUT_RDWR)
-            except OSError as e:
-                # The server might already have closed the connection
-                if e.errno != errno.ENOTCONN:
-                    raise
-            finally:
-                self.sock.close()
-        self.file = self.sock = None
+        try:
+            file = self.file
+            self.file = None
+            if file is not None:
+                file.close()
+        finally:
+            sock = self.sock
+            self.sock = None
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError as exc:
+                    # The server might already have closed the connection.
+                    # On Windows, this may result in WSAEINVAL (error 10022):
+                    # An invalid operation was attempted.
+                    if (exc.errno != errno.ENOTCONN
+                       and getattr(exc, 'winerror', 0) != 10022):
+                        raise
+                finally:
+                    sock.close()
 
     #__del__ = quit
 
@@ -299,7 +313,7 @@ class POP3:
         return self._shortcmd('RPOP %s' % user)
 
 
-    timestamp = re.compile(br'\+OK.*(<[^>]+>)')
+    timestamp = re.compile(br'\+OK.[^<]*(<.*>)')
 
     def apop(self, user, password):
         """Authorisation
@@ -343,6 +357,12 @@ class POP3:
         return self._longcmd('UIDL')
 
 
+    def utf8(self):
+        """Try to enter UTF-8 mode (see RFC 6856). Returns server response.
+        """
+        return self._shortcmd('UTF8')
+
+
     def capa(self):
         """Return server capabilities (RFC 2449) as a dictionary
         >>> c=poplib.POP3('localhost')
@@ -367,7 +387,7 @@ class POP3:
             for capline in rawcaps:
                 capnm, capargs = _parsecap(capline)
                 caps[capnm] = capargs
-        except error_proto as _err:
+        except error_proto:
             raise error_proto('-ERR CAPA not supported by server')
         return caps
 
@@ -399,31 +419,19 @@ if HAVE_SSL:
     class POP3_SSL(POP3):
         """POP3 client class over SSL connection
 
-        Instantiate with: POP3_SSL(hostname, port=995, keyfile=None, certfile=None,
-                                   context=None)
+        Instantiate with: POP3_SSL(hostname, port=995, context=None)
 
                hostname - the hostname of the pop3 over ssl server
                port - port number
-               keyfile - PEM formatted file that contains your private key
-               certfile - PEM formatted certificate chain file
                context - a ssl.SSLContext
 
         See the methods of the parent class POP3 for more documentation.
         """
 
-        def __init__(self, host, port=POP3_SSL_PORT, keyfile=None, certfile=None,
-                     timeout=socket._GLOBAL_DEFAULT_TIMEOUT, context=None):
-            if context is not None and keyfile is not None:
-                raise ValueError("context and keyfile arguments are mutually "
-                                 "exclusive")
-            if context is not None and certfile is not None:
-                raise ValueError("context and certfile arguments are mutually "
-                                 "exclusive")
-            self.keyfile = keyfile
-            self.certfile = certfile
+        def __init__(self, host, port=POP3_SSL_PORT,
+                     *, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, context=None):
             if context is None:
-                context = ssl._create_stdlib_context(certfile=certfile,
-                                                     keyfile=keyfile)
+                context = ssl._create_stdlib_context()
             self.context = context
             POP3.__init__(self, host, port, timeout)
 
@@ -433,7 +441,7 @@ if HAVE_SSL:
                                             server_hostname=self.host)
             return sock
 
-        def stls(self, keyfile=None, certfile=None, context=None):
+        def stls(self, context=None):
             """The method unconditionally raises an exception since the
             STLS command doesn't make any sense on an already established
             SSL/TLS session.

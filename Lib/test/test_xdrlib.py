@@ -1,7 +1,8 @@
-from test import support
 import unittest
+from test.support import warnings_helper
 
-import xdrlib
+xdrlib = warnings_helper.import_deprecated("xdrlib")
+
 
 class XDRTest(unittest.TestCase):
 
@@ -74,9 +75,5 @@ class ConversionErrorTest(unittest.TestCase):
     def test_uhyper(self):
         self.assertRaisesConversion(self.packer.pack_uhyper, 'string')
 
-def test_main():
-    support.run_unittest(XDRTest)
-    support.run_unittest(ConversionErrorTest)
-
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

@@ -12,9 +12,6 @@ CASES = [
     (' s p a c e d ', '" s p a c e d "'),
     ('\U0001d120', '"\\ud834\\udd20"'),
     ('\u03b1\u03a9', '"\\u03b1\\u03a9"'),
-    ('\u03b1\u03a9', '"\\u03b1\\u03a9"'),
-    ('\u03b1\u03a9', '"\\u03b1\\u03a9"'),
-    ('\u03b1\u03a9', '"\\u03b1\\u03a9"'),
     ("`1~!@#$%^&*()_+-={':[,]}|;.</>?", '"`1~!@#$%^&*()_+-={\':[,]}|;.</>?"'),
     ('\x08\x0c\n\r\t', '"\\b\\f\\n\\r\\t"'),
     ('\u0123\u4567\u89ab\ucdef\uabcd\uef4a', '"\\u0123\\u4567\\u89ab\\ucdef\\uabcd\\uef4a"'),
@@ -26,8 +23,7 @@ class TestEncodeBasestringAscii:
         for input_string, expect in CASES:
             result = self.json.encoder.encode_basestring_ascii(input_string)
             self.assertEqual(result, expect,
-                '{0!r} != {1!r} for {2}({3!r})'.format(
-                    result, expect, fname, input_string))
+                f'{result!r} != {expect!r} for {fname}({input_string!r})')
 
     def test_ordered_dict(self):
         # See issue 6105

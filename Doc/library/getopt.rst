@@ -1,13 +1,11 @@
-:mod:`getopt` --- C-style parser for command line options
-=========================================================
+:mod:`!getopt` --- C-style parser for command line options
+==========================================================
 
 .. module:: getopt
    :synopsis: Portable parser for command line options; support both short and
               long option names.
 
 **Source code:** :source:`Lib/getopt.py`
-
---------------
 
 .. note::
 
@@ -16,6 +14,8 @@
    are unfamiliar with the C :c:func:`getopt` function or who would like to write
    less code and get better help and error messages should consider using the
    :mod:`argparse` module instead.
+
+--------------
 
 This module helps scripts to parse the command line arguments in ``sys.argv``.
 It supports the same conventions as the Unix :c:func:`getopt` function (including
@@ -92,6 +92,8 @@ exception:
 
 An example using only Unix style options:
 
+.. doctest::
+
    >>> import getopt
    >>> args = '-a -b -cfoo -d bar a1 a2'.split()
    >>> args
@@ -104,6 +106,8 @@ An example using only Unix style options:
 
 Using long option names is equally easy:
 
+.. doctest::
+
    >>> s = '--condition=foo --testing --output-file abc.def -x a1 a2'
    >>> args = s.split()
    >>> args
@@ -115,7 +119,9 @@ Using long option names is equally easy:
    >>> args
    ['a1', 'a2']
 
-In a script, typical usage is something like this::
+In a script, typical usage is something like this:
+
+.. testcode::
 
    import getopt, sys
 
@@ -124,7 +130,7 @@ In a script, typical usage is something like this::
            opts, args = getopt.getopt(sys.argv[1:], "ho:v", ["help", "output="])
        except getopt.GetoptError as err:
            # print help information and exit:
-           print(err) # will print something like "option -a not recognized"
+           print(err)  # will print something like "option -a not recognized"
            usage()
            sys.exit(2)
        output = None
@@ -145,7 +151,9 @@ In a script, typical usage is something like this::
        main()
 
 Note that an equivalent command line interface could be produced with less code
-and more informative help and error messages by using the :mod:`argparse` module::
+and more informative help and error messages by using the :mod:`argparse` module:
+
+.. testcode::
 
    import argparse
 

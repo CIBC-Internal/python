@@ -1,9 +1,17 @@
-:mod:`email.mime`: Creating email and MIME objects from scratch
----------------------------------------------------------------
+:mod:`!email.mime`: Creating email and MIME objects from scratch
+----------------------------------------------------------------
 
 .. module:: email.mime
    :synopsis: Build MIME messages.
 
+**Source code:** :source:`Lib/email/mime/`
+
+--------------
+
+This module is part of the legacy (``Compat32``) email API.  Its functionality
+is partially replaced by the :mod:`~email.contentmanager` in the new API, but
+in certain applications these classes may still be useful, even in non-legacy
+code.
 
 Ordinarily, you get a message object structure by passing a file or some text to
 a parser, which parses the text and returns the root message object.  However
@@ -20,9 +28,9 @@ make things easier.
 
 Here are the classes:
 
-.. currentmodule:: email.mime.base
+.. module:: email.mime.base
 
-.. class:: MIMEBase(_maintype, _subtype, **_params)
+.. class:: MIMEBase(_maintype, _subtype, *, policy=compat32, **_params)
 
    Module: :mod:`email.mime.base`
 
@@ -38,12 +46,19 @@ Here are the classes:
    key/value dictionary and is passed directly to :meth:`Message.add_header
    <email.message.Message.add_header>`.
 
+   If *policy* is specified, (defaults to the
+   :class:`compat32 <email.policy.Compat32>` policy) it will be passed to
+   :class:`~email.message.Message`.
+
    The :class:`MIMEBase` class always adds a :mailheader:`Content-Type` header
    (based on *_maintype*, *_subtype*, and *_params*), and a
    :mailheader:`MIME-Version` header (always set to ``1.0``).
 
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. currentmodule:: email.mime.nonmultipart
+
+.. module:: email.mime.nonmultipart
 
 .. class:: MIMENonMultipart()
 
@@ -57,9 +72,10 @@ Here are the classes:
    is called, a :exc:`~email.errors.MultipartConversionError` exception is raised.
 
 
-.. currentmodule:: email.mime.multipart
+.. module:: email.mime.multipart
 
-.. class:: MIMEMultipart(_subtype='mixed', boundary=None, _subparts=None, **_params)
+.. class:: MIMEMultipart(_subtype='mixed', boundary=None, _subparts=None, \
+                         *, policy=compat32, **_params)
 
    Module: :mod:`email.mime.multipart`
 
@@ -79,22 +95,28 @@ Here are the classes:
    to the message by using the :meth:`Message.attach
    <email.message.Message.attach>` method.
 
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
+
    Additional parameters for the :mailheader:`Content-Type` header are taken from
    the keyword arguments, or passed into the *_params* argument, which is a keyword
    dictionary.
 
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. currentmodule:: email.mime.application
+.. module:: email.mime.application
 
-.. class:: MIMEApplication(_data, _subtype='octet-stream', _encoder=email.encoders.encode_base64, **_params)
+.. class:: MIMEApplication(_data, _subtype='octet-stream', \
+                           _encoder=email.encoders.encode_base64, \
+                           *, policy=compat32, **_params)
 
    Module: :mod:`email.mime.application`
 
    A subclass of :class:`~email.mime.nonmultipart.MIMENonMultipart`, the
    :class:`MIMEApplication` class is used to represent MIME message objects of
-   major type :mimetype:`application`.  *_data* is a string containing the raw
-   byte data.  Optional *_subtype* specifies the MIME subtype and defaults to
-   :mimetype:`octet-stream`.
+   major type :mimetype:`application`.  *_data* contains the bytes for the raw
+   application data.  Optional *_subtype* specifies the MIME subtype and defaults
+   to :mimetype:`octet-stream`.
 
    Optional *_encoder* is a callable (i.e. function) which will perform the actual
    encoding of the data for transport.  This callable takes one argument, which is
@@ -106,19 +128,25 @@ Here are the classes:
    object as necessary.  The default encoding is base64.  See the
    :mod:`email.encoders` module for a list of the built-in encoders.
 
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
+
    *_params* are passed straight through to the base class constructor.
 
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. currentmodule:: email.mime.audio
+.. module:: email.mime.audio
 
-.. class:: MIMEAudio(_audiodata, _subtype=None, _encoder=email.encoders.encode_base64, **_params)
+.. class:: MIMEAudio(_audiodata, _subtype=None, \
+                     _encoder=email.encoders.encode_base64, \
+                     *, policy=compat32, **_params)
 
    Module: :mod:`email.mime.audio`
 
    A subclass of :class:`~email.mime.nonmultipart.MIMENonMultipart`, the
    :class:`MIMEAudio` class is used to create MIME message objects of major type
-   :mimetype:`audio`. *_audiodata* is a string containing the raw audio data.  If
-   this data can be decoded by the standard Python module :mod:`sndhdr`, then the
+   :mimetype:`audio`. *_audiodata* contains the bytes for the raw audio data.  If
+   this data can be decoded as au, wav, aiff, or aifc, then the
    subtype will be automatically included in the :mailheader:`Content-Type` header.
    Otherwise you can explicitly specify the audio subtype via the *_subtype*
    argument.  If the minor type could not be guessed and *_subtype* was not given,
@@ -134,23 +162,30 @@ Here are the classes:
    object as necessary.  The default encoding is base64.  See the
    :mod:`email.encoders` module for a list of the built-in encoders.
 
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
+
    *_params* are passed straight through to the base class constructor.
 
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. currentmodule:: email.mime.image
+.. module:: email.mime.image
 
-.. class:: MIMEImage(_imagedata, _subtype=None, _encoder=email.encoders.encode_base64, **_params)
+.. class:: MIMEImage(_imagedata, _subtype=None, \
+                     _encoder=email.encoders.encode_base64, \
+                    *, policy=compat32, **_params)
 
    Module: :mod:`email.mime.image`
 
    A subclass of :class:`~email.mime.nonmultipart.MIMENonMultipart`, the
    :class:`MIMEImage` class is used to create MIME message objects of major type
-   :mimetype:`image`. *_imagedata* is a string containing the raw image data.  If
-   this data can be decoded by the standard Python module :mod:`imghdr`, then the
-   subtype will be automatically included in the :mailheader:`Content-Type` header.
-   Otherwise you can explicitly specify the image subtype via the *_subtype*
-   argument.  If the minor type could not be guessed and *_subtype* was not given,
-   then :exc:`TypeError` is raised.
+   :mimetype:`image`. *_imagedata* contains the bytes for the raw image data.  If
+   this data type can be detected (jpeg, png, gif, tiff, rgb, pbm, pgm, ppm,
+   rast, xbm, bmp, webp, and exr attempted), then the subtype will be
+   automatically included in the :mailheader:`Content-Type` header. Otherwise
+   you can explicitly specify the image subtype via the *_subtype* argument.
+   If the minor type could not be guessed and *_subtype* was not given, then
+   :exc:`TypeError` is raised.
 
    Optional *_encoder* is a callable (i.e. function) which will perform the actual
    encoding of the image data for transport.  This callable takes one argument,
@@ -162,13 +197,17 @@ Here are the classes:
    object as necessary.  The default encoding is base64.  See the
    :mod:`email.encoders` module for a list of the built-in encoders.
 
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
+
    *_params* are passed straight through to the :class:`~email.mime.base.MIMEBase`
    constructor.
 
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. currentmodule:: email.mime.message
+.. module:: email.mime.message
 
-.. class:: MIMEMessage(_msg, _subtype='rfc822')
+.. class:: MIMEMessage(_msg, _subtype='rfc822', *, policy=compat32)
 
    Module: :mod:`email.mime.message`
 
@@ -181,10 +220,14 @@ Here are the classes:
    Optional *_subtype* sets the subtype of the message; it defaults to
    :mimetype:`rfc822`.
 
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
 
-.. currentmodule:: email.mime.text
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.
 
-.. class:: MIMEText(_text, _subtype='plain', _charset=None)
+.. module:: email.mime.text
+
+.. class:: MIMEText(_text, _subtype='plain', _charset=None, *, policy=compat32)
 
    Module: :mod:`email.mime.text`
 
@@ -195,14 +238,23 @@ Here are the classes:
    set of the text and is passed as an argument to the
    :class:`~email.mime.nonmultipart.MIMENonMultipart` constructor; it defaults
    to ``us-ascii`` if the string contains only ``ascii`` code points, and
-   ``utf-8`` otherwise.
+   ``utf-8`` otherwise.  The *_charset* parameter accepts either a string or a
+   :class:`~email.charset.Charset` instance.
 
    Unless the *_charset* argument is explicitly set to ``None``, the
    MIMEText object created will have both a :mailheader:`Content-Type` header
-   with a ``charset`` parameter, and a :mailheader:`Content-Transfer-Endcoding`
+   with a ``charset`` parameter, and a :mailheader:`Content-Transfer-Encoding`
    header.  This means that a subsequent ``set_payload`` call will not result
    in an encoded payload, even if a charset is passed in the ``set_payload``
    command.  You can "reset" this behavior by deleting the
    ``Content-Transfer-Encoding`` header, after which a ``set_payload`` call
    will automatically encode the new payload (and add a new
    :mailheader:`Content-Transfer-Encoding` header).
+
+   Optional *policy* argument defaults to :class:`compat32 <email.policy.Compat32>`.
+
+   .. versionchanged:: 3.5
+      *_charset* also accepts :class:`~email.charset.Charset` instances.
+
+   .. versionchanged:: 3.6
+      Added *policy* keyword-only parameter.

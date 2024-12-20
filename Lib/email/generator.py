@@ -14,14 +14,16 @@ import random
 from copy import deepcopy
 from io import StringIO, BytesIO
 from email.utils import _has_surrogates
+from email.errors import HeaderWriteError
 
 UNDERSCORE = '_'
 NL = '\n'  # XXX: no longer used by the code below.
 
+NLCRE = re.compile(r'\r\n|\r|\n')
 fcre = re.compile(r'^From ', re.MULTILINE)
+NEWLINE_WITHOUT_FWSP = re.compile(r'\r\n[^ \t]|\r[^ \n\t]|\n[^ \t]')
 
 
-
 class Generator:
     """Generates output from a Message object tree.
 
@@ -32,16 +34,16 @@ class Generator:
     # Public interface
     #
 
-    def __init__(self, outfp, mangle_from_=True, maxheaderlen=None, *,
+    def __init__(self, outfp, mangle_from_=None, maxheaderlen=None, *,
                  policy=None):
         """Create the generator for message flattening.
 
         outfp is the output file-like object for writing the message to.  It
         must have a write() method.
 
-        Optional mangle_from_ is a flag that, when True (the default), escapes
-        From_ lines in the body of the message by putting a `>' in front of
-        them.
+        Optional mangle_from_ is a flag that, when True (the default if policy
+        is not set), escapes From_ lines in the body of the message by putting
+        a `>' in front of them.
 
         Optional maxheaderlen specifies the longest length for a non-continued
         header.  When a header line is longer (in characters, with tabs
@@ -56,6 +58,9 @@ class Generator:
         flatten method is used.
 
         """
+
+        if mangle_from_ is None:
+            mangle_from_ = True if policy is None else policy.mangle_from_
         self._fp = outfp
         self._mangle_from_ = mangle_from_
         self.maxheaderlen = maxheaderlen
@@ -94,7 +99,7 @@ class Generator:
         self._NL = policy.linesep
         self._encoded_NL = self._encode(self._NL)
         self._EMPTY = ''
-        self._encoded_EMTPY = self._encode('')
+        self._encoded_EMPTY = self._encode(self._EMPTY)
         # Because we use clone (below) when we recursively process message
         # subparts, and because clone uses the computed policy (not None),
         # submessages will automatically get set to the computed policy when
@@ -134,10 +139,6 @@ class Generator:
     # it has already transformed the input; but, since this whole thing is a
     # hack anyway this seems good enough.
 
-    # Similarly, we have _XXX and _encoded_XXX attributes that are used on
-    # source and buffer data, respectively.
-    _encoded_EMPTY = ''
-
     def _new_buffer(self):
         # BytesGenerator overrides this to return BytesIO.
         return StringIO()
@@ -150,14 +151,17 @@ class Generator:
         # We have to transform the line endings.
         if not lines:
             return
-        lines = lines.splitlines(True)
+        lines = NLCRE.split(lines)
         for line in lines[:-1]:
-            self.write(line.rstrip('\r\n'))
+            self.write(line)
             self.write(self._NL)
-        laststripped = lines[-1].rstrip('\r\n')
-        self.write(laststripped)
-        if len(lines[-1]) != len(laststripped):
-            self.write(self._NL)
+        if lines[-1]:
+            self.write(lines[-1])
+        # XXX logic tells me this else should be needed, but the tests fail
+        # with it and pass without it.  (NLCRE.split ends with a blank element
+        # if and only if there was a trailing newline.)
+        #else:
+        #    self.write(self._NL)
 
     def _write(self, msg):
         # We can't write the headers yet because of the following scenario:
@@ -167,7 +171,7 @@ class Generator:
         # parameter.
         #
         # The way we do this, so as to make the _handle_*() methods simpler,
-        # is to cache any subpart writes into a buffer.  The we write the
+        # is to cache any subpart writes into a buffer.  Then we write the
         # headers and the buffer contents.  That way, subpart handlers can
         # Do The Right Thing, and can still modify the Content-Type: header if
         # necessary.
@@ -183,7 +187,11 @@ class Generator:
         # If we munged the cte, copy the message again and re-fix the CTE.
         if munge_cte:
             msg = deepcopy(msg)
-            msg.replace_header('content-transfer-encoding', munge_cte[0])
+            # Preserve the header order if the CTE header already exists.
+            if msg.get('content-transfer-encoding') is None:
+                msg['Content-Transfer-Encoding'] = munge_cte[0]
+            else:
+                msg.replace_header('content-transfer-encoding', munge_cte[0])
             msg.replace_header('content-type', munge_cte[1])
         # Write the headers.  First we see if the message object wants to
         # handle that itself.  If not, we'll do it generically.
@@ -216,7 +224,16 @@ class Generator:
 
     def _write_headers(self, msg):
         for h, v in msg.raw_items():
-            self.write(self.policy.fold(h, v))
+            folded = self.policy.fold(h, v)
+            if self.policy.verify_generated_headers:
+                linesep = self.policy.linesep
+                if not folded.endswith(self.policy.linesep):
+                    raise HeaderWriteError(
+                        f'folded header does not end with {linesep!r}: {folded!r}')
+                if NEWLINE_WITHOUT_FWSP.search(folded.removesuffix(linesep)):
+                    raise HeaderWriteError(
+                        f'folded header contains newline: {folded!r}')
+            self.write(folded)
         # A blank line always separates headers from body
         self.write(self._NL)
 
@@ -237,7 +254,7 @@ class Generator:
                 # existing message.
                 msg = deepcopy(msg)
                 del msg['content-transfer-encoding']
-                msg.set_payload(payload, charset)
+                msg.set_payload(msg._payload, charset)
                 payload = msg.get_payload()
                 self._munge_cte = (msg['content-transfer-encoding'],
                                    msg['content-type'])
@@ -385,7 +402,7 @@ class Generator:
     def _compile_re(cls, s, flags):
         return re.compile(s, flags)
 
-
+
 class BytesGenerator(Generator):
     """Generates a bytes version of a Message object tree.
 
@@ -398,10 +415,6 @@ class BytesGenerator(Generator):
 
     The outfp object must accept bytes in its write method.
     """
-
-    # Bytes versions of this constant for use in manipulating data from
-    # the BytesIO buffer.
-    _encoded_EMPTY = b''
 
     def write(self, s):
         self._fp.write(s.encode('ascii', 'surrogateescape'))
@@ -440,7 +453,6 @@ class BytesGenerator(Generator):
         return re.compile(s.encode('ascii'), flags)
 
 
-
 _FMT = '[Non-text (%(type)s) part of message omitted, filename %(filename)s]'
 
 class DecodedGenerator(Generator):
@@ -449,7 +461,8 @@ class DecodedGenerator(Generator):
     Like the Generator base class, except that non-text parts are substituted
     with a format string representing the part.
     """
-    def __init__(self, outfp, mangle_from_=True, maxheaderlen=78, fmt=None):
+    def __init__(self, outfp, mangle_from_=None, maxheaderlen=None, fmt=None, *,
+                 policy=None):
         """Like Generator.__init__() except that an additional optional
         argument is allowed.
 
@@ -471,7 +484,8 @@ class DecodedGenerator(Generator):
 
         [Non-text (%(type)s) part of message omitted, filename %(filename)s]
         """
-        Generator.__init__(self, outfp, mangle_from_, maxheaderlen)
+        Generator.__init__(self, outfp, mangle_from_, maxheaderlen,
+                           policy=policy)
         if fmt is None:
             self._fmt = _FMT
         else:
@@ -498,7 +512,6 @@ class DecodedGenerator(Generator):
                     }, file=self)
 
 
-
 # Helper used by Generator._make_boundary
 _width = len(repr(sys.maxsize-1))
 _fmt = '%%0%dd' % _width

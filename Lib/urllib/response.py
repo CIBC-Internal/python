@@ -43,11 +43,15 @@ class addclosehook(addbase):
         self.hookargs = hookargs
 
     def close(self):
-        if self.closehook:
-            self.closehook(*self.hookargs)
-            self.closehook = None
-            self.hookargs = None
-        super(addclosehook, self).close()
+        try:
+            closehook = self.closehook
+            hookargs = self.hookargs
+            if closehook:
+                self.closehook = None
+                self.hookargs = None
+                closehook(*hookargs)
+        finally:
+            super(addclosehook, self).close()
 
 
 class addinfo(addbase):
@@ -68,6 +72,10 @@ class addinfourl(addinfo):
         super(addinfourl, self).__init__(fp, headers)
         self.url = url
         self.code = code
+
+    @property
+    def status(self):
+        return self.code
 
     def getcode(self):
         return self.code

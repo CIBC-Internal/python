@@ -52,8 +52,8 @@ Python of course has no preprocessor so this doesn't work so well.  Thus,
 pygettext searches only for _() by default, but see the -k/--keyword flag
 below for how to augment this.
 
- [1] http://www.python.org/workshops/1997-10/proceedings/loewis.html
- [2] http://www.gnu.org/software/gettext/gettext.html
+ [1] https://www.python.org/workshops/1997-10/proceedings/loewis.html
+ [2] https://www.gnu.org/software/gettext/gettext.html
 
 NOTE: pygettext attempts to be option and feature compatible with GNU
 xgettext where ever possible. However some options are still missing or are
@@ -156,11 +156,13 @@ If `inputfile' is -, standard input is read.
 """)
 
 import os
-import imp
+import importlib.machinery
+import importlib.util
 import sys
 import glob
 import time
 import getopt
+import ast
 import token
 import tokenize
 
@@ -172,7 +174,6 @@ DEFAULTKEYWORDS = ', '.join(default_keywords)
 EMPTYSTRING = ''
 
 
-
 # The normal pot-file header. msgmerge and Emacs's po-mode work better if it's
 # there.
 pot_header = _('''\
@@ -194,7 +195,7 @@ msgstr ""
 
 ''')
 
-
+
 def usage(code, msg=''):
     print(__doc__ % globals(), file=sys.stderr)
     if msg:
@@ -202,7 +203,6 @@ def usage(code, msg=''):
     sys.exit(code)
 
 
-
 def make_escapes(pass_nonascii):
     global escapes, escape
     if pass_nonascii:
@@ -231,6 +231,10 @@ def escape_nonascii(s, encoding):
     return ''.join(escapes[b] for b in s.encode(encoding))
 
 
+def is_literal_string(s):
+    return s[0] in '\'"' or (s[0] in 'rRuU' and s[1] in '\'"')
+
+
 def safe_eval(s):
     # unwrap quotes, safely
     return eval(s, {'__builtins__':{}}, {})
@@ -252,68 +256,10 @@ def normalize(s, encoding):
         s = '""\n"' + lineterm.join(lines) + '"'
     return s
 
-
+
 def containsAny(str, set):
     """Check whether 'str' contains ANY of the chars in 'set'"""
     return 1 in [c in str for c in set]
-
-
-def _visit_pyfiles(list, dirname, names):
-    """Helper for getFilesForName()."""
-    # get extension for python source files
-    if '_py_ext' not in globals():
-        global _py_ext
-        _py_ext = [triple[0] for triple in imp.get_suffixes()
-                   if triple[2] == imp.PY_SOURCE][0]
-
-    # don't recurse into CVS directories
-    if 'CVS' in names:
-        names.remove('CVS')
-
-    # add all *.py files to list
-    list.extend(
-        [os.path.join(dirname, file) for file in names
-         if os.path.splitext(file)[1] == _py_ext]
-        )
-
-
-def _get_modpkg_path(dotted_name, pathlist=None):
-    """Get the filesystem path for a module or a package.
-
-    Return the file system path to a file for a module, and to a directory for
-    a package. Return None if the name is not found, or is a builtin or
-    extension module.
-    """
-    # split off top-most name
-    parts = dotted_name.split('.', 1)
-
-    if len(parts) > 1:
-        # we have a dotted path, import top-level package
-        try:
-            file, pathname, description = imp.find_module(parts[0], pathlist)
-            if file: file.close()
-        except ImportError:
-            return None
-
-        # check if it's indeed a package
-        if description[2] == imp.PKG_DIRECTORY:
-            # recursively handle the remaining name parts
-            pathname = _get_modpkg_path(parts[1], [pathname])
-        else:
-            pathname = None
-    else:
-        # plain name
-        try:
-            file, pathname, description = imp.find_module(
-                dotted_name, pathlist)
-            if file:
-                file.close()
-            if description[2] not in [imp.PY_SOURCE, imp.PKG_DIRECTORY]:
-                pathname = None
-        except ImportError:
-            pathname = None
-
-    return pathname
 
 
 def getFilesForName(name):
@@ -330,14 +276,28 @@ def getFilesForName(name):
             return list
 
         # try to find module or package
-        name = _get_modpkg_path(name)
+        try:
+            spec = importlib.util.find_spec(name)
+            name = spec.origin
+        except ImportError:
+            name = None
         if not name:
             return []
 
     if os.path.isdir(name):
         # find all python files in directory
         list = []
-        os.walk(name, _visit_pyfiles, list)
+        # get extension for python source files
+        _py_ext = importlib.machinery.SOURCE_SUFFIXES[0]
+        for root, dirs, files in os.walk(name):
+            # don't recurse into CVS directories
+            if 'CVS' in dirs:
+                dirs.remove('CVS')
+            # add all *.py files to list
+            list.extend(
+                [os.path.join(root, file) for file in files
+                 if os.path.splitext(file)[1] == _py_ext]
+                )
         return list
     elif os.path.exists(name):
         # a single file
@@ -345,7 +305,7 @@ def getFilesForName(name):
 
     return []
 
-
+
 class TokenEater:
     def __init__(self, options):
         self.__options = options
@@ -355,12 +315,13 @@ class TokenEater:
         self.__lineno = -1
         self.__freshmodule = 1
         self.__curfile = None
+        self.__enclosurecount = 0
 
     def __call__(self, ttype, tstring, stup, etup, line):
         # dispatch
 ##        import token
-##        print >> sys.stderr, 'ttype:', token.tok_name[ttype], \
-##              'tstring:', tstring
+##        print('ttype:', token.tok_name[ttype], 'tstring:', tstring,
+##              file=sys.stderr)
         self.__state(ttype, tstring, stup[0])
 
     def __waiting(self, ttype, tstring, lineno):
@@ -369,27 +330,89 @@ class TokenEater:
         if opts.docstrings and not opts.nodocstrings.get(self.__curfile):
             # module docstring?
             if self.__freshmodule:
-                if ttype == tokenize.STRING:
+                if ttype == tokenize.STRING and is_literal_string(tstring):
                     self.__addentry(safe_eval(tstring), lineno, isdocstring=1)
                     self.__freshmodule = 0
-                elif ttype not in (tokenize.COMMENT, tokenize.NL):
-                    self.__freshmodule = 0
-                return
-            # class docstring?
+                    return
+                if ttype in (tokenize.COMMENT, tokenize.NL, tokenize.ENCODING):
+                    return
+                self.__freshmodule = 0
+            # class or func/method docstring?
             if ttype == tokenize.NAME and tstring in ('class', 'def'):
                 self.__state = self.__suiteseen
                 return
+        if ttype == tokenize.NAME and tstring in ('class', 'def'):
+            self.__state = self.__ignorenext
+            return
         if ttype == tokenize.NAME and tstring in opts.keywords:
             self.__state = self.__keywordseen
+            return
+        if ttype == tokenize.STRING:
+            maybe_fstring = ast.parse(tstring, mode='eval').body
+            if not isinstance(maybe_fstring, ast.JoinedStr):
+                return
+            for value in filter(lambda node: isinstance(node, ast.FormattedValue),
+                                maybe_fstring.values):
+                for call in filter(lambda node: isinstance(node, ast.Call),
+                                   ast.walk(value)):
+                    func = call.func
+                    if isinstance(func, ast.Name):
+                        func_name = func.id
+                    elif isinstance(func, ast.Attribute):
+                        func_name = func.attr
+                    else:
+                        continue
+
+                    if func_name not in opts.keywords:
+                        continue
+                    if len(call.args) != 1:
+                        print(_(
+                            '*** %(file)s:%(lineno)s: Seen unexpected amount of'
+                            ' positional arguments in gettext call: %(source_segment)s'
+                            ) % {
+                            'source_segment': ast.get_source_segment(tstring, call) or tstring,
+                            'file': self.__curfile,
+                            'lineno': lineno
+                            }, file=sys.stderr)
+                        continue
+                    if call.keywords:
+                        print(_(
+                            '*** %(file)s:%(lineno)s: Seen unexpected keyword arguments'
+                            ' in gettext call: %(source_segment)s'
+                            ) % {
+                            'source_segment': ast.get_source_segment(tstring, call) or tstring,
+                            'file': self.__curfile,
+                            'lineno': lineno
+                            }, file=sys.stderr)
+                        continue
+                    arg = call.args[0]
+                    if not isinstance(arg, ast.Constant):
+                        print(_(
+                            '*** %(file)s:%(lineno)s: Seen unexpected argument type'
+                            ' in gettext call: %(source_segment)s'
+                            ) % {
+                            'source_segment': ast.get_source_segment(tstring, call) or tstring,
+                            'file': self.__curfile,
+                            'lineno': lineno
+                            }, file=sys.stderr)
+                        continue
+                    if isinstance(arg.value, str):
+                        self.__addentry(arg.value, lineno)
 
     def __suiteseen(self, ttype, tstring, lineno):
-        # ignore anything until we see the colon
-        if ttype == tokenize.OP and tstring == ':':
-            self.__state = self.__suitedocstring
+        # skip over any enclosure pairs until we see the colon
+        if ttype == tokenize.OP:
+            if tstring == ':' and self.__enclosurecount == 0:
+                # we see a colon and we're not in an enclosure: end of def
+                self.__state = self.__suitedocstring
+            elif tstring in '([{':
+                self.__enclosurecount += 1
+            elif tstring in ')]}':
+                self.__enclosurecount -= 1
 
     def __suitedocstring(self, ttype, tstring, lineno):
         # ignore any intervening noise
-        if ttype == tokenize.STRING:
+        if ttype == tokenize.STRING and is_literal_string(tstring):
             self.__addentry(safe_eval(tstring), lineno, isdocstring=1)
             self.__state = self.__waiting
         elif ttype not in (tokenize.NEWLINE, tokenize.INDENT,
@@ -414,7 +437,7 @@ class TokenEater:
             if self.__data:
                 self.__addentry(EMPTYSTRING.join(self.__data))
             self.__state = self.__waiting
-        elif ttype == tokenize.STRING:
+        elif ttype == tokenize.STRING and is_literal_string(tstring):
             self.__data.append(safe_eval(tstring))
         elif ttype not in [tokenize.COMMENT, token.INDENT, token.DEDENT,
                            token.NEWLINE, tokenize.NL]:
@@ -427,6 +450,9 @@ class TokenEater:
                 'lineno': self.__lineno
                 }, file=sys.stderr)
             self.__state = self.__waiting
+
+    def __ignorenext(self, ttype, tstring, lineno):
+        self.__state = self.__waiting
 
     def __addentry(self, msg, lineno=None, isdocstring=0):
         if lineno is None:
@@ -441,9 +467,7 @@ class TokenEater:
 
     def write(self, fp):
         options = self.__options
-        timestamp = time.strftime('%Y-%m-%d %H:%M+%Z')
-        # The time stamp in the header doesn't have the same format as that
-        # generated by xgettext...
+        timestamp = time.strftime('%Y-%m-%d %H:%M%z')
         encoding = fp.encoding if fp.encoding else 'UTF-8'
         print(pot_header % {'time': timestamp, 'version': __version__,
                             'charset': encoding,
@@ -477,7 +501,7 @@ class TokenEater:
                             '# File: %(filename)s, line: %(lineno)d') % d, file=fp)
                 elif options.locationstyle == options.GNU:
                     # fit as many locations on one line, as long as the
-                    # resulting line length doesn't exceeds 'options.width'
+                    # resulting line length doesn't exceed 'options.width'
                     locline = '#:'
                     for filename, lineno in v:
                         d = {'filename': filename, 'lineno': lineno}
@@ -495,7 +519,6 @@ class TokenEater:
                 print('msgstr ""\n', file=fp)
 
 
-
 def main():
     global default_keywords
     try:
@@ -595,9 +618,8 @@ def main():
     # initialize list of strings to exclude
     if options.excludefilename:
         try:
-            fp = open(options.excludefilename)
-            options.toexclude = fp.readlines()
-            fp.close()
+            with open(options.excludefilename) as fp:
+                options.toexclude = fp.readlines()
         except IOError:
             print(_(
                 "Can't read --exclude-file: %s") % options.excludefilename, file=sys.stderr)
@@ -656,7 +678,7 @@ def main():
         if closep:
             fp.close()
 
-
+
 if __name__ == '__main__':
     main()
     # some more test strings

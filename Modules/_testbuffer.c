@@ -8,13 +8,13 @@
 
 
 /* struct module */
-PyObject *structmodule = NULL;
-PyObject *Struct = NULL;
-PyObject *calcsize = NULL;
+static PyObject *structmodule = NULL;
+static PyObject *Struct = NULL;
+static PyObject *calcsize = NULL;
 
 /* cache simple format string */
 static const char *simple_fmt = "B";
-PyObject *simple_format = NULL;
+static PyObject *simple_format = NULL;
 #define SIMPLE_FORMAT(fmt) (fmt == NULL || strcmp(fmt, "B") == 0)
 #define FIX_FORMAT(fmt) (fmt == NULL ? "B" : fmt)
 
@@ -24,7 +24,7 @@ PyObject *simple_format = NULL;
 /**************************************************************************/
 
 static PyTypeObject NDArray_Type;
-#define NDArray_Check(v) (Py_TYPE(v) == &NDArray_Type)
+#define NDArray_Check(v) Py_IS_TYPE(v, &NDArray_Type)
 
 #define CHECK_LIST_OR_TUPLE(v) \
     if (!PyList_Check(v) && !PyTuple_Check(v)) { \
@@ -190,7 +190,7 @@ ndbuf_delete(NDArrayObject *nd, ndbuf_t *elt)
         elt->prev->next = elt->next;
     else
         nd->head = elt->next;
-    
+
     if (elt->next)
         elt->next->prev = elt->prev;
 
@@ -236,7 +236,7 @@ ndarray_dealloc(NDArrayObject *self)
                 ndbuf_pop(self);
         }
     }
-    PyObject_Del(self);
+    PyObject_Free(self);
 }
 
 static int
@@ -767,7 +767,7 @@ out:
   +-----------------+-----------+-------------+----------------+
   | base.readonly   |     0     |     OK      |       OK       |
   +-----------------+-----------+-------------+----------------+
-  | base.format     |    NULL   |     OK      |       OK       |  
+  | base.format     |    NULL   |     OK      |       OK       |
   +-----------------+-----------+-------------+----------------+
   | base.ndim       |     1     |      1      |       OK       |
   +-----------------+-----------+-------------+----------------+
@@ -850,7 +850,8 @@ seq_as_ssize_array(PyObject *seq, Py_ssize_t len, int is_shape)
     Py_ssize_t *dest;
     Py_ssize_t x, i;
 
-    dest = PyMem_Malloc(len * (sizeof *dest));
+    /* ndim = len <= ND_MAX_NDIM, so PyMem_New() is actually not needed. */
+    dest = PyMem_New(Py_ssize_t, len);
     if (dest == NULL) {
         PyErr_NoMemory();
         return NULL;
@@ -1510,14 +1511,26 @@ ndarray_getbuf(NDArrayObject *self, Py_buffer *view, int flags)
         view->shape = NULL;
     }
 
-    view->obj = (PyObject *)self;
-    Py_INCREF(view->obj);
+    /* Ascertain that the new buffer has the same contiguity as the exporter */
+    if (ND_C_CONTIGUOUS(baseflags) != PyBuffer_IsContiguous(view, 'C') ||
+        /* skip cast to 1-d */
+        (view->format != NULL && view->shape != NULL &&
+         ND_FORTRAN_CONTIGUOUS(baseflags) != PyBuffer_IsContiguous(view, 'F')) ||
+        /* cast to 1-d */
+        (view->format == NULL && view->shape == NULL &&
+         !PyBuffer_IsContiguous(view, 'F'))) {
+        PyErr_SetString(PyExc_BufferError,
+            "ndarray: contiguity mismatch in getbuf()");
+            return -1;
+    }
+
+    view->obj = Py_NewRef(self);
     self->head->exports++;
 
     return 0;
 }
 
-static int
+static void
 ndarray_releasebuf(NDArrayObject *self, Py_buffer *view)
 {
     if (!ND_IS_CONSUMER(self)) {
@@ -1525,8 +1538,6 @@ ndarray_releasebuf(NDArrayObject *self, Py_buffer *view)
         if (--ndbuf->exports == 0 && ndbuf != self->head)
             ndbuf_delete(self, ndbuf);
     }
-
-    return 0;
 }
 
 static PyBufferProcs ndarray_as_buffer = {
@@ -1701,10 +1712,10 @@ init_slice(Py_buffer *base, PyObject *key, int dim)
 {
     Py_ssize_t start, stop, step, slicelength;
 
-    if (PySlice_GetIndicesEx(key, base->shape[dim],
-                             &start, &stop, &step, &slicelength) < 0) {
+    if (PySlice_Unpack(key, &start, &stop, &step) < 0) {
         return -1;
     }
+    slicelength = PySlice_AdjustIndices(base->shape[dim], &start, &stop, step);
 
 
     if (base->suboffsets == NULL || dim == 0) {
@@ -1776,8 +1787,7 @@ ndarray_subscript(NDArrayObject *self, PyObject *key)
             return unpack_single(base->buf, base->format, base->itemsize);
         }
         else if (key == Py_Ellipsis) {
-            Py_INCREF(self);
-            return (PyObject *)self;
+            return Py_NewRef(self);
         }
         else {
             PyErr_SetString(PyExc_TypeError, "invalid indexing of scalar");
@@ -1842,7 +1852,7 @@ ndarray_subscript(NDArrayObject *self, PyObject *key)
 type_error:
     PyErr_Format(PyExc_TypeError,
         "cannot index memory using \"%.200s\"",
-        key->ob_type->tp_name);
+        Py_TYPE(key)->tp_name);
 err_occurred:
     Py_DECREF(nd);
     return NULL;
@@ -1921,9 +1931,10 @@ slice_indices(PyObject *self, PyObject *args)
             "first argument must be a slice object");
         return NULL;
     }
-    if (PySlice_GetIndicesEx(key, len, &s[0], &s[1], &s[2], &s[3]) < 0) {
+    if (PySlice_Unpack(key, &s[0], &s[1], &s[2]) < 0) {
         return NULL;
     }
+    s[3] = PySlice_AdjustIndices(len, &s[0], &s[1], s[2]);
 
     ret = PyTuple_New(4);
     if (ret == NULL)
@@ -2005,11 +2016,10 @@ ndarray_get_obj(NDArrayObject *self, void *closure)
 {
     Py_buffer *base = &self->head->base;
 
-    if (base->obj == NULL) { 
+    if (base->obj == NULL) {
         Py_RETURN_NONE;
     }
-    Py_INCREF(base->obj);
-    return base->obj;
+    return Py_NewRef(base->obj);
 }
 
 static PyObject *
@@ -2023,7 +2033,7 @@ static PyObject *
 ndarray_get_readonly(NDArrayObject *self, void *closure)
 {
     Py_buffer *base = &self->head->base;
-    return PyLong_FromLong(base->readonly);
+    return PyBool_FromLong(base->readonly);
 }
 
 static PyObject *
@@ -2037,7 +2047,7 @@ static PyObject *
 ndarray_get_format(NDArrayObject *self, void *closure)
 {
     Py_buffer *base = &self->head->base;
-    char *fmt = base->format ? base->format : "";
+    const char *fmt = base->format ? base->format : "";
     return PyUnicode_FromString(fmt);
 }
 
@@ -2206,6 +2216,8 @@ ndarray_add_suboffsets(PyObject *self, PyObject *dummy)
     for (i = 0; i < base->ndim; i++)
         base->suboffsets[i] = -1;
 
+    nd->head->flags &= ~(ND_C|ND_FORTRAN);
+
     Py_RETURN_NONE;
 }
 
@@ -2337,7 +2349,7 @@ out:
 }
 
 static PyObject *
-get_sizeof_void_p(PyObject *self)
+get_sizeof_void_p(PyObject *self, PyObject *Py_UNUSED(ignored))
 {
     return PyLong_FromSize_t(sizeof(void *));
 }
@@ -2469,13 +2481,12 @@ arraycmp(const Py_ssize_t *a1, const Py_ssize_t *a2, const Py_ssize_t *shape,
 {
     Py_ssize_t i;
 
-    if (ndim == 1 && shape && shape[0] == 1) {
-        /* This is for comparing strides: For example, the array
-           [175], shape=[1], strides=[-5] is considered contiguous. */
-        return 1;
-    }
 
     for (i = 0; i < ndim; i++) {
+        if (shape && shape[i] <= 1) {
+            /* strides can differ if the dimension is less than 2 */
+            continue;
+        }
         if (a1[i] != a2[i]) {
             return 0;
         }
@@ -2544,9 +2555,8 @@ result:
     PyBuffer_Release(&v1);
     PyBuffer_Release(&v2);
 
-    ret = equal ? Py_True : Py_False; 
-    Py_INCREF(ret);
-    return ret;
+    ret = equal ? Py_True : Py_False;
+    return Py_NewRef(ret);
 }
 
 static PyObject *
@@ -2555,31 +2565,35 @@ is_contiguous(PyObject *self, PyObject *args)
     PyObject *obj;
     PyObject *order;
     PyObject *ret = NULL;
-    Py_buffer view;
+    Py_buffer view, *base;
     char ord;
 
     if (!PyArg_ParseTuple(args, "OO", &obj, &order)) {
         return NULL;
     }
 
-    if (PyObject_GetBuffer(obj, &view, PyBUF_FULL_RO) < 0) {
-        PyErr_SetString(PyExc_TypeError,
-            "is_contiguous: object does not implement the buffer "
-            "protocol");
+    ord = get_ascii_order(order);
+    if (ord == CHAR_MAX) {
         return NULL;
     }
 
-    ord = get_ascii_order(order);
-    if (ord == CHAR_MAX) {
-        goto release;
+    if (NDArray_Check(obj)) {
+        /* Skip the buffer protocol to check simple etc. buffers directly. */
+        base = &((NDArrayObject *)obj)->head->base;
+        ret = PyBuffer_IsContiguous(base, ord) ? Py_True : Py_False;
+    }
+    else {
+        if (PyObject_GetBuffer(obj, &view, PyBUF_FULL_RO) < 0) {
+            PyErr_SetString(PyExc_TypeError,
+                "is_contiguous: object does not implement the buffer "
+                "protocol");
+            return NULL;
+        }
+        ret = PyBuffer_IsContiguous(&view, ord) ? Py_True : Py_False;
+        PyBuffer_Release(&view);
     }
 
-    ret = PyBuffer_IsContiguous(&view, ord) ? Py_True : Py_False;
-    Py_INCREF(ret);
-
-release:
-    PyBuffer_Release(&view);
-    return ret;
+    return Py_NewRef(ret);
 }
 
 static Py_hash_t
@@ -2614,7 +2628,7 @@ static PyMethodDef ndarray_methods [] =
 {
     { "tolist", ndarray_tolist, METH_NOARGS, NULL },
     { "tobytes", ndarray_tobytes, METH_NOARGS, NULL },
-    { "push", (PyCFunction)ndarray_push, METH_VARARGS|METH_KEYWORDS, NULL },
+    { "push", _PyCFunction_CAST(ndarray_push), METH_VARARGS|METH_KEYWORDS, NULL },
     { "pop", ndarray_pop, METH_NOARGS, NULL },
     { "add_suboffsets", ndarray_add_suboffsets, METH_NOARGS, NULL },
     { "memoryview_from_buffer", ndarray_memoryview_from_buffer, METH_NOARGS, NULL },
@@ -2627,10 +2641,10 @@ static PyTypeObject NDArray_Type = {
     sizeof(NDArrayObject),       /* Basic object size */
     0,                           /* Item size for varobject */
     (destructor)ndarray_dealloc, /* tp_dealloc */
-    0,                           /* tp_print */
+    0,                           /* tp_vectorcall_offset */
     0,                           /* tp_getattr */
     0,                           /* tp_setattr */
-    0,                           /* tp_compare */
+    0,                           /* tp_as_async */
     0,                           /* tp_repr */
     0,                           /* tp_as_number */
     &ndarray_as_sequence,        /* tp_as_sequence */
@@ -2715,7 +2729,7 @@ staticarray_init(PyObject *self, PyObject *args, PyObject *kwds)
 static void
 staticarray_dealloc(StaticArrayObject *self)
 {
-    PyObject_Del(self);
+    PyObject_Free(self);
 }
 
 /* Return a buffer for a PyBUF_FULL_RO request. Flags are not checked,
@@ -2729,8 +2743,7 @@ staticarray_getbuf(StaticArrayObject *self, Py_buffer *view, int flags)
         view->obj = NULL; /* Don't use this in new code. */
     }
     else {
-        view->obj = (PyObject *)self;
-        Py_INCREF(view->obj);
+        view->obj = Py_NewRef(self);
     }
 
     return 0;
@@ -2747,10 +2760,10 @@ static PyTypeObject StaticArray_Type = {
     sizeof(StaticArrayObject),       /* Basic object size */
     0,                               /* Item size for varobject */
     (destructor)staticarray_dealloc, /* tp_dealloc */
-    0,                               /* tp_print */
+    0,                               /* tp_vectorcall_offset */
     0,                               /* tp_getattr */
     0,                               /* tp_setattr */
-    0,                               /* tp_compare */
+    0,                               /* tp_as_async */
     0,                               /* tp_repr */
     0,                               /* tp_as_number */
     0,                               /* tp_as_sequence */
@@ -2786,7 +2799,7 @@ static PyTypeObject StaticArray_Type = {
 static struct PyMethodDef _testbuffer_functions[] = {
     {"slice_indices", slice_indices, METH_VARARGS, NULL},
     {"get_pointer", get_pointer, METH_VARARGS, NULL},
-    {"get_sizeof_void_p", (PyCFunction)get_sizeof_void_p, METH_NOARGS, NULL},
+    {"get_sizeof_void_p", get_sizeof_void_p, METH_NOARGS, NULL},
     {"get_contiguous", get_contiguous, METH_VARARGS, NULL},
     {"py_buffer_to_contiguous", py_buffer_to_contiguous, METH_VARARGS, NULL},
     {"is_contiguous", is_contiguous, METH_VARARGS, NULL},
@@ -2806,70 +2819,91 @@ static struct PyModuleDef _testbuffermodule = {
     NULL
 };
 
+static int
+_testbuffer_exec(PyObject *mod)
+{
+    Py_SET_TYPE(&NDArray_Type, &PyType_Type);
+    if (PyModule_AddType(mod, &NDArray_Type) < 0) {
+        return -1;
+    }
+
+    Py_SET_TYPE(&StaticArray_Type, &PyType_Type);
+    if (PyModule_AddType(mod, &StaticArray_Type) < 0) {
+        return -1;
+    }
+
+    structmodule = PyImport_ImportModule("struct");
+    if (structmodule == NULL) {
+        return -1;
+    }
+
+    Struct = PyObject_GetAttrString(structmodule, "Struct");
+    if (Struct == NULL) {
+        return -1;
+    }
+    calcsize = PyObject_GetAttrString(structmodule, "calcsize");
+    if (calcsize == NULL) {
+        return -1;
+    }
+
+    simple_format = PyUnicode_FromString(simple_fmt);
+    if (simple_format == NULL) {
+        return -1;
+    }
+
+#define ADD_INT_MACRO(mod, macro)                                             \
+    do {                                                                    \
+        if (PyModule_AddIntConstant(mod, #macro, macro) < 0) {                \
+            return -1;                                                      \
+        }                                                                   \
+    } while (0)
+
+    ADD_INT_MACRO(mod, ND_MAX_NDIM);
+    ADD_INT_MACRO(mod, ND_VAREXPORT);
+    ADD_INT_MACRO(mod, ND_WRITABLE);
+    ADD_INT_MACRO(mod, ND_FORTRAN);
+    ADD_INT_MACRO(mod, ND_SCALAR);
+    ADD_INT_MACRO(mod, ND_PIL);
+    ADD_INT_MACRO(mod, ND_GETBUF_FAIL);
+    ADD_INT_MACRO(mod, ND_GETBUF_UNDEFINED);
+    ADD_INT_MACRO(mod, ND_REDIRECT);
+
+    ADD_INT_MACRO(mod, PyBUF_SIMPLE);
+    ADD_INT_MACRO(mod, PyBUF_WRITABLE);
+    ADD_INT_MACRO(mod, PyBUF_FORMAT);
+    ADD_INT_MACRO(mod, PyBUF_ND);
+    ADD_INT_MACRO(mod, PyBUF_STRIDES);
+    ADD_INT_MACRO(mod, PyBUF_INDIRECT);
+    ADD_INT_MACRO(mod, PyBUF_C_CONTIGUOUS);
+    ADD_INT_MACRO(mod, PyBUF_F_CONTIGUOUS);
+    ADD_INT_MACRO(mod, PyBUF_ANY_CONTIGUOUS);
+    ADD_INT_MACRO(mod, PyBUF_FULL);
+    ADD_INT_MACRO(mod, PyBUF_FULL_RO);
+    ADD_INT_MACRO(mod, PyBUF_RECORDS);
+    ADD_INT_MACRO(mod, PyBUF_RECORDS_RO);
+    ADD_INT_MACRO(mod, PyBUF_STRIDED);
+    ADD_INT_MACRO(mod, PyBUF_STRIDED_RO);
+    ADD_INT_MACRO(mod, PyBUF_CONTIG);
+    ADD_INT_MACRO(mod, PyBUF_CONTIG_RO);
+
+    ADD_INT_MACRO(mod, PyBUF_READ);
+    ADD_INT_MACRO(mod, PyBUF_WRITE);
+
+#undef ADD_INT_MACRO
+
+    return 0;
+}
 
 PyMODINIT_FUNC
 PyInit__testbuffer(void)
 {
-    PyObject *m;
-
-    m = PyModule_Create(&_testbuffermodule);
-    if (m == NULL)
+    PyObject *mod = PyModule_Create(&_testbuffermodule);
+    if (mod == NULL) {
         return NULL;
-
-    Py_TYPE(&NDArray_Type) = &PyType_Type;
-    Py_INCREF(&NDArray_Type);
-    PyModule_AddObject(m, "ndarray", (PyObject *)&NDArray_Type);
-
-    Py_TYPE(&StaticArray_Type) = &PyType_Type;
-    Py_INCREF(&StaticArray_Type);
-    PyModule_AddObject(m, "staticarray", (PyObject *)&StaticArray_Type);
-
-    structmodule = PyImport_ImportModule("struct");
-    if (structmodule == NULL)
+    }
+    if (_testbuffer_exec(mod) < 0) {
+        Py_DECREF(mod);
         return NULL;
-
-    Struct = PyObject_GetAttrString(structmodule, "Struct");
-    calcsize = PyObject_GetAttrString(structmodule, "calcsize");
-    if (Struct == NULL || calcsize == NULL)
-        return NULL;
-
-    simple_format = PyUnicode_FromString(simple_fmt);
-    if (simple_format == NULL)
-        return NULL;
-
-    PyModule_AddIntMacro(m, ND_MAX_NDIM);
-    PyModule_AddIntMacro(m, ND_VAREXPORT);
-    PyModule_AddIntMacro(m, ND_WRITABLE);
-    PyModule_AddIntMacro(m, ND_FORTRAN);
-    PyModule_AddIntMacro(m, ND_SCALAR);
-    PyModule_AddIntMacro(m, ND_PIL);
-    PyModule_AddIntMacro(m, ND_GETBUF_FAIL);
-    PyModule_AddIntMacro(m, ND_GETBUF_UNDEFINED);
-    PyModule_AddIntMacro(m, ND_REDIRECT);
-
-    PyModule_AddIntMacro(m, PyBUF_SIMPLE);
-    PyModule_AddIntMacro(m, PyBUF_WRITABLE);
-    PyModule_AddIntMacro(m, PyBUF_FORMAT);
-    PyModule_AddIntMacro(m, PyBUF_ND);
-    PyModule_AddIntMacro(m, PyBUF_STRIDES);
-    PyModule_AddIntMacro(m, PyBUF_INDIRECT);
-    PyModule_AddIntMacro(m, PyBUF_C_CONTIGUOUS);
-    PyModule_AddIntMacro(m, PyBUF_F_CONTIGUOUS);
-    PyModule_AddIntMacro(m, PyBUF_ANY_CONTIGUOUS);
-    PyModule_AddIntMacro(m, PyBUF_FULL);
-    PyModule_AddIntMacro(m, PyBUF_FULL_RO);
-    PyModule_AddIntMacro(m, PyBUF_RECORDS);
-    PyModule_AddIntMacro(m, PyBUF_RECORDS_RO);
-    PyModule_AddIntMacro(m, PyBUF_STRIDED);
-    PyModule_AddIntMacro(m, PyBUF_STRIDED_RO);
-    PyModule_AddIntMacro(m, PyBUF_CONTIG);
-    PyModule_AddIntMacro(m, PyBUF_CONTIG_RO);
-
-    PyModule_AddIntMacro(m, PyBUF_READ);
-    PyModule_AddIntMacro(m, PyBUF_WRITE);
-
-    return m;
+    }
+    return mod;
 }
-
-
-

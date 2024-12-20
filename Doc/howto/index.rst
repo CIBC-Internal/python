@@ -13,10 +13,11 @@ Currently, the HOWTOs are:
 .. toctree::
    :maxdepth: 1
 
-   pyporting.rst
    cporting.rst
    curses.rst
    descriptor.rst
+   gdb_helpers.rst
+   enum.rst
    functional.rst
    logging.rst
    logging-cookbook.rst
@@ -25,8 +26,10 @@ Currently, the HOWTOs are:
    sorting.rst
    unicode.rst
    urllib2.rst
-   webservers.rst
    argparse.rst
    ipaddress.rst
-   clinic.rst
-
+   instrumentation.rst
+   perf_profiling.rst
+   annotations.rst
+   isolating-extensions.rst
+   mro.rst
