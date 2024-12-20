@@ -1,9 +1,12 @@
-:mod:`code` --- Interpreter base classes
-========================================
+:mod:`!code` --- Interpreter base classes
+=========================================
 
 .. module:: code
    :synopsis: Facilities to implement read-eval-print loops.
 
+**Source code:** :source:`Lib/code.py`
+
+--------------
 
 The ``code`` module provides facilities to implement read-eval-print loops in
 Python.  Two classes and convenience functions are included which can be used to
@@ -15,28 +18,39 @@ build applications which provide an interactive interpreter prompt.
    This class deals with parsing and interpreter state (the user's namespace); it
    does not deal with input buffering or prompting or input file naming (the
    filename is always passed in explicitly). The optional *locals* argument
-   specifies the dictionary in which code will be executed; it defaults to a newly
-   created dictionary with key ``'__name__'`` set to ``'__console__'`` and key
-   ``'__doc__'`` set to ``None``.
+   specifies a mapping to use as the namespace in which code will be executed;
+   it defaults to a newly created dictionary with key ``'__name__'`` set to
+   ``'__console__'`` and key ``'__doc__'`` set to ``None``.
 
 
-.. class:: InteractiveConsole(locals=None, filename="<console>")
+.. class:: InteractiveConsole(locals=None, filename="<console>", local_exit=False)
 
    Closely emulate the behavior of the interactive Python interpreter. This class
    builds on :class:`InteractiveInterpreter` and adds prompting using the familiar
-   ``sys.ps1`` and ``sys.ps2``, and input buffering.
+   ``sys.ps1`` and ``sys.ps2``, and input buffering. If *local_exit* is true,
+   ``exit()`` and ``quit()`` in the console will not raise :exc:`SystemExit`, but
+   instead return to the calling code.
 
+   .. versionchanged:: 3.13
+      Added *local_exit* parameter.
 
-.. function:: interact(banner=None, readfunc=None, local=None)
+.. function:: interact(banner=None, readfunc=None, local=None, exitmsg=None, local_exit=False)
 
    Convenience function to run a read-eval-print loop.  This creates a new
    instance of :class:`InteractiveConsole` and sets *readfunc* to be used as
    the :meth:`InteractiveConsole.raw_input` method, if provided.  If *local* is
    provided, it is passed to the :class:`InteractiveConsole` constructor for
-   use as the default namespace for the interpreter loop.  The :meth:`interact`
-   method of the instance is then run with *banner* passed as the banner to
-   use, if provided.  The console object is discarded after use.
+   use as the default namespace for the interpreter loop.  If *local_exit* is provided,
+   it is passed to the :class:`InteractiveConsole` constructor.  The :meth:`~InteractiveConsole.interact`
+   method of the instance is then run with *banner* and *exitmsg* passed as the
+   banner and exit message to use, if provided.  The console object is discarded
+   after use.
 
+   .. versionchanged:: 3.6
+      Added *exitmsg* parameter.
+
+   .. versionchanged:: 3.13
+      Added *local_exit* parameter.
 
 .. function:: compile_command(source, filename="<input>", symbol="single")
 
@@ -49,8 +63,8 @@ build applications which provide an interactive interpreter prompt.
 
    *source* is the source string; *filename* is the optional filename from which
    source was read, defaulting to ``'<input>'``; and *symbol* is the optional
-   grammar start symbol, which should be either ``'single'`` (the default) or
-   ``'eval'``.
+   grammar start symbol, which should be ``'single'`` (the default), ``'eval'``
+   or ``'exec'``.
 
    Returns a code object (the same as ``compile(source, filename, symbol)``) if the
    command is complete and valid; ``None`` if the command is incomplete; raises
@@ -69,7 +83,7 @@ Interactive Interpreter Objects
 
    Compile and run some source in the interpreter. Arguments are the same as for
    :func:`compile_command`; the default for *filename* is ``'<input>'``, and for
-   *symbol* is ``'single'``.  One several things can happen:
+   *symbol* is ``'single'``.  One of several things can happen:
 
    * The input is incorrect; :func:`compile_command` raised an exception
      (:exc:`SyntaxError` or :exc:`OverflowError`).  A syntax traceback will be
@@ -113,6 +127,9 @@ Interactive Interpreter Objects
    because it is within the interpreter object implementation. The output is
    written by the :meth:`write` method.
 
+   .. versionchanged:: 3.5 The full chained traceback is displayed instead
+      of just the primary traceback.
+
 
 .. method:: InteractiveInterpreter.write(data)
 
@@ -130,7 +147,7 @@ The :class:`InteractiveConsole` class is a subclass of
 interpreter objects as well as the following additions.
 
 
-.. method:: InteractiveConsole.interact(banner=None)
+.. method:: InteractiveConsole.interact(banner=None, exitmsg=None)
 
    Closely emulate the interactive Python console. The optional *banner* argument
    specify the banner to print before the first interaction; by default it prints a
@@ -138,20 +155,27 @@ interpreter objects as well as the following additions.
    by the class name of the console object in parentheses (so as not to confuse
    this with the real interpreter -- since it's so close!).
 
+   The optional *exitmsg* argument specifies an exit message printed when exiting.
+   Pass the empty string to suppress the exit message. If *exitmsg* is not given or
+   ``None``, a default message is printed.
+
    .. versionchanged:: 3.4
       To suppress printing any banner, pass an empty string.
+
+   .. versionchanged:: 3.6
+      Print an exit message when exiting.
 
 
 .. method:: InteractiveConsole.push(line)
 
    Push a line of source text to the interpreter. The line should not have a
    trailing newline; it may have internal newlines.  The line is appended to a
-   buffer and the interpreter's :meth:`runsource` method is called with the
+   buffer and the interpreter's :meth:`~InteractiveInterpreter.runsource` method is called with the
    concatenated contents of the buffer as source.  If this indicates that the
    command was executed or invalid, the buffer is reset; otherwise, the command is
    incomplete, and the buffer is left as it was after the line was appended.  The
    return value is ``True`` if more input is required, ``False`` if the line was
-   dealt with in some way (this is the same as :meth:`runsource`).
+   dealt with in some way (this is the same as :meth:`!runsource`).
 
 
 .. method:: InteractiveConsole.resetbuffer()
@@ -165,4 +189,3 @@ interpreter objects as well as the following additions.
    newline.  When the user enters the EOF key sequence, :exc:`EOFError` is raised.
    The base implementation reads from ``sys.stdin``; a subclass may replace this
    with a different implementation.
-

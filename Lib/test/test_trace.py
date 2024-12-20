@@ -1,21 +1,28 @@
 import os
-import io
+from pickle import dump
 import sys
-from test.support import (run_unittest, TESTFN, rmtree, unlink,
-                               captured_stdout)
+from test.support import captured_stdout, requires_resource, requires_gil_enabled
+from test.support.os_helper import (TESTFN, rmtree, unlink)
+from test.support.script_helper import assert_python_ok, assert_python_failure
+import textwrap
 import unittest
+from types import FunctionType
 
 import trace
-from trace import CoverageResults, Trace
+from trace import Trace
 
 from test.tracedmodules import testmod
 
+##
+## See also test_sys_settrace.py, which contains tests that cover
+## tracing of many more code blocks.
+##
 
 #------------------------------- Utilities -----------------------------------#
 
 def fix_ext_py(filename):
-    """Given a .pyc/.pyo filename converts it to the appropriate .py"""
-    if filename.endswith(('.pyc', '.pyo')):
+    """Given a .pyc filename converts it to the appropriate .py"""
+    if filename.endswith('.pyc'):
         filename = filename[:-1]
     return filename
 
@@ -71,10 +78,26 @@ def traced_func_calling_generator():
 def traced_doubler(num):
     return num * 2
 
+def traced_capturer(*args, **kwargs):
+    return args, kwargs
+
 def traced_caller_list_comprehension():
     k = 10
     mylist = [traced_doubler(i) for i in range(k)]
     return mylist
+
+def traced_decorated_function():
+    def decorator1(f):
+        return f
+    def decorator_fabric():
+        def decorator2(f):
+            return f
+        return decorator2
+    @decorator1
+    @decorator_fabric()
+    def func():
+        pass
+    func()
 
 
 class TracedClass(object):
@@ -165,14 +188,30 @@ class TestLineCounts(unittest.TestCase):
         firstlineno_called = get_firstlineno(traced_doubler)
         expected = {
             (self.my_py_filename, firstlineno_calling + 1): 1,
-            # List compehentions work differently in 3.x, so the count
-            # below changed compared to 2.x.
-            (self.my_py_filename, firstlineno_calling + 2): 12,
+            (self.my_py_filename, firstlineno_calling + 2): 11,
             (self.my_py_filename, firstlineno_calling + 3): 1,
             (self.my_py_filename, firstlineno_called + 1): 10,
         }
         self.assertEqual(self.tracer.results().counts, expected)
 
+    def test_traced_decorated_function(self):
+        self.tracer.runfunc(traced_decorated_function)
+
+        firstlineno = get_firstlineno(traced_decorated_function)
+        expected = {
+            (self.my_py_filename, firstlineno + 1): 1,
+            (self.my_py_filename, firstlineno + 2): 1,
+            (self.my_py_filename, firstlineno + 3): 1,
+            (self.my_py_filename, firstlineno + 4): 1,
+            (self.my_py_filename, firstlineno + 5): 1,
+            (self.my_py_filename, firstlineno + 6): 1,
+            (self.my_py_filename, firstlineno + 7): 2,
+            (self.my_py_filename, firstlineno + 8): 2,
+            (self.my_py_filename, firstlineno + 9): 2,
+            (self.my_py_filename, firstlineno + 10): 1,
+            (self.my_py_filename, firstlineno + 11): 1,
+        }
+        self.assertEqual(self.tracer.results().counts, expected)
 
     def test_linear_methods(self):
         # XXX todo: later add 'static_method_linear' and 'class_method_linear'
@@ -189,6 +228,7 @@ class TestLineCounts(unittest.TestCase):
                 (self.my_py_filename, firstlineno + 1): 1,
             }
             self.assertEqual(tracer.results().counts, expected)
+
 
 class TestRunExecCounts(unittest.TestCase):
     """A simple sanity test of line-counting, via runctx (exec)"""
@@ -224,6 +264,11 @@ class TestFuncs(unittest.TestCase):
         self.addCleanup(sys.settrace, sys.gettrace())
         self.tracer = Trace(count=0, trace=0, countfuncs=1)
         self.filemod = my_file_and_modname()
+        self._saved_tracefunc = sys.gettrace()
+
+    def tearDown(self):
+        if self._saved_tracefunc is not None:
+            sys.settrace(self._saved_tracefunc)
 
     def test_simple_caller(self):
         self.tracer.runfunc(traced_func_simple_caller, 1)
@@ -233,6 +278,14 @@ class TestFuncs(unittest.TestCase):
             self.filemod + ('traced_func_linear',): 1,
         }
         self.assertEqual(self.tracer.results().calledfuncs, expected)
+
+    def test_arg_errors(self):
+        res = self.tracer.runfunc(traced_capturer, 1, 2, self=3, func=4)
+        self.assertEqual(res, ((1, 2), {'self': 3, 'func': 4}))
+        with self.assertRaises(TypeError):
+            self.tracer.runfunc(func=traced_capturer, arg=1)
+        with self.assertRaises(TypeError):
+            self.tracer.runfunc()
 
     def test_loop_caller_importing(self):
         self.tracer.runfunc(traced_func_importing_caller, 1)
@@ -248,6 +301,7 @@ class TestFuncs(unittest.TestCase):
 
     @unittest.skipIf(hasattr(sys, 'gettrace') and sys.gettrace(),
                      'pre-existing trace function throws off measurements')
+    @requires_gil_enabled("gh-117783: immortalization of types affects traced method names")
     def test_inst_method_calling(self):
         obj = TracedClass(20)
         self.tracer.runfunc(obj.inst_method_calling, 1)
@@ -256,6 +310,18 @@ class TestFuncs(unittest.TestCase):
             self.filemod + ('TracedClass.inst_method_calling',): 1,
             self.filemod + ('TracedClass.inst_method_linear',): 1,
             self.filemod + ('traced_func_linear',): 1,
+        }
+        self.assertEqual(self.tracer.results().calledfuncs, expected)
+
+    def test_traced_decorated_function(self):
+        self.tracer.runfunc(traced_decorated_function)
+
+        expected = {
+            self.filemod + ('traced_decorated_function',): 1,
+            self.filemod + ('decorator_fabric',): 1,
+            self.filemod + ('decorator2',): 1,
+            self.filemod + ('decorator1',): 1,
+            self.filemod + ('func',): 1,
         }
         self.assertEqual(self.tracer.results().calledfuncs, expected)
 
@@ -269,6 +335,7 @@ class TestCallers(unittest.TestCase):
 
     @unittest.skipIf(hasattr(sys, 'gettrace') and sys.gettrace(),
                      'pre-existing trace function throws off measurements')
+    @requires_gil_enabled("gh-117783: immortalization of types affects traced method names")
     def test_loop_caller_importing(self):
         self.tracer.runfunc(traced_func_importing_caller, 1)
 
@@ -296,26 +363,33 @@ class TestCoverage(unittest.TestCase):
         rmtree(TESTFN)
         unlink(TESTFN)
 
-    def _coverage(self, tracer,
-                  cmd='from test import test_pprint; test_pprint.test_main()'):
+    DEFAULT_SCRIPT = '''if True:
+        import unittest
+        from test.test_pprint import QueryTestCase
+        loader = unittest.TestLoader()
+        tests = loader.loadTestsFromTestCase(QueryTestCase)
+        tests(unittest.TestResult())
+        '''
+    def _coverage(self, tracer, cmd=DEFAULT_SCRIPT):
         tracer.run(cmd)
         r = tracer.results()
         r.write_results(show_missing=True, summary=True, coverdir=TESTFN)
 
+    @requires_resource('cpu')
     def test_coverage(self):
         tracer = trace.Trace(trace=0, count=1)
         with captured_stdout() as stdout:
             self._coverage(tracer)
         stdout = stdout.getvalue()
-        self.assertTrue("pprint.py" in stdout)
-        self.assertTrue("case.py" in stdout)   # from unittest
+        self.assertIn("pprint.py", stdout)
+        self.assertIn("case.py", stdout)   # from unittest
         files = os.listdir(TESTFN)
-        self.assertTrue("pprint.cover" in files)
-        self.assertTrue("unittest.case.cover" in files)
+        self.assertIn("pprint.cover", files)
+        self.assertIn("unittest.case.cover", files)
 
     def test_coverage_ignore(self):
         # Ignore all files, nothing should be traced nor printed
-        libpath = os.path.normpath(os.path.dirname(os.__file__))
+        libpath = os.path.normpath(os.path.dirname(os.path.dirname(__file__)))
         # sys.prefix does not work when running from a checkout
         tracer = trace.Trace(ignoredirs=[sys.base_prefix, sys.base_exec_prefix,
                              libpath], trace=0, count=1)
@@ -346,6 +420,15 @@ class TestCoverage(unittest.TestCase):
         self.assertIn(modname, coverage)
         self.assertEqual(coverage[modname], (5, 100))
 
+    def test_coverageresults_update(self):
+        # Update empty CoverageResults with a non-empty infile.
+        infile = TESTFN + '-infile'
+        with open(infile, 'wb') as f:
+            dump(({}, {}, {'caller': 1}), f, protocol=1)
+        self.addCleanup(unlink, infile)
+        results = trace.CoverageResults({}, {}, infile, {})
+        self.assertEqual(results.callers, {'caller': 1})
+
 ### Tests that don't mess with sys.settrace and can be traced
 ### themselves TODO: Skip tests that do mess with sys.settrace when
 ### regrtest is invoked with -T option.
@@ -361,55 +444,147 @@ class Test_Ignore(unittest.TestCase):
         # Matched before.
         self.assertTrue(ignore.names(jn('bar', 'baz.py'), 'baz'))
 
+# Created for Issue 31908 -- CLI utility not writing cover files
+class TestCoverageCommandLineOutput(unittest.TestCase):
 
-class TestDeprecatedMethods(unittest.TestCase):
+    codefile = 'tmp.py'
+    coverfile = 'tmp.cover'
 
-    def test_deprecated_usage(self):
-        sio = io.StringIO()
-        with self.assertWarns(DeprecationWarning):
-            trace.usage(sio)
-        self.assertIn('Usage:', sio.getvalue())
+    def setUp(self):
+        with open(self.codefile, 'w', encoding='iso-8859-15') as f:
+            f.write(textwrap.dedent('''\
+                # coding: iso-8859-15
+                x = 'spœm'
+                if []:
+                    print('unreachable')
+            '''))
 
-    def test_deprecated_Ignore(self):
-        with self.assertWarns(DeprecationWarning):
-            trace.Ignore()
+    def tearDown(self):
+        unlink(self.codefile)
+        unlink(self.coverfile)
 
-    def test_deprecated_modname(self):
-        with self.assertWarns(DeprecationWarning):
-            self.assertEqual("spam", trace.modname("spam"))
+    def test_cover_files_written_no_highlight(self):
+        # Test also that the cover file for the trace module is not created
+        # (issue #34171).
+        tracedir = os.path.dirname(os.path.abspath(trace.__file__))
+        tracecoverpath = os.path.join(tracedir, 'trace.cover')
+        unlink(tracecoverpath)
 
-    def test_deprecated_fullmodname(self):
-        with self.assertWarns(DeprecationWarning):
-            self.assertEqual("spam", trace.fullmodname("spam"))
+        argv = '-m trace --count'.split() + [self.codefile]
+        status, stdout, stderr = assert_python_ok(*argv)
+        self.assertEqual(stderr, b'')
+        self.assertFalse(os.path.exists(tracecoverpath))
+        self.assertTrue(os.path.exists(self.coverfile))
+        with open(self.coverfile, encoding='iso-8859-15') as f:
+            self.assertEqual(f.read(),
+                "       # coding: iso-8859-15\n"
+                "    1: x = 'spœm'\n"
+                "    1: if []:\n"
+                "           print('unreachable')\n"
+            )
 
-    def test_deprecated_find_lines_from_code(self):
-        with self.assertWarns(DeprecationWarning):
-            def foo():
-                pass
-            trace.find_lines_from_code(foo.__code__, ["eggs"])
+    def test_cover_files_written_with_highlight(self):
+        argv = '-m trace --count --missing'.split() + [self.codefile]
+        status, stdout, stderr = assert_python_ok(*argv)
+        self.assertTrue(os.path.exists(self.coverfile))
+        with open(self.coverfile, encoding='iso-8859-15') as f:
+            self.assertEqual(f.read(), textwrap.dedent('''\
+                       # coding: iso-8859-15
+                    1: x = 'spœm'
+                    1: if []:
+                >>>>>>     print('unreachable')
+            '''))
 
-    def test_deprecated_find_lines(self):
-        with self.assertWarns(DeprecationWarning):
-            def foo():
-                pass
-            trace.find_lines(foo.__code__, ["eggs"])
+class TestCommandLine(unittest.TestCase):
 
-    def test_deprecated_find_strings(self):
-        with open(TESTFN, 'w') as fd:
+    def test_failures(self):
+        _errors = (
+            (b'progname is missing: required with the main options', '-l', '-T'),
+            (b'cannot specify both --listfuncs and (--trace or --count)', '-lc'),
+            (b'argument -R/--no-report: not allowed with argument -r/--report', '-rR'),
+            (b'must specify one of --trace, --count, --report, --listfuncs, or --trackcalls', '-g'),
+            (b'-r/--report requires -f/--file', '-r'),
+            (b'--summary can only be used with --count or --report', '-sT'),
+            (b'unrecognized arguments: -y', '-y'))
+        for message, *args in _errors:
+            *_, stderr = assert_python_failure('-m', 'trace', *args)
+            self.assertIn(message, stderr)
+
+    def test_listfuncs_flag_success(self):
+        filename = TESTFN + '.py'
+        modulename = os.path.basename(TESTFN)
+        with open(filename, 'w', encoding='utf-8') as fd:
+            self.addCleanup(unlink, filename)
+            fd.write("a = 1\n")
+            status, stdout, stderr = assert_python_ok('-m', 'trace', '-l', filename,
+                                                      PYTHONIOENCODING='utf-8')
+            self.assertIn(b'functions called:', stdout)
+            expected = f'filename: {filename}, modulename: {modulename}, funcname: <module>'
+            self.assertIn(expected.encode(), stdout)
+
+    def test_sys_argv_list(self):
+        with open(TESTFN, 'w', encoding='utf-8') as fd:
             self.addCleanup(unlink, TESTFN)
-        with self.assertWarns(DeprecationWarning):
-            trace.find_strings(fd.name)
+            fd.write("import sys\n")
+            fd.write("print(type(sys.argv))\n")
 
-    def test_deprecated_find_executable_linenos(self):
-        with open(TESTFN, 'w') as fd:
-            self.addCleanup(unlink, TESTFN)
-        with self.assertWarns(DeprecationWarning):
-            trace.find_executable_linenos(fd.name)
+        status, direct_stdout, stderr = assert_python_ok(TESTFN)
+        status, trace_stdout, stderr = assert_python_ok('-m', 'trace', '-l', TESTFN,
+                                                        PYTHONIOENCODING='utf-8')
+        self.assertIn(direct_stdout.strip(), trace_stdout)
+
+    def test_count_and_summary(self):
+        filename = f'{TESTFN}.py'
+        coverfilename = f'{TESTFN}.cover'
+        modulename = os.path.basename(TESTFN)
+        with open(filename, 'w', encoding='utf-8') as fd:
+            self.addCleanup(unlink, filename)
+            self.addCleanup(unlink, coverfilename)
+            fd.write(textwrap.dedent("""\
+                x = 1
+                y = 2
+
+                def f():
+                    return x + y
+
+                for i in range(10):
+                    f()
+            """))
+        status, stdout, _ = assert_python_ok('-m', 'trace', '-cs', filename,
+                                             PYTHONIOENCODING='utf-8')
+        stdout = stdout.decode()
+        self.assertEqual(status, 0)
+        self.assertIn('lines   cov%   module   (path)', stdout)
+        self.assertIn(f'6   100%   {modulename}   ({filename})', stdout)
+
+    def test_run_as_module(self):
+        assert_python_ok('-m', 'trace', '-l', '--module', 'timeit', '-n', '1')
+        assert_python_failure('-m', 'trace', '-l', '--module', 'not_a_module_zzz')
 
 
-def test_main():
-    run_unittest(__name__)
+class TestTrace(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(sys.settrace, sys.gettrace())
+        self.tracer = Trace(count=0, trace=1)
+        self.filemod = my_file_and_modname()
+
+    def test_no_source_file(self):
+        filename = "<unknown>"
+        co = traced_func_linear.__code__
+        co = co.replace(co_filename=filename)
+        f = FunctionType(co, globals())
+
+        with captured_stdout() as out:
+            self.tracer.runfunc(f, 2, 3)
+
+        out = out.getvalue().splitlines()
+        firstlineno = get_firstlineno(f)
+        self.assertIn(f" --- modulename: {self.filemod[1]}, funcname: {f.__code__.co_name}", out[0])
+        self.assertIn(f"{filename}({firstlineno + 1})", out[1])
+        self.assertIn(f"{filename}({firstlineno + 2})", out[2])
+        self.assertIn(f"{filename}({firstlineno + 3})", out[3])
+        self.assertIn(f"{filename}({firstlineno + 4})", out[4])
 
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

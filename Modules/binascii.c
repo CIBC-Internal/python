@@ -53,81 +53,30 @@
 ** Brandon Long, September 2001.
 */
 
-#define PY_SSIZE_T_CLEAN
-
-#include "Python.h"
-#ifdef USE_ZLIB_CRC32
-#include "zlib.h"
+#ifndef Py_BUILD_CORE_BUILTIN
+#  define Py_BUILD_CORE_MODULE 1
 #endif
 
-static PyObject *Error;
-static PyObject *Incomplete;
+#include "Python.h"
+#include "pycore_long.h"          // _PyLong_DigitValue
+#include "pycore_strhex.h"        // _Py_strhex_bytes_with_sep()
+#ifdef USE_ZLIB_CRC32
+#  include "zlib.h"
+#endif
 
-/*
-** hqx lookup table, ascii->binary.
-*/
+typedef struct binascii_state {
+    PyObject *Error;
+    PyObject *Incomplete;
+} binascii_state;
 
-#define RUNCHAR 0x90
+static inline binascii_state *
+get_binascii_state(PyObject *module)
+{
+    return (binascii_state *)PyModule_GetState(module);
+}
 
-#define DONE 0x7F
-#define SKIP 0x7E
-#define FAIL 0x7D
 
-static unsigned char table_a2b_hqx[256] = {
-/*       ^@    ^A    ^B    ^C    ^D    ^E    ^F    ^G   */
-/* 0*/  FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*       \b    \t    \n    ^K    ^L    \r    ^N    ^O   */
-/* 1*/  FAIL, FAIL, SKIP, FAIL, FAIL, SKIP, FAIL, FAIL,
-/*       ^P    ^Q    ^R    ^S    ^T    ^U    ^V    ^W   */
-/* 2*/  FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*       ^X    ^Y    ^Z    ^[    ^\    ^]    ^^    ^_   */
-/* 3*/  FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*              !     "     #     $     %     &     '   */
-/* 4*/  FAIL, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-/*        (     )     *     +     ,     -     .     /   */
-/* 5*/  0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, FAIL, FAIL,
-/*        0     1     2     3     4     5     6     7   */
-/* 6*/  0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, FAIL,
-/*        8     9     :     ;     <     =     >     ?   */
-/* 7*/  0x14, 0x15, DONE, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*        @     A     B     C     D     E     F     G   */
-/* 8*/  0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
-/*        H     I     J     K     L     M     N     O   */
-/* 9*/  0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, FAIL,
-/*        P     Q     R     S     T     U     V     W   */
-/*10*/  0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, FAIL,
-/*        X     Y     Z     [     \     ]     ^     _   */
-/*11*/  0x2C, 0x2D, 0x2E, 0x2F, FAIL, FAIL, FAIL, FAIL,
-/*        `     a     b     c     d     e     f     g   */
-/*12*/  0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, FAIL,
-/*        h     i     j     k     l     m     n     o   */
-/*13*/  0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, FAIL, FAIL,
-/*        p     q     r     s     t     u     v     w   */
-/*14*/  0x3D, 0x3E, 0x3F, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*        x     y     z     {     |     }     ~    ^?   */
-/*15*/  FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-/*16*/  FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-    FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
-};
-
-static unsigned char table_b2a_hqx[] =
-"!\"#$%&'()*+,-012345689@ABCDEFGHIJKLMNPQRSTUVXYZ[`abcdefhijklmpqr";
-
-static char table_a2b_base64[] = {
+static const unsigned char table_a2b_base64[] = {
     -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
     -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
     -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,62, -1,-1,-1,63,
@@ -135,7 +84,16 @@ static char table_a2b_base64[] = {
     -1, 0, 1, 2,  3, 4, 5, 6,  7, 8, 9,10, 11,12,13,14,
     15,16,17,18, 19,20,21,22, 23,24,25,-1, -1,-1,-1,-1,
     -1,26,27,28, 29,30,31,32, 33,34,35,36, 37,38,39,40,
-    41,42,43,44, 45,46,47,48, 49,50,51,-1, -1,-1,-1,-1
+    41,42,43,44, 45,46,47,48, 49,50,51,-1, -1,-1,-1,-1,
+
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+    -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
 };
 
 #define BASE64_PAD '='
@@ -143,12 +101,11 @@ static char table_a2b_base64[] = {
 /* Max binary chunk size; limited only by available memory */
 #define BASE64_MAXBIN ((PY_SSIZE_T_MAX - 3) / 2)
 
-static unsigned char table_b2a_base64[] =
+static const unsigned char table_b2a_base64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 
-
-static unsigned short crctab_hqx[256] = {
+static const unsigned short crctab_hqx[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
     0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
     0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
@@ -184,10 +141,9 @@ static unsigned short crctab_hqx[256] = {
 };
 
 /*[clinic input]
-output preset file
 module binascii
 [clinic start generated code]*/
-/*[clinic end generated code: output=da39a3ee5e6b4b0d input=44c6f840ce708f0c]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=de89fb46bcaf3fec]*/
 
 /*[python input]
 
@@ -212,8 +168,6 @@ ascii_buffer_converter(PyObject *arg, Py_buffer *buf)
         return 1;
     }
     if (PyUnicode_Check(arg)) {
-        if (PyUnicode_READY(arg) < 0)
-            return 0;
         if (!PyUnicode_IS_ASCII(arg)) {
             PyErr_SetString(PyExc_ValueError,
                             "string argument should contain only ASCII characters");
@@ -228,16 +182,10 @@ ascii_buffer_converter(PyObject *arg, Py_buffer *buf)
     if (PyObject_GetBuffer(arg, buf, PyBUF_SIMPLE) != 0) {
         PyErr_Format(PyExc_TypeError,
                      "argument should be bytes, buffer or ASCII string, "
-                     "not %R", Py_TYPE(arg));
+                     "not '%.100s'", Py_TYPE(arg)->tp_name);
         return 0;
     }
-    if (!PyBuffer_IsContiguous(buf, 'C')) {
-        PyErr_Format(PyExc_TypeError,
-                     "argument should be a contiguous buffer, "
-                     "not %R", Py_TYPE(arg));
-        PyBuffer_Release(buf);
-        return 0;
-    }
+    assert(PyBuffer_IsContiguous(buf, 'C'));
     return Py_CLEANUP_SUPPORTED;
 }
 
@@ -253,15 +201,17 @@ Decode a line of uuencoded data.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_a2b_uu_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=5779f39b0b48459f input=7cafeaf73df63d1c]*/
+binascii_a2b_uu_impl(PyObject *module, Py_buffer *data)
+/*[clinic end generated code: output=e027f8e0b0598742 input=7cafeaf73df63d1c]*/
 {
-    unsigned char *ascii_data, *bin_data;
+    const unsigned char *ascii_data;
+    unsigned char *bin_data;
     int leftbits = 0;
     unsigned char this_ch;
     unsigned int leftchar = 0;
     PyObject *rv;
     Py_ssize_t ascii_len, bin_len;
+    binascii_state *state;
 
     ascii_data = data->buf;
     ascii_len = data->len;
@@ -293,7 +243,11 @@ binascii_a2b_uu_impl(PyModuleDef *module, Py_buffer *data)
             ** '`' as zero instead of space.
             */
             if ( this_ch < ' ' || this_ch > (' ' + 64)) {
-                PyErr_SetString(Error, "Illegal char");
+                state = get_binascii_state(module);
+                if (state == NULL) {
+                    return NULL;
+                }
+                PyErr_SetString(state->Error, "Illegal char");
                 Py_DECREF(rv);
                 return NULL;
             }
@@ -321,7 +275,11 @@ binascii_a2b_uu_impl(PyModuleDef *module, Py_buffer *data)
         /* Extra '`' may be written as padding in some cases */
         if ( this_ch != ' ' && this_ch != ' '+64 &&
              this_ch != '\n' && this_ch != '\r' ) {
-            PyErr_SetString(Error, "Trailing garbage");
+            state = get_binascii_state(module);
+            if (state == NULL) {
+                return NULL;
+            }
+            PyErr_SetString(state->Error, "Trailing garbage");
             Py_DECREF(rv);
             return NULL;
         }
@@ -334,36 +292,49 @@ binascii.b2a_uu
 
     data: Py_buffer
     /
+    *
+    backtick: bool = False
 
 Uuencode line of data.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_b2a_uu_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=181021b69bb9a414 input=00fdf458ce8b465b]*/
+binascii_b2a_uu_impl(PyObject *module, Py_buffer *data, int backtick)
+/*[clinic end generated code: output=b1b99de62d9bbeb8 input=beb27822241095cd]*/
 {
-    unsigned char *ascii_data, *bin_data;
+    unsigned char *ascii_data;
+    const unsigned char *bin_data;
     int leftbits = 0;
     unsigned char this_ch;
     unsigned int leftchar = 0;
-    PyObject *rv;
-    Py_ssize_t bin_len;
+    binascii_state *state;
+    Py_ssize_t bin_len, out_len;
+    _PyBytesWriter writer;
 
+    _PyBytesWriter_Init(&writer);
     bin_data = data->buf;
     bin_len = data->len;
     if ( bin_len > 45 ) {
         /* The 45 is a limit that appears in all uuencode's */
-        PyErr_SetString(Error, "At most 45 bytes at once");
+        state = get_binascii_state(module);
+        if (state == NULL) {
+            return NULL;
+        }
+        PyErr_SetString(state->Error, "At most 45 bytes at once");
         return NULL;
     }
 
     /* We're lazy and allocate to much (fixed up later) */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, 2 + (bin_len+2)/3*4)) == NULL )
+    out_len = 2 + (bin_len + 2) / 3 * 4;
+    ascii_data = _PyBytesWriter_Alloc(&writer, out_len);
+    if (ascii_data == NULL)
         return NULL;
-    ascii_data = (unsigned char *)PyBytes_AS_STRING(rv);
 
     /* Store the length */
-    *ascii_data++ = ' ' + (bin_len & 077);
+    if (backtick && !bin_len)
+        *ascii_data++ = '`';
+    else
+        *ascii_data++ = ' ' + (unsigned char)bin_len;
 
     for( ; bin_len > 0 || leftbits != 0 ; bin_len--, bin_data++ ) {
         /* Shift the data (or padding) into our buffer */
@@ -377,43 +348,15 @@ binascii_b2a_uu_impl(PyModuleDef *module, Py_buffer *data)
         while ( leftbits >= 6 ) {
             this_ch = (leftchar >> (leftbits-6)) & 0x3f;
             leftbits -= 6;
-            *ascii_data++ = this_ch + ' ';
+            if (backtick && !this_ch)
+                *ascii_data++ = '`';
+            else
+                *ascii_data++ = this_ch + ' ';
         }
     }
     *ascii_data++ = '\n';       /* Append a courtesy newline */
 
-    if (_PyBytes_Resize(&rv,
-                       (ascii_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    return rv;
-}
-
-
-static int
-binascii_find_valid(unsigned char *s, Py_ssize_t slen, int num)
-{
-    /* Finds & returns the (num+1)th
-    ** valid character for base64, or -1 if none.
-    */
-
-    int ret = -1;
-    unsigned char c, b64val;
-
-    while ((slen > 0) && (ret == -1)) {
-        c = *s;
-        b64val = table_a2b_base64[c & 0x7f];
-        if ( ((c <= 0x7f) && (b64val != (unsigned char)-1)) ) {
-            if (num == 0)
-                ret = *s;
-            num--;
-        }
-
-        s++;
-        slen--;
-    }
-    return ret;
+    return _PyBytesWriter_Finish(&writer, ascii_data);
 }
 
 /*[clinic input]
@@ -421,106 +364,151 @@ binascii.a2b_base64
 
     data: ascii_buffer
     /
+    *
+    strict_mode: bool = False
 
 Decode a line of base64 data.
+
+  strict_mode
+    When set to True, bytes that are not part of the base64 standard are not allowed.
+    The same applies to excess data after padding (= / ==).
 [clinic start generated code]*/
 
 static PyObject *
-binascii_a2b_base64_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=3e351b702bed56d2 input=5872acf6e1cac243]*/
+binascii_a2b_base64_impl(PyObject *module, Py_buffer *data, int strict_mode)
+/*[clinic end generated code: output=5409557788d4f975 input=c0c15fd0f8f9a62d]*/
 {
-    unsigned char *ascii_data, *bin_data;
-    int leftbits = 0;
-    unsigned char this_ch;
-    unsigned int leftchar = 0;
-    PyObject *rv;
-    Py_ssize_t ascii_len, bin_len;
-    int quad_pos = 0;
+    assert(data->len >= 0);
 
-    ascii_data = data->buf;
-    ascii_len = data->len;
-
-    assert(ascii_len >= 0);
-
-    if (ascii_len > PY_SSIZE_T_MAX - 3)
-        return PyErr_NoMemory();
-
-    bin_len = ((ascii_len+3)/4)*3; /* Upper bound, corrected later */
+    const unsigned char *ascii_data = data->buf;
+    size_t ascii_len = data->len;
+    binascii_state *state = NULL;
+    char padding_started = 0;
 
     /* Allocate the buffer */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, bin_len)) == NULL )
+    Py_ssize_t bin_len = ((ascii_len+3)/4)*3; /* Upper bound, corrected later */
+    _PyBytesWriter writer;
+    _PyBytesWriter_Init(&writer);
+    unsigned char *bin_data = _PyBytesWriter_Alloc(&writer, bin_len);
+    if (bin_data == NULL)
         return NULL;
-    bin_data = (unsigned char *)PyBytes_AS_STRING(rv);
-    bin_len = 0;
+    unsigned char *bin_data_start = bin_data;
 
-    for( ; ascii_len > 0; ascii_len--, ascii_data++) {
-        this_ch = *ascii_data;
+    if (strict_mode && ascii_len > 0 && ascii_data[0] == '=') {
+        state = get_binascii_state(module);
+        if (state) {
+            PyErr_SetString(state->Error, "Leading padding not allowed");
+        }
+        goto error_end;
+    }
 
-        if (this_ch > 0x7f ||
-            this_ch == '\r' || this_ch == '\n' || this_ch == ' ')
-            continue;
+    int quad_pos = 0;
+    unsigned char leftchar = 0;
+    int pads = 0;
+    for (size_t i = 0; i < ascii_len; i++) {
+        unsigned char this_ch = ascii_data[i];
 
         /* Check for pad sequences and ignore
         ** the invalid ones.
         */
         if (this_ch == BASE64_PAD) {
-            if ( (quad_pos < 2) ||
-                 ((quad_pos == 2) &&
-                  (binascii_find_valid(ascii_data, ascii_len, 1)
-                   != BASE64_PAD)) )
-            {
-                continue;
+            padding_started = 1;
+
+            if (strict_mode && quad_pos == 0) {
+                state = get_binascii_state(module);
+                if (state) {
+                    PyErr_SetString(state->Error, "Excess padding not allowed");
+                }
+                goto error_end;
             }
-            else {
-                /* A pad sequence means no more input.
-                ** We've already interpreted the data
-                ** from the quad at this point.
+            if (quad_pos >= 2 && quad_pos + ++pads >= 4) {
+                /* A pad sequence means we should not parse more input.
+                ** We've already interpreted the data from the quad at this point.
+                ** in strict mode, an error should raise if there's excess data after the padding.
                 */
-                leftbits = 0;
-                break;
+                if (strict_mode && i + 1 < ascii_len) {
+                    state = get_binascii_state(module);
+                    if (state) {
+                        PyErr_SetString(state->Error, "Excess data after padding");
+                    }
+                    goto error_end;
+                }
+
+                goto done;
             }
+            continue;
         }
 
-        this_ch = table_a2b_base64[*ascii_data];
-        if ( this_ch == (unsigned char) -1 )
+        this_ch = table_a2b_base64[this_ch];
+        if (this_ch >= 64) {
+            if (strict_mode) {
+                state = get_binascii_state(module);
+                if (state) {
+                    PyErr_SetString(state->Error, "Only base64 data is allowed");
+                }
+                goto error_end;
+            }
             continue;
+        }
 
-        /*
-        ** Shift it in on the low end, and see if there's
-        ** a byte ready for output.
-        */
-        quad_pos = (quad_pos + 1) & 0x03;
-        leftchar = (leftchar << 6) | (this_ch);
-        leftbits += 6;
+        // Characters that are not '=', in the middle of the padding, are not allowed
+        if (strict_mode && padding_started) {
+            state = get_binascii_state(module);
+            if (state) {
+                PyErr_SetString(state->Error, "Discontinuous padding not allowed");
+            }
+            goto error_end;
+        }
+        pads = 0;
 
-        if ( leftbits >= 8 ) {
-            leftbits -= 8;
-            *bin_data++ = (leftchar >> leftbits) & 0xff;
-            bin_len++;
-            leftchar &= ((1 << leftbits) - 1);
+        switch (quad_pos) {
+            case 0:
+                quad_pos = 1;
+                leftchar = this_ch;
+                break;
+            case 1:
+                quad_pos = 2;
+                *bin_data++ = (leftchar << 2) | (this_ch >> 4);
+                leftchar = this_ch & 0x0f;
+                break;
+            case 2:
+                quad_pos = 3;
+                *bin_data++ = (leftchar << 4) | (this_ch >> 2);
+                leftchar = this_ch & 0x03;
+                break;
+            case 3:
+                quad_pos = 0;
+                *bin_data++ = (leftchar << 6) | (this_ch);
+                leftchar = 0;
+                break;
         }
     }
 
-    if (leftbits != 0) {
-        PyErr_SetString(Error, "Incorrect padding");
-        Py_DECREF(rv);
+    if (quad_pos != 0) {
+        state = get_binascii_state(module);
+        if (state == NULL) {
+            /* error already set, from get_binascii_state */
+        } else if (quad_pos == 1) {
+            /*
+            ** There is exactly one extra valid, non-padding, base64 character.
+            ** This is an invalid length, as there is no possible input that
+            ** could encoded into such a base64 string.
+            */
+            PyErr_Format(state->Error,
+                         "Invalid base64-encoded string: "
+                         "number of data characters (%zd) cannot be 1 more "
+                         "than a multiple of 4",
+                         (bin_data - bin_data_start) / 3 * 4 + 1);
+        } else {
+            PyErr_SetString(state->Error, "Incorrect padding");
+        }
+        error_end:
+        _PyBytesWriter_Dealloc(&writer);
         return NULL;
     }
 
-    /* And set string size correctly. If the result string is empty
-    ** (because the input was all invalid) return the shared empty
-    ** string instead; _PyBytes_Resize() won't do this for us.
-    */
-    if (bin_len > 0) {
-        if (_PyBytes_Resize(&rv, bin_len) < 0) {
-            Py_CLEAR(rv);
-        }
-    }
-    else {
-        Py_DECREF(rv);
-        rv = PyBytes_FromStringAndSize("", 0);
-    }
-    return rv;
+done:
+    return _PyBytesWriter_Finish(&writer, bin_data);
 }
 
 
@@ -529,37 +517,49 @@ binascii.b2a_base64
 
     data: Py_buffer
     /
+    *
+    newline: bool = True
 
 Base64-code line of data.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_b2a_base64_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=3cd61fbee2913285 input=14ec4e47371174a9]*/
+binascii_b2a_base64_impl(PyObject *module, Py_buffer *data, int newline)
+/*[clinic end generated code: output=4ad62c8e8485d3b3 input=0e20ff59c5f2e3e1]*/
 {
-    unsigned char *ascii_data, *bin_data;
+    unsigned char *ascii_data;
+    const unsigned char *bin_data;
     int leftbits = 0;
     unsigned char this_ch;
     unsigned int leftchar = 0;
-    PyObject *rv;
-    Py_ssize_t bin_len;
+    Py_ssize_t bin_len, out_len;
+    _PyBytesWriter writer;
+    binascii_state *state;
 
     bin_data = data->buf;
     bin_len = data->len;
+    _PyBytesWriter_Init(&writer);
 
     assert(bin_len >= 0);
 
     if ( bin_len > BASE64_MAXBIN ) {
-        PyErr_SetString(Error, "Too much data for base64 line");
+        state = get_binascii_state(module);
+        if (state == NULL) {
+            return NULL;
+        }
+        PyErr_SetString(state->Error, "Too much data for base64 line");
         return NULL;
     }
 
     /* We're lazy and allocate too much (fixed up later).
-       "+3" leaves room for up to two pad characters and a trailing
-       newline.  Note that 'b' gets encoded as 'Yg==\n' (1 in, 5 out). */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, bin_len*2 + 3)) == NULL )
+       "+2" leaves room for up to two pad characters.
+       Note that 'b' gets encoded as 'Yg==\n' (1 in, 5 out). */
+    out_len = bin_len*2 + 2;
+    if (newline)
+        out_len++;
+    ascii_data = _PyBytesWriter_Alloc(&writer, out_len);
+    if (ascii_data == NULL)
         return NULL;
-    ascii_data = (unsigned char *)PyBytes_AS_STRING(rv);
 
     for( ; bin_len > 0 ; bin_len--, bin_data++ ) {
         /* Shift the data into our buffer */
@@ -581,359 +581,39 @@ binascii_b2a_base64_impl(PyModuleDef *module, Py_buffer *data)
         *ascii_data++ = table_b2a_base64[(leftchar&0xf) << 2];
         *ascii_data++ = BASE64_PAD;
     }
-    *ascii_data++ = '\n';       /* Append a courtesy newline */
+    if (newline)
+        *ascii_data++ = '\n';       /* Append a courtesy newline */
 
-    if (_PyBytes_Resize(&rv,
-                       (ascii_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    return rv;
-}
-
-/*[clinic input]
-binascii.a2b_hqx
-
-    data: ascii_buffer
-    /
-
-Decode .hqx coding.
-[clinic start generated code]*/
-
-static PyObject *
-binascii_a2b_hqx_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=60bcdbbd28b105cd input=0d914c680e0eed55]*/
-{
-    unsigned char *ascii_data, *bin_data;
-    int leftbits = 0;
-    unsigned char this_ch;
-    unsigned int leftchar = 0;
-    PyObject *rv;
-    Py_ssize_t len;
-    int done = 0;
-
-    ascii_data = data->buf;
-    len = data->len;
-
-    assert(len >= 0);
-
-    if (len > PY_SSIZE_T_MAX - 2)
-        return PyErr_NoMemory();
-
-    /* Allocate a string that is too big (fixed later)
-       Add two to the initial length to prevent interning which
-       would preclude subsequent resizing.  */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, len+2)) == NULL )
-        return NULL;
-    bin_data = (unsigned char *)PyBytes_AS_STRING(rv);
-
-    for( ; len > 0 ; len--, ascii_data++ ) {
-        /* Get the byte and look it up */
-        this_ch = table_a2b_hqx[*ascii_data];
-        if ( this_ch == SKIP )
-            continue;
-        if ( this_ch == FAIL ) {
-            PyErr_SetString(Error, "Illegal char");
-            Py_DECREF(rv);
-            return NULL;
-        }
-        if ( this_ch == DONE ) {
-            /* The terminating colon */
-            done = 1;
-            break;
-        }
-
-        /* Shift it into the buffer and see if any bytes are ready */
-        leftchar = (leftchar << 6) | (this_ch);
-        leftbits += 6;
-        if ( leftbits >= 8 ) {
-            leftbits -= 8;
-            *bin_data++ = (leftchar >> leftbits) & 0xff;
-            leftchar &= ((1 << leftbits) - 1);
-        }
-    }
-
-    if ( leftbits && !done ) {
-        PyErr_SetString(Incomplete,
-                        "String has incomplete number of bytes");
-        Py_DECREF(rv);
-        return NULL;
-    }
-    if (_PyBytes_Resize(&rv,
-                       (bin_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    if (rv) {
-        PyObject *rrv = Py_BuildValue("Oi", rv, done);
-        Py_DECREF(rv);
-        return rrv;
-    }
-
-    return NULL;
+    return _PyBytesWriter_Finish(&writer, ascii_data);
 }
 
 
 /*[clinic input]
-binascii.rlecode_hqx
+binascii.crc_hqx
 
     data: Py_buffer
+    crc: unsigned_int(bitwise=True)
     /
 
-Binhex RLE-code binary data.
+Compute CRC-CCITT incrementally.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_rlecode_hqx_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=0905da344dbf0648 input=e1f1712447a82b09]*/
+binascii_crc_hqx_impl(PyObject *module, Py_buffer *data, unsigned int crc)
+/*[clinic end generated code: output=2fde213d0f547a98 input=56237755370a951c]*/
 {
-    unsigned char *in_data, *out_data;
-    PyObject *rv;
-    unsigned char ch;
-    Py_ssize_t in, inend, len;
-
-    in_data = data->buf;
-    len = data->len;
-
-    assert(len >= 0);
-
-    if (len > PY_SSIZE_T_MAX / 2 - 2)
-        return PyErr_NoMemory();
-
-    /* Worst case: output is twice as big as input (fixed later) */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, len*2+2)) == NULL )
-        return NULL;
-    out_data = (unsigned char *)PyBytes_AS_STRING(rv);
-
-    for( in=0; in<len; in++) {
-        ch = in_data[in];
-        if ( ch == RUNCHAR ) {
-            /* RUNCHAR. Escape it. */
-            *out_data++ = RUNCHAR;
-            *out_data++ = 0;
-        } else {
-            /* Check how many following are the same */
-            for(inend=in+1;
-                inend<len && in_data[inend] == ch &&
-                    inend < in+255;
-                inend++) ;
-            if ( inend - in > 3 ) {
-                /* More than 3 in a row. Output RLE. */
-                *out_data++ = ch;
-                *out_data++ = RUNCHAR;
-                *out_data++ = (unsigned char) (inend-in);
-                in = inend-1;
-            } else {
-                /* Less than 3. Output the byte itself */
-                *out_data++ = ch;
-            }
-        }
-    }
-    if (_PyBytes_Resize(&rv,
-                       (out_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    return rv;
-}
-
-
-/*[clinic input]
-binascii.b2a_hqx
-
-    data: Py_buffer
-    /
-
-Encode .hqx data.
-[clinic start generated code]*/
-
-static PyObject *
-binascii_b2a_hqx_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=5a987810d5e3cdbb input=9596ebe019fe12ba]*/
-{
-    unsigned char *ascii_data, *bin_data;
-    int leftbits = 0;
-    unsigned char this_ch;
-    unsigned int leftchar = 0;
-    PyObject *rv;
+    const unsigned char *bin_data;
     Py_ssize_t len;
 
-    bin_data = data->buf;
-    len = data->len;
-
-    assert(len >= 0);
-
-    if (len > PY_SSIZE_T_MAX / 2 - 2)
-        return PyErr_NoMemory();
-
-    /* Allocate a buffer that is at least large enough */
-    if ( (rv=PyBytes_FromStringAndSize(NULL, len*2+2)) == NULL )
-        return NULL;
-    ascii_data = (unsigned char *)PyBytes_AS_STRING(rv);
-
-    for( ; len > 0 ; len--, bin_data++ ) {
-        /* Shift into our buffer, and output any 6bits ready */
-        leftchar = (leftchar << 8) | *bin_data;
-        leftbits += 8;
-        while ( leftbits >= 6 ) {
-            this_ch = (leftchar >> (leftbits-6)) & 0x3f;
-            leftbits -= 6;
-            *ascii_data++ = table_b2a_hqx[this_ch];
-        }
-    }
-    /* Output a possible runt byte */
-    if ( leftbits ) {
-        leftchar <<= (6-leftbits);
-        *ascii_data++ = table_b2a_hqx[leftchar & 0x3f];
-    }
-    if (_PyBytes_Resize(&rv,
-                       (ascii_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    return rv;
-}
-
-
-/*[clinic input]
-binascii.rledecode_hqx
-
-    data: Py_buffer
-    /
-
-Decode hexbin RLE-coded string.
-[clinic start generated code]*/
-
-static PyObject *
-binascii_rledecode_hqx_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=f7afd89b789946ab input=54cdd49fc014402c]*/
-{
-    unsigned char *in_data, *out_data;
-    unsigned char in_byte, in_repeat;
-    PyObject *rv;
-    Py_ssize_t in_len, out_len, out_len_left;
-
-    in_data = data->buf;
-    in_len = data->len;
-
-    assert(in_len >= 0);
-
-    /* Empty string is a special case */
-    if ( in_len == 0 )
-        return PyBytes_FromStringAndSize("", 0);
-    else if (in_len > PY_SSIZE_T_MAX / 2)
-        return PyErr_NoMemory();
-
-    /* Allocate a buffer of reasonable size. Resized when needed */
-    out_len = in_len*2;
-    if ( (rv=PyBytes_FromStringAndSize(NULL, out_len)) == NULL )
-        return NULL;
-    out_len_left = out_len;
-    out_data = (unsigned char *)PyBytes_AS_STRING(rv);
-
-    /*
-    ** We need two macros here to get/put bytes and handle
-    ** end-of-buffer for input and output strings.
-    */
-#define INBYTE(b) \
-    do { \
-             if ( --in_len < 0 ) { \
-                       PyErr_SetString(Incomplete, ""); \
-                       Py_DECREF(rv); \
-                       return NULL; \
-             } \
-             b = *in_data++; \
-    } while(0)
-
-#define OUTBYTE(b) \
-    do { \
-             if ( --out_len_left < 0 ) { \
-                      if ( out_len > PY_SSIZE_T_MAX / 2) return PyErr_NoMemory(); \
-                      if (_PyBytes_Resize(&rv, 2*out_len) < 0) \
-                        { Py_XDECREF(rv); return NULL; } \
-                      out_data = (unsigned char *)PyBytes_AS_STRING(rv) \
-                                                             + out_len; \
-                      out_len_left = out_len-1; \
-                      out_len = out_len * 2; \
-             } \
-             *out_data++ = b; \
-    } while(0)
-
-        /*
-        ** Handle first byte separately (since we have to get angry
-        ** in case of an orphaned RLE code).
-        */
-        INBYTE(in_byte);
-
-    if (in_byte == RUNCHAR) {
-        INBYTE(in_repeat);
-        if (in_repeat != 0) {
-            /* Note Error, not Incomplete (which is at the end
-            ** of the string only). This is a programmer error.
-            */
-            PyErr_SetString(Error, "Orphaned RLE code at start");
-            Py_DECREF(rv);
-            return NULL;
-        }
-        OUTBYTE(RUNCHAR);
-    } else {
-        OUTBYTE(in_byte);
-    }
-
-    while( in_len > 0 ) {
-        INBYTE(in_byte);
-
-        if (in_byte == RUNCHAR) {
-            INBYTE(in_repeat);
-            if ( in_repeat == 0 ) {
-                /* Just an escaped RUNCHAR value */
-                OUTBYTE(RUNCHAR);
-            } else {
-                /* Pick up value and output a sequence of it */
-                in_byte = out_data[-1];
-                while ( --in_repeat > 0 )
-                    OUTBYTE(in_byte);
-            }
-        } else {
-            /* Normal byte */
-            OUTBYTE(in_byte);
-        }
-    }
-    if (_PyBytes_Resize(&rv,
-                       (out_data -
-                        (unsigned char *)PyBytes_AS_STRING(rv))) < 0) {
-        Py_CLEAR(rv);
-    }
-    return rv;
-}
-
-
-/*[clinic input]
-binascii.crc_hqx -> int
-
-    data: Py_buffer
-    crc: int
-    /
-
-Compute hqx CRC incrementally.
-[clinic start generated code]*/
-
-static int
-binascii_crc_hqx_impl(PyModuleDef *module, Py_buffer *data, int crc)
-/*[clinic end generated code: output=634dac18dfa863d7 input=68060931b2f51c8a]*/
-{
-    unsigned char *bin_data;
-    unsigned int ucrc = (unsigned int)crc;
-    Py_ssize_t len;
-
+    crc &= 0xffff;
     bin_data = data->buf;
     len = data->len;
 
     while(len-- > 0) {
-        ucrc=((ucrc<<8)&0xff00)^crctab_hqx[((ucrc>>8)&0xff)^*bin_data++];
+        crc = ((crc<<8)&0xff00) ^ crctab_hqx[(crc>>8)^*bin_data++];
     }
 
-    return (int)ucrc;
+    return PyLong_FromUnsignedLong(crc);
 }
 
 #ifndef USE_ZLIB_CRC32
@@ -1000,7 +680,7 @@ binascii_crc_hqx_impl(PyModuleDef *module, Py_buffer *data, int crc)
      using byte-swap instructions.
 ********************************************************************/
 
-static unsigned int crc_32_tab[256] = {
+static const unsigned int crc_32_tab[256] = {
 0x00000000U, 0x77073096U, 0xee0e612cU, 0x990951baU, 0x076dc419U,
 0x706af48fU, 0xe963a535U, 0x9e6495a3U, 0x0edb8832U, 0x79dcb8a4U,
 0xe0d5e91eU, 0x97d2d988U, 0x09b64c2bU, 0x7eb17cbdU, 0xe7b82d07U,
@@ -1054,42 +734,11 @@ static unsigned int crc_32_tab[256] = {
 0x5d681b02U, 0x2a6f2b94U, 0xb40bbe37U, 0xc30c8ea1U, 0x5a05df1bU,
 0x2d02ef8dU
 };
-#endif  /* USE_ZLIB_CRC32 */
-
-/*[clinic input]
-binascii.crc32 -> unsigned_int
-
-    data: Py_buffer
-    crc: unsigned_int(bitwise=True) = 0
-    /
-
-Compute CRC-32 incrementally.
-[clinic start generated code]*/
 
 static unsigned int
-binascii_crc32_impl(PyModuleDef *module, Py_buffer *data, unsigned int crc)
-/*[clinic end generated code: output=620a961643393c4f input=bbe340bc99d25aa8]*/
-
-#ifdef USE_ZLIB_CRC32
-/* This was taken from zlibmodule.c PyZlib_crc32 (but is PY_SSIZE_T_CLEAN) */
-{
-    Byte *buf;
-    Py_ssize_t len;
-    int signed_val;
-
-    buf = (Byte*)data->buf;
-    len = data->len;
-    signed_val = crc32(crc, buf, len);
-    return (unsigned int)signed_val & 0xffffffffU;
-}
-#else  /* USE_ZLIB_CRC32 */
+internal_crc32(const unsigned char *bin_data, Py_ssize_t len, unsigned int crc)
 { /* By Jim Ahlstrom; All rights transferred to CNRI */
-    unsigned char *bin_data;
-    Py_ssize_t len;
     unsigned int result;
-
-    bin_data = data->buf;
-    len = data->len;
 
     crc = ~ crc;
     while (len-- > 0) {
@@ -1103,48 +752,102 @@ binascii_crc32_impl(PyModuleDef *module, Py_buffer *data, unsigned int crc)
 #endif  /* USE_ZLIB_CRC32 */
 
 /*[clinic input]
+binascii.crc32 -> unsigned_int
+
+    data: Py_buffer
+    crc: unsigned_int(bitwise=True) = 0
+    /
+
+Compute CRC-32 incrementally.
+[clinic start generated code]*/
+
+static unsigned int
+binascii_crc32_impl(PyObject *module, Py_buffer *data, unsigned int crc)
+/*[clinic end generated code: output=52cf59056a78593b input=bbe340bc99d25aa8]*/
+
+#ifdef USE_ZLIB_CRC32
+/* This is the same as zlibmodule.c zlib_crc32_impl. It exists in two
+ * modules for historical reasons. */
+{
+    /* Releasing the GIL for very small buffers is inefficient
+       and may lower performance */
+    if (data->len > 1024*5) {
+        unsigned char *buf = data->buf;
+        Py_ssize_t len = data->len;
+
+        Py_BEGIN_ALLOW_THREADS
+        /* Avoid truncation of length for very large buffers. crc32() takes
+           length as an unsigned int, which may be narrower than Py_ssize_t.
+           We further limit size due to bugs in Apple's macOS zlib.
+           See https://github.com/python/cpython/issues/105967
+         */
+#define ZLIB_CRC_CHUNK_SIZE 0x40000000
+#if ZLIB_CRC_CHUNK_SIZE > INT_MAX
+# error "unsupported less than 32-bit platform?"
+#endif
+        while ((size_t)len > ZLIB_CRC_CHUNK_SIZE) {
+            crc = crc32(crc, buf, ZLIB_CRC_CHUNK_SIZE);
+            buf += (size_t) ZLIB_CRC_CHUNK_SIZE;
+            len -= (size_t) ZLIB_CRC_CHUNK_SIZE;
+        }
+#undef ZLIB_CRC_CHUNK_SIZE
+        crc = crc32(crc, buf, (unsigned int)len);
+        Py_END_ALLOW_THREADS
+    } else {
+        crc = crc32(crc, data->buf, (unsigned int)data->len);
+    }
+    return crc & 0xffffffff;
+}
+#else  /* USE_ZLIB_CRC32 */
+{
+    const unsigned char *bin_data = data->buf;
+    Py_ssize_t len = data->len;
+
+    /* Releasing the GIL for very small buffers is inefficient
+       and may lower performance */
+    if (len > 1024*5) {
+        unsigned int result;
+        Py_BEGIN_ALLOW_THREADS
+        result = internal_crc32(bin_data, len, crc);
+        Py_END_ALLOW_THREADS
+        return result;
+    } else {
+        return internal_crc32(bin_data, len, crc);
+    }
+}
+#endif  /* USE_ZLIB_CRC32 */
+
+/*[clinic input]
 binascii.b2a_hex
 
     data: Py_buffer
-    /
+    sep: object = NULL
+        An optional single character or byte to separate hex bytes.
+    bytes_per_sep: int = 1
+        How many bytes between separators.  Positive values count from the
+        right, negative values count from the left.
 
 Hexadecimal representation of binary data.
 
 The return value is a bytes object.  This function is also
 available as "hexlify()".
+
+Example:
+>>> binascii.b2a_hex(b'\xb9\x01\xef')
+b'b901ef'
+>>> binascii.hexlify(b'\xb9\x01\xef', ':')
+b'b9:01:ef'
+>>> binascii.b2a_hex(b'\xb9\x01\xef', b'_', 2)
+b'b9_01ef'
 [clinic start generated code]*/
 
 static PyObject *
-binascii_b2a_hex_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=179318922c2f8fda input=96423cfa299ff3b1]*/
+binascii_b2a_hex_impl(PyObject *module, Py_buffer *data, PyObject *sep,
+                      int bytes_per_sep)
+/*[clinic end generated code: output=a26937946a81d2c7 input=ec0ade6ba2e43543]*/
 {
-    char* argbuf;
-    Py_ssize_t arglen;
-    PyObject *retval;
-    char* retbuf;
-    Py_ssize_t i, j;
-
-    argbuf = data->buf;
-    arglen = data->len;
-
-    assert(arglen >= 0);
-    if (arglen > PY_SSIZE_T_MAX / 2)
-        return PyErr_NoMemory();
-
-    retval = PyBytes_FromStringAndSize(NULL, arglen*2);
-    if (!retval)
-        return NULL;
-    retbuf = PyBytes_AS_STRING(retval);
-
-    /* make hex version of string, taken from shamodule.c */
-    for (i=j=0; i < arglen; i++) {
-        unsigned char c;
-        c = (argbuf[i] >> 4) & 0xf;
-        retbuf[j++] = Py_hexdigits[c];
-        c = argbuf[i] & 0xf;
-        retbuf[j++] = Py_hexdigits[c];
-    }
-    return retval;
+    return _Py_strhex_bytes_with_sep((const char *)data->buf, data->len,
+                                     sep, bytes_per_sep);
 }
 
 /*[clinic input]
@@ -1152,30 +855,18 @@ binascii.hexlify = binascii.b2a_hex
 
 Hexadecimal representation of binary data.
 
-The return value is a bytes object.
+The return value is a bytes object.  This function is also
+available as "b2a_hex()".
 [clinic start generated code]*/
 
 static PyObject *
-binascii_hexlify_impl(PyModuleDef *module, Py_buffer *data)
-/*[clinic end generated code: output=6098440091fb61dc input=2e3afae7f083f061]*/
+binascii_hexlify_impl(PyObject *module, Py_buffer *data, PyObject *sep,
+                      int bytes_per_sep)
+/*[clinic end generated code: output=d12aa1b001b15199 input=bc317bd4e241f76b]*/
 {
-    return binascii_b2a_hex_impl(module, data);
+    return _Py_strhex_bytes_with_sep((const char *)data->buf, data->len,
+                                     sep, bytes_per_sep);
 }
-
-static int
-to_int(int c)
-{
-    if (Py_ISDIGIT(c))
-        return c - '0';
-    else {
-        if (Py_ISUPPER(c))
-            c = Py_TOLOWER(c);
-        if (c >= 'a' && c <= 'f')
-            return c - 'a' + 10;
-    }
-    return -1;
-}
-
 
 /*[clinic input]
 binascii.a2b_hex
@@ -1190,14 +881,15 @@ This function is also available as "unhexlify()".
 [clinic start generated code]*/
 
 static PyObject *
-binascii_a2b_hex_impl(PyModuleDef *module, Py_buffer *hexstr)
-/*[clinic end generated code: output=d61da452b5c6d290 input=9e1e7f2f94db24fd]*/
+binascii_a2b_hex_impl(PyObject *module, Py_buffer *hexstr)
+/*[clinic end generated code: output=0cc1a139af0eeecb input=9e1e7f2f94db24fd]*/
 {
-    char* argbuf;
+    const char* argbuf;
     Py_ssize_t arglen;
     PyObject *retval;
     char* retbuf;
     Py_ssize_t i, j;
+    binascii_state *state;
 
     argbuf = hexstr->buf;
     arglen = hexstr->len;
@@ -1209,7 +901,11 @@ binascii_a2b_hex_impl(PyModuleDef *module, Py_buffer *hexstr)
      * raise an exception.
      */
     if (arglen % 2) {
-        PyErr_SetString(Error, "Odd-length string");
+        state = get_binascii_state(module);
+        if (state == NULL) {
+            return NULL;
+        }
+        PyErr_SetString(state->Error, "Odd-length string");
         return NULL;
     }
 
@@ -1219,10 +915,14 @@ binascii_a2b_hex_impl(PyModuleDef *module, Py_buffer *hexstr)
     retbuf = PyBytes_AS_STRING(retval);
 
     for (i=j=0; i < arglen; i += 2) {
-        int top = to_int(Py_CHARMASK(argbuf[i]));
-        int bot = to_int(Py_CHARMASK(argbuf[i+1]));
-        if (top == -1 || bot == -1) {
-            PyErr_SetString(Error,
+        unsigned int top = _PyLong_DigitValue[Py_CHARMASK(argbuf[i])];
+        unsigned int bot = _PyLong_DigitValue[Py_CHARMASK(argbuf[i+1])];
+        if (top >= 16 || bot >= 16) {
+            state = get_binascii_state(module);
+            if (state == NULL) {
+                return NULL;
+            }
+            PyErr_SetString(state->Error,
                             "Non-hexadecimal digit found");
             goto finally;
         }
@@ -1244,24 +944,11 @@ hexstr must contain an even number of hex digits (upper or lower case).
 [clinic start generated code]*/
 
 static PyObject *
-binascii_unhexlify_impl(PyModuleDef *module, Py_buffer *hexstr)
-/*[clinic end generated code: output=17cec7544499803e input=dd8c012725f462da]*/
+binascii_unhexlify_impl(PyObject *module, Py_buffer *hexstr)
+/*[clinic end generated code: output=51a64c06c79629e3 input=dd8c012725f462da]*/
 {
     return binascii_a2b_hex_impl(module, hexstr);
 }
-
-static int table_hex[128] = {
-  -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-  -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-  -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-   0, 1, 2, 3,  4, 5, 6, 7,  8, 9,-1,-1, -1,-1,-1,-1,
-  -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-  -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-  -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-  -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1
-};
-
-#define hexval(c) table_hex[(unsigned int)(c)]
 
 #define MAXLINESIZE 76
 
@@ -1270,18 +957,19 @@ static int table_hex[128] = {
 binascii.a2b_qp
 
     data: ascii_buffer
-    header: int(c_default="0") = False
+    header: bool = False
 
 Decode a string of qp-encoded data.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_a2b_qp_impl(PyModuleDef *module, Py_buffer *data, int header)
-/*[clinic end generated code: output=a44ef88270352114 input=5187a0d3d8e54f3b]*/
+binascii_a2b_qp_impl(PyObject *module, Py_buffer *data, int header)
+/*[clinic end generated code: output=e99f7846cfb9bc53 input=bdfb31598d4e47b9]*/
 {
     Py_ssize_t in, out;
     char ch;
-    unsigned char *ascii_data, *odata;
+    const unsigned char *ascii_data;
+    unsigned char *odata;
     Py_ssize_t datalen = 0;
     PyObject *rv;
 
@@ -1289,15 +977,12 @@ binascii_a2b_qp_impl(PyModuleDef *module, Py_buffer *data, int header)
     datalen = data->len;
 
     /* We allocate the output same size as input, this is overkill.
-     * The previous implementation used calloc() so we'll zero out the
-     * memory here too, since PyMem_Malloc() does not guarantee that.
      */
-    odata = (unsigned char *) PyMem_Malloc(datalen);
+    odata = (unsigned char *) PyMem_Calloc(1, datalen);
     if (odata == NULL) {
         PyErr_NoMemory();
         return NULL;
     }
-    memset(odata, 0, datalen);
 
     in = out = 0;
     while (in < datalen) {
@@ -1316,16 +1001,17 @@ binascii_a2b_qp_impl(PyModuleDef *module, Py_buffer *data, int header)
                 odata[out++] = '=';
                 in++;
             }
-            else if (((ascii_data[in] >= 'A' && ascii_data[in] <= 'F') ||
+            else if ((in + 1 < datalen) &&
+                     ((ascii_data[in] >= 'A' && ascii_data[in] <= 'F') ||
                       (ascii_data[in] >= 'a' && ascii_data[in] <= 'f') ||
                       (ascii_data[in] >= '0' && ascii_data[in] <= '9')) &&
                      ((ascii_data[in+1] >= 'A' && ascii_data[in+1] <= 'F') ||
                       (ascii_data[in+1] >= 'a' && ascii_data[in+1] <= 'f') ||
                       (ascii_data[in+1] >= '0' && ascii_data[in+1] <= '9'))) {
                 /* hexval */
-                ch = hexval(ascii_data[in]) << 4;
+                ch = _PyLong_DigitValue[ascii_data[in]] << 4;
                 in++;
-                ch |= hexval(ascii_data[in]);
+                ch |= _PyLong_DigitValue[ascii_data[in]];
                 in++;
                 odata[out++] = ch;
             }
@@ -1343,10 +1029,7 @@ binascii_a2b_qp_impl(PyModuleDef *module, Py_buffer *data, int header)
             out++;
         }
     }
-    if ((rv = PyBytes_FromStringAndSize((char *)odata, out)) == NULL) {
-        PyMem_Free(odata);
-        return NULL;
-    }
+    rv = PyBytes_FromStringAndSize((char *)odata, out);
     PyMem_Free(odata);
     return rv;
 }
@@ -1370,9 +1053,9 @@ to_hex (unsigned char ch, unsigned char *s)
 binascii.b2a_qp
 
     data: Py_buffer
-    quotetabs: int(c_default="0") = False
-    istext: int(c_default="1") = True
-    header: int(c_default="0") = False
+    quotetabs: bool = False
+    istext: bool = True
+    header: bool = False
 
 Encode a string using quoted-printable encoding.
 
@@ -1382,17 +1065,19 @@ are both encoded.  When quotetabs is set, space and tabs are encoded.
 [clinic start generated code]*/
 
 static PyObject *
-binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int istext, int header)
-/*[clinic end generated code: output=ff2991ba640fff3e input=7f2a9aaa008e92b2]*/
+binascii_b2a_qp_impl(PyObject *module, Py_buffer *data, int quotetabs,
+                     int istext, int header)
+/*[clinic end generated code: output=e9884472ebb1a94c input=e9102879afb0defd]*/
 {
     Py_ssize_t in, out;
-    unsigned char *databuf, *odata;
+    const unsigned char *databuf;
+    unsigned char *odata;
     Py_ssize_t datalen = 0, odatalen = 0;
     PyObject *rv;
     unsigned int linelen = 0;
     unsigned char ch;
     int crlf = 0;
-    unsigned char *p;
+    const unsigned char *p;
 
     databuf = data->buf;
     datalen = data->len;
@@ -1401,18 +1086,20 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
     /* XXX: this function has the side effect of converting all of
      * the end of lines to be the same depending on this detection
      * here */
-    p = (unsigned char *) memchr(databuf, '\n', datalen);
+    p = (const unsigned char *) memchr(databuf, '\n', datalen);
     if ((p != NULL) && (p > databuf) && (*(p-1) == '\r'))
         crlf = 1;
 
     /* First, scan to see how many characters need to be encoded */
     in = 0;
     while (in < datalen) {
+        Py_ssize_t delta = 0;
         if ((databuf[in] > 126) ||
             (databuf[in] == '=') ||
             (header && databuf[in] == '_') ||
             ((databuf[in] == '.') && (linelen == 0) &&
-             (databuf[in+1] == '\n' || databuf[in+1] == '\r' || databuf[in+1] == 0)) ||
+             (in + 1 == datalen || databuf[in+1] == '\n' ||
+              databuf[in+1] == '\r' || databuf[in+1] == 0)) ||
             (!istext && ((databuf[in] == '\r') || (databuf[in] == '\n'))) ||
             ((databuf[in] == '\t' || databuf[in] == ' ') && (in + 1 == datalen)) ||
             ((databuf[in] < 33) &&
@@ -1422,12 +1109,12 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
             if ((linelen + 3) >= MAXLINESIZE) {
                 linelen = 0;
                 if (crlf)
-                    odatalen += 3;
+                    delta += 3;
                 else
-                    odatalen += 2;
+                    delta += 2;
             }
             linelen += 3;
-            odatalen += 3;
+            delta += 3;
             in++;
         }
         else {
@@ -1439,11 +1126,11 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
                 linelen = 0;
                 /* Protect against whitespace on end of line */
                 if (in && ((databuf[in-1] == ' ') || (databuf[in-1] == '\t')))
-                    odatalen += 2;
+                    delta += 2;
                 if (crlf)
-                    odatalen += 2;
+                    delta += 2;
                 else
-                    odatalen += 1;
+                    delta += 1;
                 if (databuf[in] == '\r')
                     in += 2;
                 else
@@ -1455,27 +1142,29 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
                     (linelen + 1) >= MAXLINESIZE) {
                     linelen = 0;
                     if (crlf)
-                        odatalen += 3;
+                        delta += 3;
                     else
-                        odatalen += 2;
+                        delta += 2;
                 }
                 linelen++;
-                odatalen++;
+                delta++;
                 in++;
             }
         }
+        if (PY_SSIZE_T_MAX - delta < odatalen) {
+            PyErr_NoMemory();
+            return NULL;
+        }
+        odatalen += delta;
     }
 
     /* We allocate the output same size as input, this is overkill.
-     * The previous implementation used calloc() so we'll zero out the
-     * memory here too, since PyMem_Malloc() does not guarantee that.
      */
-    odata = (unsigned char *) PyMem_Malloc(odatalen);
+    odata = (unsigned char *) PyMem_Calloc(1, odatalen);
     if (odata == NULL) {
         PyErr_NoMemory();
         return NULL;
     }
-    memset(odata, 0, odatalen);
 
     in = out = linelen = 0;
     while (in < datalen) {
@@ -1483,13 +1172,13 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
             (databuf[in] == '=') ||
             (header && databuf[in] == '_') ||
             ((databuf[in] == '.') && (linelen == 0) &&
-             (databuf[in+1] == '\n' || databuf[in+1] == '\r' || databuf[in+1] == 0)) ||
+             (in + 1 == datalen || databuf[in+1] == '\n' ||
+              databuf[in+1] == '\r' || databuf[in+1] == 0)) ||
             (!istext && ((databuf[in] == '\r') || (databuf[in] == '\n'))) ||
             ((databuf[in] == '\t' || databuf[in] == ' ') && (in + 1 == datalen)) ||
             ((databuf[in] < 33) &&
              (databuf[in] != '\r') && (databuf[in] != '\n') &&
-             (quotetabs ||
-            (!quotetabs && ((databuf[in] != '\t') && (databuf[in] != ' '))))))
+             (quotetabs || ((databuf[in] != '\t') && (databuf[in] != ' ')))))
         {
             if ((linelen + 3 )>= MAXLINESIZE) {
                 odata[out++] = '=';
@@ -1545,10 +1234,7 @@ binascii_b2a_qp_impl(PyModuleDef *module, Py_buffer *data, int quotetabs, int is
             }
         }
     }
-    if ((rv = PyBytes_FromStringAndSize((char *)odata, out)) == NULL) {
-        PyMem_Free(odata);
-        return NULL;
-    }
+    rv = PyBytes_FromStringAndSize((char *)odata, out);
     PyMem_Free(odata);
     return rv;
 }
@@ -1560,14 +1246,10 @@ static struct PyMethodDef binascii_module_methods[] = {
     BINASCII_B2A_UU_METHODDEF
     BINASCII_A2B_BASE64_METHODDEF
     BINASCII_B2A_BASE64_METHODDEF
-    BINASCII_A2B_HQX_METHODDEF
-    BINASCII_B2A_HQX_METHODDEF
     BINASCII_A2B_HEX_METHODDEF
     BINASCII_B2A_HEX_METHODDEF
     BINASCII_HEXLIFY_METHODDEF
     BINASCII_UNHEXLIFY_METHODDEF
-    BINASCII_RLECODE_HQX_METHODDEF
-    BINASCII_RLEDECODE_HQX_METHODDEF
     BINASCII_CRC_HQX_METHODDEF
     BINASCII_CRC32_METHODDEF
     BINASCII_A2B_QP_METHODDEF
@@ -1579,38 +1261,72 @@ static struct PyMethodDef binascii_module_methods[] = {
 /* Initialization function for the module (*must* be called PyInit_binascii) */
 PyDoc_STRVAR(doc_binascii, "Conversion between binary data and ASCII");
 
+static int
+binascii_exec(PyObject *module)
+{
+    binascii_state *state = PyModule_GetState(module);
+    if (state == NULL) {
+        return -1;
+    }
+
+    state->Error = PyErr_NewException("binascii.Error", PyExc_ValueError, NULL);
+    if (PyModule_AddObjectRef(module, "Error", state->Error) < 0) {
+        return -1;
+    }
+
+    state->Incomplete = PyErr_NewException("binascii.Incomplete", NULL, NULL);
+    if (PyModule_AddObjectRef(module, "Incomplete", state->Incomplete) < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static PyModuleDef_Slot binascii_slots[] = {
+    {Py_mod_exec, binascii_exec},
+    {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+    {0, NULL}
+};
+
+static int
+binascii_traverse(PyObject *module, visitproc visit, void *arg)
+{
+    binascii_state *state = get_binascii_state(module);
+    Py_VISIT(state->Error);
+    Py_VISIT(state->Incomplete);
+    return 0;
+}
+
+static int
+binascii_clear(PyObject *module)
+{
+    binascii_state *state = get_binascii_state(module);
+    Py_CLEAR(state->Error);
+    Py_CLEAR(state->Incomplete);
+    return 0;
+}
+
+static void
+binascii_free(void *module)
+{
+    binascii_clear((PyObject *)module);
+}
 
 static struct PyModuleDef binasciimodule = {
     PyModuleDef_HEAD_INIT,
     "binascii",
     doc_binascii,
-    -1,
+    sizeof(binascii_state),
     binascii_module_methods,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    binascii_slots,
+    binascii_traverse,
+    binascii_clear,
+    binascii_free
 };
 
 PyMODINIT_FUNC
 PyInit_binascii(void)
 {
-    PyObject *m, *d;
-
-    /* Create the module and add the functions */
-    m = PyModule_Create(&binasciimodule);
-    if (m == NULL)
-        return NULL;
-
-    d = PyModule_GetDict(m);
-
-    Error = PyErr_NewException("binascii.Error", PyExc_ValueError, NULL);
-    PyDict_SetItemString(d, "Error", Error);
-    Incomplete = PyErr_NewException("binascii.Incomplete", NULL, NULL);
-    PyDict_SetItemString(d, "Incomplete", Incomplete);
-    if (PyErr_Occurred()) {
-        Py_DECREF(m);
-        m = NULL;
-    }
-    return m;
+    return PyModuleDef_Init(&binasciimodule);
 }

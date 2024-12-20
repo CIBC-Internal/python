@@ -1,43 +1,19 @@
-:mod:`sndhdr` --- Determine type of sound file
-==============================================
+:mod:`!sndhdr` --- Determine type of sound file
+===============================================
 
 .. module:: sndhdr
-   :synopsis: Determine type of a sound file.
-.. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
-.. Based on comments in the module source file.
+   :synopsis: Removed in 3.13.
+   :deprecated:
 
-.. index::
-   single: A-LAW
-   single: u-LAW
+.. deprecated-removed:: 3.11 3.13
 
-**Source code:** :source:`Lib/sndhdr.py`
+This module is no longer part of the Python standard library.
+It was :ref:`removed in Python 3.13 <whatsnew313-pep594>` after
+being deprecated in Python 3.11.  The removal was decided in :pep:`594`.
 
---------------
+Possible replacements are third-party modules from PyPI:
+:pypi:`filetype`, :pypi:`puremagic`, or :pypi:`python-magic`.
+These are not supported or maintained by the Python core team.
 
-The :mod:`sndhdr` provides utility functions which attempt to determine the type
-of sound data which is in a file.  When these functions are able to determine
-what type of sound data is stored in a file, they return a tuple ``(type,
-sampling_rate, channels, frames, bits_per_sample)``.  The value for *type*
-indicates the data type and will be one of the strings ``'aifc'``, ``'aiff'``,
-``'au'``, ``'hcom'``, ``'sndr'``, ``'sndt'``, ``'voc'``, ``'wav'``, ``'8svx'``,
-``'sb'``, ``'ub'``, or ``'ul'``.  The *sampling_rate* will be either the actual
-value or ``0`` if unknown or difficult to decode.  Similarly, *channels* will be
-either the number of channels or ``0`` if it cannot be determined or if the
-value is difficult to decode.  The value for *frames* will be either the number
-of frames or ``-1``.  The last item in the tuple, *bits_per_sample*, will either
-be the sample size in bits or ``'A'`` for A-LAW or ``'U'`` for u-LAW.
-
-
-.. function:: what(filename)
-
-   Determines the type of sound data stored in the file *filename* using
-   :func:`whathdr`.  If it succeeds, returns a tuple as described above, otherwise
-   ``None`` is returned.
-
-
-.. function:: whathdr(filename)
-
-   Determines the type of sound data stored in a file based on the file  header.
-   The name of the file is given by *filename*.  This function returns a tuple as
-   described above on success, or ``None``.
-
+The last version of Python that provided the :mod:`!sndhdr` module was
+`Python 3.12 <https://docs.python.org/3.12/library/sndhdr.html>`_.

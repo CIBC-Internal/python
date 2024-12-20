@@ -1,4 +1,4 @@
-from collections import Sequence, Iterable
+from collections.abc import Sequence, Iterable
 from functools import total_ordering
 import fnmatch
 import linecache
@@ -43,6 +43,8 @@ class Statistic:
         return hash((self.traceback, self.size, self.count))
 
     def __eq__(self, other):
+        if not isinstance(other, Statistic):
+            return NotImplemented
         return (self.traceback == other.traceback
                 and self.size == other.size
                 and self.count == other.count)
@@ -84,6 +86,8 @@ class StatisticDiff:
                      self.count, self.count_diff))
 
     def __eq__(self, other):
+        if not isinstance(other, StatisticDiff):
+            return NotImplemented
         return (self.traceback == other.traceback
                 and self.size == other.size
                 and self.size_diff == other.size_diff
@@ -153,9 +157,13 @@ class Frame:
         return self._frame[1]
 
     def __eq__(self, other):
+        if not isinstance(other, Frame):
+            return NotImplemented
         return (self._frame == other._frame)
 
     def __lt__(self, other):
+        if not isinstance(other, Frame):
+            return NotImplemented
         return (self._frame < other._frame)
 
     def __hash__(self):
@@ -171,16 +179,23 @@ class Frame:
 @total_ordering
 class Traceback(Sequence):
     """
-    Sequence of Frame instances sorted from the most recent frame
-    to the oldest frame.
+    Sequence of Frame instances sorted from the oldest frame
+    to the most recent frame.
     """
-    __slots__ = ("_frames",)
+    __slots__ = ("_frames", '_total_nframe')
 
-    def __init__(self, frames):
+    def __init__(self, frames, total_nframe=None):
         Sequence.__init__(self)
         # frames is a tuple of frame tuples: see Frame constructor for the
-        # format of a frame tuple
-        self._frames = frames
+        # format of a frame tuple; it is reversed, because _tracemalloc
+        # returns frames sorted from most recent to oldest, but the
+        # Python API expects oldest to most recent
+        self._frames = tuple(reversed(frames))
+        self._total_nframe = total_nframe
+
+    @property
+    def total_nframe(self):
+        return self._total_nframe
 
     def __len__(self):
         return len(self._frames)
@@ -198,22 +213,39 @@ class Traceback(Sequence):
         return hash(self._frames)
 
     def __eq__(self, other):
+        if not isinstance(other, Traceback):
+            return NotImplemented
         return (self._frames == other._frames)
 
     def __lt__(self, other):
+        if not isinstance(other, Traceback):
+            return NotImplemented
         return (self._frames < other._frames)
 
     def __str__(self):
         return str(self[0])
 
     def __repr__(self):
-        return "<Traceback %r>" % (tuple(self),)
+        s = f"<Traceback {tuple(self)}"
+        if self._total_nframe is None:
+            s += ">"
+        else:
+            s += f" total_nframe={self.total_nframe}>"
+        return s
 
-    def format(self, limit=None):
+    def format(self, limit=None, most_recent_first=False):
         lines = []
-        if limit is not None and limit < 0:
-            return lines
-        for frame in self[:limit]:
+        if limit is not None:
+            if limit > 0:
+                frame_slice = self[-limit:]
+            else:
+                frame_slice = self[:limit]
+        else:
+            frame_slice = self
+
+        if most_recent_first:
+            frame_slice = reversed(frame_slice)
+        for frame in frame_slice:
             lines.append('  File "%s", line %s'
                          % (frame.filename, frame.lineno))
             line = linecache.getline(frame.filename, frame.lineno).strip()
@@ -244,19 +276,25 @@ class Trace:
     __slots__ = ("_trace",)
 
     def __init__(self, trace):
-        # trace is a tuple: (size, traceback), see Traceback constructor
-        # for the format of the traceback tuple
+        # trace is a tuple: (domain: int, size: int, traceback: tuple).
+        # See Traceback constructor for the format of the traceback tuple.
         self._trace = trace
 
     @property
-    def size(self):
+    def domain(self):
         return self._trace[0]
 
     @property
+    def size(self):
+        return self._trace[1]
+
+    @property
     def traceback(self):
-        return Traceback(self._trace[1])
+        return Traceback(*self._trace[2:])
 
     def __eq__(self, other):
+        if not isinstance(other, Trace):
+            return NotImplemented
         return (self._trace == other._trace)
 
     def __hash__(self):
@@ -266,8 +304,8 @@ class Trace:
         return "%s: %s" % (self.traceback, _format_size(self.size, False))
 
     def __repr__(self):
-        return ("<Trace size=%s, traceback=%r>"
-                % (_format_size(self.size, False), self.traceback))
+        return ("<Trace domain=%s size=%s, traceback=%r>"
+                % (self.domain, _format_size(self.size, False), self.traceback))
 
 
 class _Traces(Sequence):
@@ -289,6 +327,8 @@ class _Traces(Sequence):
         return trace._trace in self._traces
 
     def __eq__(self, other):
+        if not isinstance(other, _Traces):
+            return NotImplemented
         return (self._traces == other._traces)
 
     def __repr__(self):
@@ -297,24 +337,34 @@ class _Traces(Sequence):
 
 def _normalize_filename(filename):
     filename = os.path.normcase(filename)
-    if filename.endswith(('.pyc', '.pyo')):
+    if filename.endswith('.pyc'):
         filename = filename[:-1]
     return filename
 
 
-class Filter:
+class BaseFilter:
+    def __init__(self, inclusive):
+        self.inclusive = inclusive
+
+    def _match(self, trace):
+        raise NotImplementedError
+
+
+class Filter(BaseFilter):
     def __init__(self, inclusive, filename_pattern,
-                 lineno=None, all_frames=False):
+                 lineno=None, all_frames=False, domain=None):
+        super().__init__(inclusive)
         self.inclusive = inclusive
         self._filename_pattern = _normalize_filename(filename_pattern)
         self.lineno = lineno
         self.all_frames = all_frames
+        self.domain = domain
 
     @property
     def filename_pattern(self):
         return self._filename_pattern
 
-    def __match_frame(self, filename, lineno):
+    def _match_frame_impl(self, filename, lineno):
         filename = _normalize_filename(filename)
         if not fnmatch.fnmatch(filename, self._filename_pattern):
             return False
@@ -324,11 +374,11 @@ class Filter:
             return (lineno == self.lineno)
 
     def _match_frame(self, filename, lineno):
-        return self.__match_frame(filename, lineno) ^ (not self.inclusive)
+        return self._match_frame_impl(filename, lineno) ^ (not self.inclusive)
 
     def _match_traceback(self, traceback):
         if self.all_frames:
-            if any(self.__match_frame(filename, lineno)
+            if any(self._match_frame_impl(filename, lineno)
                    for filename, lineno in traceback):
                 return self.inclusive
             else:
@@ -336,6 +386,30 @@ class Filter:
         else:
             filename, lineno = traceback[0]
             return self._match_frame(filename, lineno)
+
+    def _match(self, trace):
+        domain, size, traceback, total_nframe = trace
+        res = self._match_traceback(traceback)
+        if self.domain is not None:
+            if self.inclusive:
+                return res and (domain == self.domain)
+            else:
+                return res or (domain != self.domain)
+        return res
+
+
+class DomainFilter(BaseFilter):
+    def __init__(self, inclusive, domain):
+        super().__init__(inclusive)
+        self._domain = domain
+
+    @property
+    def domain(self):
+        return self._domain
+
+    def _match(self, trace):
+        domain, size, traceback, total_nframe = trace
+        return (domain == self.domain) ^ (not self.inclusive)
 
 
 class Snapshot:
@@ -365,13 +439,12 @@ class Snapshot:
             return pickle.load(fp)
 
     def _filter_trace(self, include_filters, exclude_filters, trace):
-        traceback = trace[1]
         if include_filters:
-            if not any(trace_filter._match_traceback(traceback)
+            if not any(trace_filter._match(trace)
                        for trace_filter in include_filters):
                 return False
         if exclude_filters:
-            if any(not trace_filter._match_traceback(traceback)
+            if any(not trace_filter._match(trace)
                    for trace_filter in exclude_filters):
                 return False
         return True
@@ -379,8 +452,8 @@ class Snapshot:
     def filter_traces(self, filters):
         """
         Create a new Snapshot instance with a filtered traces sequence, filters
-        is a list of Filter instances.  If filters is an empty list, return a
-        new Snapshot instance with a copy of the traces.
+        is a list of Filter or DomainFilter instances.  If filters is an empty
+        list, return a new Snapshot instance with a copy of the traces.
         """
         if not isinstance(filters, Iterable):
             raise TypeError("filters must be a list of filters, not %s"
@@ -412,7 +485,7 @@ class Snapshot:
         tracebacks = {}
         if not cumulative:
             for trace in self.traces._traces:
-                size, trace_traceback = trace
+                domain, size, trace_traceback, total_nframe = trace
                 try:
                     traceback = tracebacks[trace_traceback]
                 except KeyError:
@@ -433,7 +506,7 @@ class Snapshot:
         else:
             # cumulative statistics
             for trace in self.traces._traces:
-                size, trace_traceback = trace
+                domain, size, trace_traceback, total_nframe = trace
                 for frame in trace_traceback:
                     try:
                         traceback = tracebacks[frame]

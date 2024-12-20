@@ -40,6 +40,10 @@ S_IFREG  = 0o100000  # regular file
 S_IFIFO  = 0o010000  # fifo (named pipe)
 S_IFLNK  = 0o120000  # symbolic link
 S_IFSOCK = 0o140000  # socket file
+# Fallbacks for uncommon platform-specific constants
+S_IFDOOR = 0
+S_IFPORT = 0
+S_IFWHT = 0
 
 # Functions to test for each file type
 
@@ -71,6 +75,18 @@ def S_ISSOCK(mode):
     """Return True if mode is from a socket."""
     return S_IFMT(mode) == S_IFSOCK
 
+def S_ISDOOR(mode):
+    """Return True if mode is from a door."""
+    return False
+
+def S_ISPORT(mode):
+    """Return True if mode is from an event port."""
+    return False
+
+def S_ISWHT(mode):
+    """Return True if mode is from a whiteout."""
+    return False
+
 # Names for permission bits
 
 S_ISUID = 0o4000  # set UID bit
@@ -94,23 +110,32 @@ S_IWOTH = 0o0002  # write by others
 S_IXOTH = 0o0001  # execute by others
 
 # Names for file flags
-
+UF_SETTABLE  = 0x0000ffff  # owner settable flags
 UF_NODUMP    = 0x00000001  # do not dump file
 UF_IMMUTABLE = 0x00000002  # file may not be changed
 UF_APPEND    = 0x00000004  # file may only be appended to
 UF_OPAQUE    = 0x00000008  # directory is opaque when viewed through a union stack
 UF_NOUNLINK  = 0x00000010  # file may not be renamed or deleted
-UF_COMPRESSED = 0x00000020 # OS X: file is hfs-compressed
-UF_HIDDEN    = 0x00008000  # OS X: file should not be displayed
+UF_COMPRESSED = 0x00000020 # macOS: file is compressed
+UF_TRACKED   = 0x00000040  # macOS: used for handling document IDs
+UF_DATAVAULT = 0x00000080  # macOS: entitlement needed for I/O
+UF_HIDDEN    = 0x00008000  # macOS: file should not be displayed
+SF_SETTABLE  = 0xffff0000  # superuser settable flags
 SF_ARCHIVED  = 0x00010000  # file may be archived
 SF_IMMUTABLE = 0x00020000  # file may not be changed
 SF_APPEND    = 0x00040000  # file may only be appended to
+SF_RESTRICTED = 0x00080000 # macOS: entitlement needed for writing
 SF_NOUNLINK  = 0x00100000  # file may not be renamed or deleted
 SF_SNAPSHOT  = 0x00200000  # file is a snapshot file
+SF_FIRMLINK  = 0x00800000  # macOS: file is a firmlink
+SF_DATALESS  = 0x40000000  # macOS: file is a dataless object
 
 
 _filemode_table = (
+    # File type chars according to:
+    # http://en.wikibooks.org/wiki/C_Programming/POSIX_Reference/sys/stat.h
     ((S_IFLNK,         "l"),
+     (S_IFSOCK,        "s"),  # Must appear before IFREG and IFDIR as IFSOCK == IFREG | IFDIR
      (S_IFREG,         "-"),
      (S_IFBLK,         "b"),
      (S_IFDIR,         "d"),
@@ -139,14 +164,41 @@ _filemode_table = (
 def filemode(mode):
     """Convert a file's mode to a string of the form '-rwxrwxrwx'."""
     perm = []
-    for table in _filemode_table:
+    for index, table in enumerate(_filemode_table):
         for bit, char in table:
             if mode & bit == bit:
                 perm.append(char)
                 break
         else:
-            perm.append("-")
+            if index == 0:
+                # Unknown filetype
+                perm.append("?")
+            else:
+                perm.append("-")
     return "".join(perm)
+
+
+# Windows FILE_ATTRIBUTE constants for interpreting os.stat()'s
+# "st_file_attributes" member
+
+FILE_ATTRIBUTE_ARCHIVE = 32
+FILE_ATTRIBUTE_COMPRESSED = 2048
+FILE_ATTRIBUTE_DEVICE = 64
+FILE_ATTRIBUTE_DIRECTORY = 16
+FILE_ATTRIBUTE_ENCRYPTED = 16384
+FILE_ATTRIBUTE_HIDDEN = 2
+FILE_ATTRIBUTE_INTEGRITY_STREAM = 32768
+FILE_ATTRIBUTE_NORMAL = 128
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 8192
+FILE_ATTRIBUTE_NO_SCRUB_DATA = 131072
+FILE_ATTRIBUTE_OFFLINE = 4096
+FILE_ATTRIBUTE_READONLY = 1
+FILE_ATTRIBUTE_REPARSE_POINT = 1024
+FILE_ATTRIBUTE_SPARSE_FILE = 512
+FILE_ATTRIBUTE_SYSTEM = 4
+FILE_ATTRIBUTE_TEMPORARY = 256
+FILE_ATTRIBUTE_VIRTUAL = 65536
+
 
 # If available, use C implementation
 try:

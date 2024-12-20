@@ -1,13 +1,13 @@
 import contextlib
+import importlib
 import importlib.abc
 import importlib.machinery
 import os
 import sys
-import types
+import tempfile
 import unittest
 
 from test.test_importlib import util
-from test.support import run_unittest
 
 # needed tests:
 #
@@ -64,12 +64,8 @@ class NamespacePackageTest(unittest.TestCase):
         self.resolved_paths = [
             os.path.join(self.root, path) for path in self.paths
         ]
-        self.ctx = namespace_tree_context(path=self.resolved_paths)
-        self.ctx.__enter__()
+        self.enterContext(namespace_tree_context(path=self.resolved_paths))
 
-    def tearDown(self):
-        # TODO: will we ever want to pass exc_info to __exit__?
-        self.ctx.__exit__(None, None, None)
 
 class SingleNamespacePackage(NamespacePackageTest):
     paths = ['portion1']
@@ -82,12 +78,12 @@ class SingleNamespacePackage(NamespacePackageTest):
         with self.assertRaises(ImportError):
             import foo.two
 
-    def test_module_repr(self):
+    def test_simple_repr(self):
         import foo.one
-        self.assertEqual(repr(foo), "<module 'foo' (namespace)>")
+        self.assertTrue(repr(foo).startswith("<module 'foo' (namespace) from ["))
 
 
-class DynamicPatheNamespacePackage(NamespacePackageTest):
+class DynamicPathNamespacePackage(NamespacePackageTest):
     paths = ['portion1']
 
     def test_dynamic_path(self):
@@ -124,6 +120,40 @@ class SeparatedNamespacePackages(NamespacePackageTest):
         import foo.two
         self.assertEqual(foo.one.attr, 'portion1 foo one')
         self.assertEqual(foo.two.attr, 'portion2 foo two')
+
+
+class SeparatedNamespacePackagesCreatedWhileRunning(NamespacePackageTest):
+    paths = ['portion1']
+
+    def test_invalidate_caches(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # we manipulate sys.path before anything is imported to avoid
+            # accidental cache invalidation when changing it
+            sys.path.append(temp_dir)
+
+            import foo.one
+            self.assertEqual(foo.one.attr, 'portion1 foo one')
+
+            # the module does not exist, so it cannot be imported
+            with self.assertRaises(ImportError):
+                import foo.just_created
+
+            # util.create_modules() manipulates sys.path
+            # so we must create the modules manually instead
+            namespace_path = os.path.join(temp_dir, 'foo')
+            os.mkdir(namespace_path)
+            module_path = os.path.join(namespace_path, 'just_created.py')
+            with open(module_path, 'w', encoding='utf-8') as file:
+                file.write('attr = "just_created foo"')
+
+            # the module is not known, so it cannot be imported yet
+            with self.assertRaises(ImportError):
+                import foo.just_created
+
+            # but after explicit cache invalidation, it is importable
+            importlib.invalidate_caches()
+            import foo.just_created
+            self.assertEqual(foo.just_created.attr, 'just_created foo')
 
 
 class SeparatedOverlappingNamespacePackages(NamespacePackageTest):
@@ -287,6 +317,63 @@ class ModuleAndNamespacePackageInSameDir(NamespacePackageTest):
         #  namespace package.
         import a_test
         self.assertEqual(a_test.attr, 'in module')
+
+
+class ReloadTests(NamespacePackageTest):
+    paths = ['portion1']
+
+    def test_simple_package(self):
+        import foo.one
+        foo = importlib.reload(foo)
+        self.assertEqual(foo.one.attr, 'portion1 foo one')
+
+    def test_cant_import_other(self):
+        import foo
+        with self.assertRaises(ImportError):
+            import foo.two
+        foo = importlib.reload(foo)
+        with self.assertRaises(ImportError):
+            import foo.two
+
+    def test_dynamic_path(self):
+        import foo.one
+        with self.assertRaises(ImportError):
+            import foo.two
+
+        # Now modify sys.path and reload.
+        sys.path.append(os.path.join(self.root, 'portion2'))
+        foo = importlib.reload(foo)
+
+        # And make sure foo.two is now importable
+        import foo.two
+        self.assertEqual(foo.two.attr, 'portion2 foo two')
+
+
+class LoaderTests(NamespacePackageTest):
+    paths = ['portion1']
+
+    def test_namespace_loader_consistency(self):
+        # bpo-32303
+        import foo
+        self.assertEqual(foo.__loader__, foo.__spec__.loader)
+        self.assertIsNotNone(foo.__loader__)
+
+    def test_namespace_origin_consistency(self):
+        # bpo-32305
+        import foo
+        self.assertIsNone(foo.__spec__.origin)
+        self.assertIsNone(foo.__file__)
+
+    def test_path_indexable(self):
+        # bpo-35843
+        import foo
+        expected_path = os.path.join(self.root, 'portion1', 'foo')
+        self.assertEqual(foo.__path__[0], expected_path)
+
+    def test_loader_abc(self):
+        import foo
+        self.assertTrue(isinstance(foo.__loader__, importlib.abc.Loader))
+        self.assertTrue(isinstance(foo.__loader__, importlib.machinery.NamespaceLoader))
 
 
 if __name__ == "__main__":

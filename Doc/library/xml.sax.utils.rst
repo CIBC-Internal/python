@@ -1,11 +1,15 @@
-:mod:`xml.sax.saxutils` --- SAX Utilities
-=========================================
+:mod:`!xml.sax.saxutils` --- SAX Utilities
+==========================================
 
 .. module:: xml.sax.saxutils
    :synopsis: Convenience functions and classes for use with SAX.
+
 .. moduleauthor:: Lars Marius Garshol <larsga@garshol.priv.no>
 .. sectionauthor:: Martin v. Löwis <martin@v.loewis.de>
 
+**Source code:** :source:`Lib/xml/sax/saxutils.py`
+
+--------------
 
 The module :mod:`xml.sax.saxutils` contains a number of classes and functions
 that are commonly useful when creating SAX applications, either in direct use,
@@ -21,6 +25,11 @@ or as base classes.
    replaced with its corresponding value.  The characters ``'&'``, ``'<'`` and
    ``'>'`` are always escaped, even if *entities* is provided.
 
+   .. note::
+
+      This function should only be used to escape characters that
+      can't be used directly in XML. Do not use this function as a general
+      string translation function.
 
 .. function:: unescape(data, entities={})
 
@@ -59,11 +68,11 @@ or as base classes.
    should be a file-like object which will default to *sys.stdout*. *encoding* is
    the encoding of the output stream which defaults to ``'iso-8859-1'``.
    *short_empty_elements* controls the formatting of elements that contain no
-   content:  if *False* (the default) they are emitted as a pair of start/end
-   tags, if set to *True* they are emitted as a single self-closed tag.
+   content:  if ``False`` (the default) they are emitted as a pair of start/end
+   tags, if set to ``True`` they are emitted as a single self-closed tag.
 
-   .. versionadded:: 3.2
-      The *short_empty_elements* parameter.
+   .. versionchanged:: 3.2
+      Added the *short_empty_elements* parameter.
 
 
 .. class:: XMLFilterBase(base)
@@ -83,5 +92,5 @@ or as base classes.
    reading.  The input source can be given as a string, a file-like object, or
    an :class:`~xml.sax.xmlreader.InputSource` object; parsers will use this
    function to implement the polymorphic *source* argument to their
-   :meth:`parse` method.
+   :meth:`~xml.sax.xmlreader.XMLReader.parse` method.
 

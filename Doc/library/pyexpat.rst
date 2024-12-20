@@ -1,10 +1,12 @@
-:mod:`xml.parsers.expat` --- Fast XML parsing using Expat
-=========================================================
+:mod:`!xml.parsers.expat` --- Fast XML parsing using Expat
+==========================================================
 
 .. module:: xml.parsers.expat
    :synopsis: An interface to the Expat non-validating XML parser.
+
 .. moduleauthor:: Paul Prescod <paul@prescod.net>
 
+--------------
 
 .. Markup notes:
 
@@ -31,7 +33,7 @@ can be set to handler functions.  When an XML document is then fed to the
 parser, the handler functions are called for the character data and markup in
 the XML document.
 
-.. index:: module: pyexpat
+.. index:: pair: module; pyexpat
 
 This module uses the :mod:`pyexpat` module to provide access to the Expat
 parser.  Direct use of the :mod:`pyexpat` module is deprecated.
@@ -84,7 +86,9 @@ The :mod:`xml.parsers.expat` module contains two functions:
    separator.
 
    For example, if *namespace_separator* is set to a space character (``' '``) and
-   the following document is parsed::
+   the following document is parsed:
+
+   .. code-block:: xml
 
       <?xml version="1.0"?>
       <root xmlns    = "http://default-namespace.org/"
@@ -192,6 +196,42 @@ XMLParser Objects
    :exc:`ExpatError` to be raised with the :attr:`code` attribute set to
    ``errors.codes[errors.XML_ERROR_CANT_CHANGE_FEATURE_ONCE_PARSING]``.
 
+.. method:: xmlparser.SetReparseDeferralEnabled(enabled)
+
+   .. warning::
+
+      Calling ``SetReparseDeferralEnabled(False)`` has security implications,
+      as detailed below; please make sure to understand these consequences
+      prior to using the ``SetReparseDeferralEnabled`` method.
+
+   Expat 2.6.0 introduced a security mechanism called "reparse deferral"
+   where instead of causing denial of service through quadratic runtime
+   from reparsing large tokens, reparsing of unfinished tokens is now delayed
+   by default until a sufficient amount of input is reached.
+   Due to this delay, registered handlers may — depending of the sizing of
+   input chunks pushed to Expat — no longer be called right after pushing new
+   input to the parser.  Where immediate feedback and taking over responsibility
+   of protecting against denial of service from large tokens are both wanted,
+   calling ``SetReparseDeferralEnabled(False)`` disables reparse deferral
+   for the current Expat parser instance, temporarily or altogether.
+   Calling ``SetReparseDeferralEnabled(True)`` allows re-enabling reparse
+   deferral.
+
+   Note that :meth:`SetReparseDeferralEnabled` has been backported to some
+   prior releases of CPython as a security fix.  Check for availability of
+   :meth:`SetReparseDeferralEnabled` using :func:`hasattr` if used in code
+   running across a variety of Python versions.
+
+   .. versionadded:: 3.13
+
+.. method:: xmlparser.GetReparseDeferralEnabled()
+
+   Returns whether reparse deferral is currently enabled for the given
+   Expat parser instance.
+
+   .. versionadded:: 3.13
+
+
 :class:`xmlparser` objects have the following attributes:
 
 
@@ -210,7 +250,8 @@ XMLParser Objects
    :meth:`CharacterDataHandler` callback whenever possible.  This can improve
    performance substantially since Expat normally breaks character data into chunks
    at every line ending.  This attribute is false by default, and may be changed at
-   any time.
+   any time. Note that when it is false, data that does not contain newlines
+   may be chunked too.
 
 
 .. attribute:: xmlparser.buffer_used
@@ -242,7 +283,7 @@ XMLParser Objects
 
 The following attributes contain values relating to the most recent error
 encountered by an :class:`xmlparser` object, and will only have correct values
-once a call to :meth:`Parse` or :meth:`ParseFile` has raised a
+once a call to :meth:`Parse` or :meth:`ParseFile` has raised an
 :exc:`xml.parsers.expat.ExpatError` exception.
 
 
@@ -368,7 +409,10 @@ otherwise stated.
    marked content, and ignorable whitespace.  Applications which must distinguish
    these cases can use the :attr:`StartCdataSectionHandler`,
    :attr:`EndCdataSectionHandler`, and :attr:`ElementDeclHandler` callbacks to
-   collect the required information.
+   collect the required information. Note that the character data may be
+   chunked even if it is short and so you may receive more than one call to
+   :meth:`CharacterDataHandler`. Set the :attr:`buffer_text` instance attribute
+   to ``True`` to avoid that.
 
 
 .. method:: xmlparser.UnparsedEntityDeclHandler(entityName, base, systemId, publicId, notationName)
@@ -570,9 +614,9 @@ Content Model Descriptions
 
 .. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
 
-Content modules are described using nested tuples.  Each tuple contains four
+Content models are described using nested tuples.  Each tuple contains four
 values: the type, the quantifier, the name, and a tuple of children.  Children
-are simply additional content module descriptions.
+are simply additional content model descriptions.
 
 The values of the first two fields are constants defined in the
 :mod:`xml.parsers.expat.model` module.  These constants can be collected in two
@@ -661,14 +705,14 @@ The ``errors`` module has the following attributes:
 
 .. data:: codes
 
-   A dictionary mapping numeric error codes to their string descriptions.
+   A dictionary mapping string descriptions to their error codes.
 
    .. versionadded:: 3.2
 
 
 .. data:: messages
 
-   A dictionary mapping string descriptions to their error codes.
+   A dictionary mapping numeric error codes to their string descriptions.
 
    .. versionadded:: 3.2
 
@@ -763,7 +807,7 @@ The ``errors`` module has the following attributes:
 
 .. data:: XML_ERROR_UNDEFINED_ENTITY
 
-   A reference was made to a entity which was not defined.
+   A reference was made to an entity which was not defined.
 
 
 .. data:: XML_ERROR_UNKNOWN_ENCODING
@@ -863,10 +907,44 @@ The ``errors`` module has the following attributes:
 .. data:: XML_ERROR_SUSPEND_PE
 
 
+.. data:: XML_ERROR_RESERVED_PREFIX_XML
+
+   An attempt was made to
+   undeclare reserved namespace prefix ``xml``
+   or to bind it to another namespace URI.
+
+
+.. data:: XML_ERROR_RESERVED_PREFIX_XMLNS
+
+   An attempt was made to declare or undeclare reserved namespace prefix ``xmlns``.
+
+
+.. data:: XML_ERROR_RESERVED_NAMESPACE_URI
+
+   An attempt was made to bind the URI of one the reserved namespace
+   prefixes ``xml`` and ``xmlns`` to another namespace prefix.
+
+
+.. data:: XML_ERROR_INVALID_ARGUMENT
+
+   This should not be reported to Python applications.
+
+
+.. data:: XML_ERROR_NO_BUFFER
+
+   This should not be reported to Python applications.
+
+
+.. data:: XML_ERROR_AMPLIFICATION_LIMIT_BREACH
+
+   The limit on input amplification factor (from DTD and entities)
+   has been breached.
+
+
 .. rubric:: Footnotes
 
-.. [#] The encoding string included in XML output should conform to the
+.. [1] The encoding string included in XML output should conform to the
    appropriate standards. For example, "UTF-8" is valid, but "UTF8" is
-   not. See http://www.w3.org/TR/2006/REC-xml11-20060816/#NT-EncodingDecl
-   and http://www.iana.org/assignments/character-sets/character-sets.xhtml.
+   not. See https://www.w3.org/TR/2006/REC-xml11-20060816/#NT-EncodingDecl
+   and https://www.iana.org/assignments/character-sets/character-sets.xhtml.
 

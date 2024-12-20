@@ -2,6 +2,9 @@
     unicode_format.h -- implementation of str.format().
 */
 
+#include "pycore_complexobject.h" // _PyComplex_FormatAdvancedWriter()
+#include "pycore_floatobject.h"   // _PyFloat_FormatAdvancedWriter()
+
 /************************************************************************/
 /***********   Global data structures and forward declarations  *********/
 /************************************************************************/
@@ -60,14 +63,12 @@ SubString_init(SubString *str, PyObject *s, Py_ssize_t start, Py_ssize_t end)
 Py_LOCAL_INLINE(PyObject *)
 SubString_new_object(SubString *str)
 {
-    if (str->str == NULL) {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
+    if (str->str == NULL)
+        Py_RETURN_NONE;
     return PyUnicode_Substring(str->str, str->start, str->end);
 }
 
-/* return a new string.  if str->str is NULL, return None */
+/* return a new string.  if str->str is NULL, return a new empty string */
 Py_LOCAL_INLINE(PyObject *)
 SubString_new_object_or_empty(SubString *str)
 {
@@ -412,18 +413,22 @@ get_field_object(SubString *input, PyObject *args, PyObject *kwargs,
     if (index == -1) {
         /* look up in kwargs */
         PyObject *key = SubString_new_object(&first);
-        if (key == NULL)
+        if (key == NULL) {
             goto error;
-
-        /* Use PyObject_GetItem instead of PyDict_GetItem because this
-           code is no longer just used with kwargs. It might be passed
-           a non-dict when called through format_map. */
-        if ((kwargs == NULL) || (obj = PyObject_GetItem(kwargs, key)) == NULL) {
+        }
+        if (kwargs == NULL) {
             PyErr_SetObject(PyExc_KeyError, key);
             Py_DECREF(key);
             goto error;
         }
+        /* Use PyObject_GetItem instead of PyDict_GetItem because this
+           code is no longer just used with kwargs. It might be passed
+           a non-dict when called through format_map. */
+        obj = PyObject_GetItem(kwargs, key);
         Py_DECREF(key);
+        if (obj == NULL) {
+            goto error;
+        }
     }
     else {
         /* If args is NULL, we have a format string with a positional field
@@ -438,8 +443,13 @@ get_field_object(SubString *input, PyObject *args, PyObject *kwargs,
 
         /* look up in args */
         obj = PySequence_GetItem(args, index);
-        if (obj == NULL)
-            goto error;
+        if (obj == NULL) {
+            PyErr_Format(PyExc_IndexError,
+                         "Replacement index %zd out of range for positional "
+                         "args tuple",
+                         index);
+             goto error;
+        }
     }
 
     /* iterate over the rest of the field_name */
@@ -464,8 +474,7 @@ get_field_object(SubString *input, PyObject *args, PyObject *kwargs,
             goto error;
 
         /* assign to obj */
-        Py_DECREF(obj);
-        obj = tmp;
+        Py_SETREF(obj, tmp);
     }
     /* end of iterator, this is the non-error case */
     if (ok == 1)
@@ -812,20 +821,19 @@ output_markup(SubString *field_name, SubString *format_spec,
 
     if (conversion != '\0') {
         tmp = do_conversion(fieldobj, conversion);
-        if (tmp == NULL || PyUnicode_READY(tmp) == -1)
+        if (tmp == NULL)
             goto done;
 
         /* do the assignment, transferring ownership: fieldobj = tmp */
-        Py_DECREF(fieldobj);
-        fieldobj = tmp;
+        Py_SETREF(fieldobj, tmp);
         tmp = NULL;
     }
 
-    /* if needed, recurively compute the format_spec */
+    /* if needed, recursively compute the format_spec */
     if (format_spec_needs_expanding) {
         tmp = build_string(format_spec, args, kwargs, recursion_depth-1,
                            auto_number);
-        if (tmp == NULL || PyUnicode_READY(tmp) == -1)
+        if (tmp == NULL)
             goto done;
 
         /* note that in the case we're expanding the format string,
@@ -941,10 +949,6 @@ do_string_format(PyObject *self, PyObject *args, PyObject *kwargs)
     int recursion_depth = 2;
 
     AutoNumber auto_number;
-
-    if (PyUnicode_READY(self) == -1)
-        return NULL;
-
     AutoNumber_Init(&auto_number);
     SubString_init(&input, self, 0, PyUnicode_GET_LENGTH(self));
     return build_string(&input, args, kwargs, recursion_depth, &auto_number);
@@ -976,7 +980,7 @@ static void
 formatteriter_dealloc(formatteriterobject *it)
 {
     Py_XDECREF(it->str);
-    PyObject_FREE(it);
+    PyObject_Free(it);
 }
 
 /* returns a tuple:
@@ -1033,8 +1037,7 @@ formatteriter_next(formatteriterobject *it)
            otherwise create a one length string with the conversion
            character */
         if (conversion == '\0') {
-            conversion_str = Py_None;
-            Py_INCREF(conversion_str);
+            conversion_str = Py_NewRef(Py_None);
         }
         else
             conversion_str = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND,
@@ -1064,10 +1067,10 @@ static PyTypeObject PyFormatterIter_Type = {
     0,                                  /* tp_itemsize */
     /* methods */
     (destructor)formatteriter_dealloc,  /* tp_dealloc */
-    0,                                  /* tp_print */
+    0,                                  /* tp_vectorcall_offset */
     0,                                  /* tp_getattr */
     0,                                  /* tp_setattr */
-    0,                                  /* tp_reserved */
+    0,                                  /* tp_as_async */
     0,                                  /* tp_repr */
     0,                                  /* tp_as_number */
     0,                                  /* tp_as_sequence */
@@ -1104,16 +1107,12 @@ formatter_parser(PyObject *ignored, PyObject *self)
         return NULL;
     }
 
-    if (PyUnicode_READY(self) == -1)
-        return NULL;
-
     it = PyObject_New(formatteriterobject, &PyFormatterIter_Type);
     if (it == NULL)
         return NULL;
 
     /* take ownership, give the object to the iterator */
-    Py_INCREF(self);
-    it->str = self;
+    it->str = Py_NewRef(self);
 
     /* initialize the contained MarkupIterator */
     MarkupIterator_init(&it->it_markup, (PyObject*)self, 0, PyUnicode_GET_LENGTH(self));
@@ -1140,7 +1139,7 @@ static void
 fieldnameiter_dealloc(fieldnameiterobject *it)
 {
     Py_XDECREF(it->str);
-    PyObject_FREE(it);
+    PyObject_Free(it);
 }
 
 /* returns a tuple:
@@ -1200,10 +1199,10 @@ static PyTypeObject PyFieldNameIter_Type = {
     0,                                  /* tp_itemsize */
     /* methods */
     (destructor)fieldnameiter_dealloc,  /* tp_dealloc */
-    0,                                  /* tp_print */
+    0,                                  /* tp_vectorcall_offset */
     0,                                  /* tp_getattr */
     0,                                  /* tp_setattr */
-    0,                                  /* tp_reserved */
+    0,                                  /* tp_as_async */
     0,                                  /* tp_repr */
     0,                                  /* tp_as_number */
     0,                                  /* tp_as_sequence */
@@ -1226,7 +1225,7 @@ static PyTypeObject PyFieldNameIter_Type = {
     0};
 
 /* unicode_formatter_field_name_split is used to implement
-   string.Formatter.vformat.  it takes an PEP 3101 "field name", and
+   string.Formatter.vformat.  it takes a PEP 3101 "field name", and
    returns a tuple of (first, rest): "first", the part before the
    first '.' or '['; and "rest", an iterator for the rest of the field
    name.  it's a wrapper around stringlib/string_format.h's
@@ -1247,17 +1246,13 @@ formatter_field_name_split(PyObject *ignored, PyObject *self)
         return NULL;
     }
 
-    if (PyUnicode_READY(self) == -1)
-        return NULL;
-
     it = PyObject_New(fieldnameiterobject, &PyFieldNameIter_Type);
     if (it == NULL)
         return NULL;
 
     /* take ownership, give the object to the iterator.  this is
        just to keep the field_name alive */
-    Py_INCREF(self);
-    it->str = self;
+    it->str = Py_NewRef(self);
 
     /* Pass in auto_number = NULL. We'll return an empty string for
        first_obj in that case. */

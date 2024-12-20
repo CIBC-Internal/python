@@ -1,7 +1,11 @@
-:mod:`urllib` --- URL handling modules
-======================================
+:mod:`!urllib` --- URL handling modules
+=======================================
 
 .. module:: urllib
+
+**Source code:** :source:`Lib/urllib/`
+
+--------------
 
 ``urllib`` is a package that collects several modules for working with URLs:
 

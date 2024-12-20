@@ -1,11 +1,12 @@
 import contextlib
 import sys
-import os
 import unittest
 from test import support
+from test.support import import_helper
+from test.support import os_helper
 import time
 
-resource = support.import_module('resource')
+resource = import_helper.import_module('resource')
 
 # This test is checking a few specific problem spots with the resource module.
 
@@ -17,6 +18,8 @@ class ResourceTest(unittest.TestCase):
         self.assertRaises(TypeError, resource.setrlimit)
         self.assertRaises(TypeError, resource.setrlimit, 42, 42, 42)
 
+    @unittest.skipIf(sys.platform == "vxworks",
+                     "setting RLIMIT_FSIZE is not supported on VxWorks")
     def test_fsize_ismax(self):
         try:
             (cur, max) = resource.getrlimit(resource.RLIMIT_FSIZE)
@@ -50,7 +53,7 @@ class ResourceTest(unittest.TestCase):
                     limit_set = True
                 except ValueError:
                     limit_set = False
-                f = open(support.TESTFN, "wb")
+                f = open(os_helper.TESTFN, "wb")
                 try:
                     f.write(b"X" * 1024)
                     try:
@@ -76,7 +79,7 @@ class ResourceTest(unittest.TestCase):
             finally:
                 if limit_set:
                     resource.setrlimit(resource.RLIMIT_FSIZE, (cur, max))
-                support.unlink(support.TESTFN)
+                os_helper.unlink(os_helper.TESTFN)
 
     def test_fsize_toobig(self):
         # Be sure that setrlimit is checking for really large values
@@ -95,6 +98,7 @@ class ResourceTest(unittest.TestCase):
             except (OverflowError, ValueError):
                 pass
 
+    @unittest.skipUnless(hasattr(resource, "getrusage"), "needs getrusage")
     def test_getrusage(self):
         self.assertRaises(TypeError, resource.getrusage)
         self.assertRaises(TypeError, resource.getrusage, 42, 42)
@@ -111,6 +115,8 @@ class ResourceTest(unittest.TestCase):
             pass
 
     # Issue 6083: Reference counting bug
+    @unittest.skipIf(sys.platform == "vxworks",
+                     "setting RLIMIT_CPU is not supported on VxWorks")
     def test_setrusage_refcount(self):
         try:
             limits = resource.getrlimit(resource.RLIMIT_CPU)
@@ -132,13 +138,12 @@ class ResourceTest(unittest.TestCase):
         self.assertIsInstance(pagesize, int)
         self.assertGreaterEqual(pagesize, 0)
 
-    @unittest.skipUnless(sys.platform == 'linux', 'test requires Linux')
+    @unittest.skipUnless(sys.platform in ('linux', 'android'), 'Linux only')
     def test_linux_constants(self):
         for attr in ['MSGQUEUE', 'NICE', 'RTPRIO', 'RTTIME', 'SIGPENDING']:
             with contextlib.suppress(AttributeError):
                 self.assertIsInstance(getattr(resource, 'RLIMIT_' + attr), int)
 
-    @support.requires_freebsd_version(9)
     def test_freebsd_contants(self):
         for attr in ['SWAP', 'SBSIZE', 'NPTS']:
             with contextlib.suppress(AttributeError):
@@ -148,9 +153,6 @@ class ResourceTest(unittest.TestCase):
     @support.requires_linux_version(2, 6, 36)
     def test_prlimit(self):
         self.assertRaises(TypeError, resource.prlimit)
-        if os.geteuid() != 0:
-            self.assertRaises(PermissionError, resource.prlimit,
-                              1, resource.RLIMIT_AS)
         self.assertRaises(ProcessLookupError, resource.prlimit,
                           -1, resource.RLIMIT_AS)
         limit = resource.getrlimit(resource.RLIMIT_AS)
@@ -158,9 +160,20 @@ class ResourceTest(unittest.TestCase):
         self.assertEqual(resource.prlimit(0, resource.RLIMIT_AS, limit),
                          limit)
 
+    # Issue 20191: Reference counting bug
+    @unittest.skipUnless(hasattr(resource, 'prlimit'), 'no prlimit')
+    @support.requires_linux_version(2, 6, 36)
+    def test_prlimit_refcount(self):
+        class BadSeq:
+            def __len__(self):
+                return 2
+            def __getitem__(self, key):
+                return limits[key] - 1  # new reference
 
-def test_main(verbose=None):
-    support.run_unittest(ResourceTest)
+        limits = resource.getrlimit(resource.RLIMIT_AS)
+        self.assertEqual(resource.prlimit(0, resource.RLIMIT_AS, BadSeq()),
+                         limits)
+
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

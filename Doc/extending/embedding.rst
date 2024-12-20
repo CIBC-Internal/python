@@ -1,4 +1,4 @@
-.. highlightlang:: c
+.. highlight:: c
 
 
 .. _embedding:
@@ -53,24 +53,52 @@ interface. This interface is intended to execute a Python script without needing
 to interact with the application directly. This can for example be used to
 perform some operation on a file. ::
 
+   #define PY_SSIZE_T_CLEAN
    #include <Python.h>
 
    int
    main(int argc, char *argv[])
    {
-     Py_SetProgramName(argv[0]);  /* optional but recommended */
-     Py_Initialize();
-     PyRun_SimpleString("from time import time,ctime\n"
-                        "print('Today is', ctime(time()))\n");
-     Py_Finalize();
-     return 0;
+       PyStatus status;
+       PyConfig config;
+       PyConfig_InitPythonConfig(&config);
+
+       /* optional but recommended */
+       status = PyConfig_SetBytesString(&config, &config.program_name, argv[0]);
+       if (PyStatus_Exception(status)) {
+           goto exception;
+       }
+
+       status = Py_InitializeFromConfig(&config);
+       if (PyStatus_Exception(status)) {
+           goto exception;
+       }
+       PyConfig_Clear(&config);
+
+       PyRun_SimpleString("from time import time,ctime\n"
+                          "print('Today is', ctime(time()))\n");
+       if (Py_FinalizeEx() < 0) {
+           exit(120);
+       }
+       return 0;
+
+     exception:
+        PyConfig_Clear(&config);
+        Py_ExitStatusException(status);
    }
 
-The :c:func:`Py_SetProgramName` function should be called before
-:c:func:`Py_Initialize` to inform the interpreter about paths to Python run-time
+.. note::
+
+   ``#define PY_SSIZE_T_CLEAN`` was used to indicate that ``Py_ssize_t`` should be
+   used in some APIs instead of ``int``.
+   It is not necessary since Python 3.13, but we keep it here for backward compatibility.
+   See :ref:`arg-parsing-string-and-buffers` for a description of this macro.
+
+Setting :c:member:`PyConfig.program_name` should be called before
+:c:func:`Py_InitializeFromConfig` to inform the interpreter about paths to Python run-time
 libraries.  Next, the Python interpreter is initialized with
 :c:func:`Py_Initialize`, followed by the execution of a hard-coded Python script
-that prints the date and time.  Afterwards, the :c:func:`Py_Finalize` call shuts
+that prints the date and time.  Afterwards, the :c:func:`Py_FinalizeEx` call shuts
 the interpreter down, followed by the end of the program.  In a real program,
 you may want to get the Python script from another source, perhaps a text-editor
 routine, a file, or a database.  Getting the Python code from a file can better
@@ -149,7 +177,9 @@ script, such as:
            c = c + b
        return c
 
-then the result should be::
+then the result should be:
+
+.. code-block:: shell-session
 
    $ call multiply multiply 3 2
    Will compute 3 times 2
@@ -160,7 +190,7 @@ for data conversion between Python and C, and for error reporting.  The
 interesting part with respect to embedding Python starts with ::
 
    Py_Initialize();
-   pName = PyUnicode_FromString(argv[1]);
+   pName = PyUnicode_DecodeFSDefault(argv[1]);
    /* Error checking of pName left out */
    pModule = PyImport_Import(pName);
 
@@ -185,7 +215,7 @@ function is then made with::
 
    pValue = PyObject_CallObject(pFunc, pArgs);
 
-Upon return of the function, ``pValue`` is either *NULL* or it contains a
+Upon return of the function, ``pValue`` is either ``NULL`` or it contains a
 reference to the return value of the function.  Be sure to release the reference
 after examining the value.
 
@@ -239,7 +269,7 @@ following two statements before the call to :c:func:`Py_Initialize`::
    PyImport_AppendInittab("emb", &PyInit_emb);
 
 These two lines initialize the ``numargs`` variable, and make the
-:func:`emb.numargs` function accessible to the embedded Python interpreter.
+:func:`!emb.numargs` function accessible to the embedded Python interpreter.
 With these extensions, the Python script can do things like
 
 .. code-block:: python
@@ -283,16 +313,20 @@ available).  This script has several options, of which the following will
 be directly useful to you:
 
 * ``pythonX.Y-config --cflags`` will give you the recommended flags when
-  compiling::
+  compiling:
 
-   $ /opt/bin/python3.4-config --cflags
-   -I/opt/include/python3.4m -I/opt/include/python3.4m -DNDEBUG -g -fwrapv -O3 -Wall -Wstrict-prototypes
+  .. code-block:: shell-session
 
-* ``pythonX.Y-config --ldflags`` will give you the recommended flags when
-  linking::
+     $ /opt/bin/python3.11-config --cflags
+     -I/opt/include/python3.11 -I/opt/include/python3.11 -Wsign-compare  -DNDEBUG -g -fwrapv -O3 -Wall
 
-   $ /opt/bin/python3.4-config --ldflags
-   -L/opt/lib/python3.4/config-3.4m -lpthread -ldl -lutil -lm -lpython3.4m -Xlinker -export-dynamic
+* ``pythonX.Y-config --ldflags --embed`` will give you the recommended flags
+  when linking:
+
+  .. code-block:: shell-session
+
+     $ /opt/bin/python3.11-config --ldflags --embed
+     -L/opt/lib/python3.11/config-3.11-x86_64-linux-gnu -L/opt/lib -lpython3.11 -lpthread -ldl  -lutil -lm
 
 .. note::
    To avoid confusion between several Python installations (and especially
@@ -309,7 +343,7 @@ options.  In this case, the :mod:`sysconfig` module is a useful tool to
 programmatically extract the configuration values that you will want to
 combine together.  For example:
 
-.. code-block:: python
+.. code-block:: pycon
 
    >>> import sysconfig
    >>> sysconfig.get_config_var('LIBS')

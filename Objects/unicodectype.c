@@ -14,8 +14,6 @@
 #define DECIMAL_MASK 0x02
 #define DIGIT_MASK 0x04
 #define LOWER_MASK 0x08
-#define LINEBREAK_MASK 0x10
-#define SPACE_MASK 0x20
 #define TITLE_MASK 0x40
 #define UPPER_MASK 0x80
 #define XID_START_MASK 0x100
@@ -27,7 +25,7 @@
 #define EXTENDED_CASE_MASK 0x4000
 
 typedef struct {
-    /* 
+    /*
        These are either deltas to the character or offsets in
        _PyUnicode_ExtendedCase.
     */

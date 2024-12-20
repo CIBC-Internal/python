@@ -28,9 +28,9 @@ The order by which events are called is defined by these rules:
    unless this conflicts with the first rule.
 Each function will be called at most once for each event.
 """
-
-import sys
 import re
+import sys
+
 import tkinter
 
 # the event type constants, which define the meaning of mc_type
@@ -52,9 +52,9 @@ else:
     _modifier_masks = (MC_CONTROL, MC_ALT, MC_SHIFT, MC_META)
 
 # a dictionary to map a modifier name into its number
-_modifier_names = dict([(name, number)
+_modifier_names = {name: number
                          for number in range(len(_modifiers))
-                         for name in _modifiers[number]])
+                         for name in _modifiers[number]}
 
 # In 3.4, if no shell window is ever open, the underlying Tk widget is
 # destroyed before .__del__ methods here are called.  The following
@@ -111,7 +111,7 @@ class _SimpleBinder:
                     raise
 
 # An int in range(1 << len(_modifiers)) represents a combination of modifiers
-# (if the least significent bit is on, _modifiers[0] is on, and so on).
+# (if the least significant bit is on, _modifiers[0] is on, and so on).
 # _state_subsets gives for each combination of modifiers, or *state*,
 # a list of the states which are a subset of it. This list is ordered by the
 # number of modifiers is the state - the most specific state comes first.
@@ -134,7 +134,7 @@ def expand_substates(states):
         return nb
     statelist = []
     for state in states:
-        substates = list(set(state & x for x in states))
+        substates = list({state & x for x in states})
         substates.sort(key=nbits, reverse=True)
         statelist.append(substates)
     return statelist
@@ -258,9 +258,9 @@ _types = (
 _binder_classes = (_ComplexBinder,) * 4 + (_SimpleBinder,) * (len(_types)-4)
 
 # A dictionary to map a type name into its number
-_type_names = dict([(name, number)
+_type_names = {name: number
                      for number in range(len(_types))
-                     for name in _types[number]])
+                     for name in _types[number]}
 
 _keysym_re = re.compile(r"^\w+$")
 _button_re = re.compile(r"^[1-5]$")
@@ -414,13 +414,15 @@ def MultiCallCreator(widget):
     return MultiCall
 
 
-def _multi_call(parent):
-    root = tkinter.Tk()
-    root.title("Test MultiCall")
-    width, height, x, y = list(map(int, re.split('[x+]', parent.geometry())))
-    root.geometry("+%d+%d"%(x, y + 150))
-    text = MultiCallCreator(tkinter.Text)(root)
+def _multi_call(parent):  # htest #
+    top = tkinter.Toplevel(parent)
+    top.title("Test MultiCall")
+    x, y = map(int, parent.geometry().split('+')[1:])
+    top.geometry("+%d+%d" % (x, y + 175))
+    text = MultiCallCreator(tkinter.Text)(top)
     text.pack()
+    text.focus_set()
+
     def bindseq(seq, n=[0]):
         def handler(event):
             print(seq)
@@ -439,8 +441,11 @@ def _multi_call(parent):
     bindseq("<FocusOut>")
     bindseq("<Enter>")
     bindseq("<Leave>")
-    root.mainloop()
+
 
 if __name__ == "__main__":
+    from unittest import main
+    main('idlelib.idle_test.test_mainmenu', verbosity=2, exit=False)
+
     from idlelib.idle_test.htest import run
     run(_multi_call)

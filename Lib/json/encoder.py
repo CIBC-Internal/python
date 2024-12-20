@@ -7,6 +7,10 @@ try:
 except ImportError:
     c_encode_basestring_ascii = None
 try:
+    from _json import encode_basestring as c_encode_basestring
+except ImportError:
+    c_encode_basestring = None
+try:
     from _json import make_encoder as c_make_encoder
 except ImportError:
     c_make_encoder = None
@@ -26,17 +30,20 @@ ESCAPE_DCT = {
 for i in range(0x20):
     ESCAPE_DCT.setdefault(chr(i), '\\u{0:04x}'.format(i))
     #ESCAPE_DCT.setdefault(chr(i), '\\u%04x' % (i,))
+del i
 
 INFINITY = float('inf')
-FLOAT_REPR = repr
 
-def encode_basestring(s):
+def py_encode_basestring(s):
     """Return a JSON representation of a Python string
 
     """
     def replace(match):
         return ESCAPE_DCT[match.group(0)]
     return '"' + ESCAPE.sub(replace, s) + '"'
+
+
+encode_basestring = (c_encode_basestring or py_encode_basestring)
 
 
 def py_encode_basestring_ascii(s):
@@ -65,7 +72,7 @@ encode_basestring_ascii = (
     c_encode_basestring_ascii or py_encode_basestring_ascii)
 
 class JSONEncoder(object):
-    """Extensible JSON <http://json.org> encoder for Python data structures.
+    """Extensible JSON <https://json.org> encoder for Python data structures.
 
     Supports the following objects and types by default:
 
@@ -95,7 +102,7 @@ class JSONEncoder(object):
     """
     item_separator = ', '
     key_separator = ': '
-    def __init__(self, skipkeys=False, ensure_ascii=True,
+    def __init__(self, *, skipkeys=False, ensure_ascii=True,
             check_circular=True, allow_nan=True, sort_keys=False,
             indent=None, separators=None, default=None):
         """Constructor for JSONEncoder, with sensible defaults.
@@ -110,7 +117,7 @@ class JSONEncoder(object):
 
         If check_circular is true, then lists, dicts, and custom encoded
         objects will be checked for circular references during encoding to
-        prevent an infinite recursion (which would cause an OverflowError).
+        prevent an infinite recursion (which would cause an RecursionError).
         Otherwise, no such check takes place.
 
         If allow_nan is true, then NaN, Infinity, and -Infinity will be
@@ -167,10 +174,11 @@ class JSONEncoder(object):
                 else:
                     return list(iterable)
                 # Let the base class default method raise the TypeError
-                return JSONEncoder.default(self, o)
+                return super().default(o)
 
         """
-        raise TypeError(repr(o) + " is not JSON serializable")
+        raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
 
     def encode(self, o):
         """Return a JSON string representation of a Python data structure.
@@ -214,7 +222,7 @@ class JSONEncoder(object):
             _encoder = encode_basestring
 
         def floatstr(o, allow_nan=self.allow_nan,
-                _repr=FLOAT_REPR, _inf=INFINITY, _neginf=-INFINITY):
+                _repr=float.__repr__, _inf=INFINITY, _neginf=-INFINITY):
             # Check for specials.  Note that this type of test is processor
             # and/or platform-specific, so do tests which don't depend on the
             # internals.
@@ -236,15 +244,18 @@ class JSONEncoder(object):
             return text
 
 
-        if (_one_shot and c_make_encoder is not None
-                and self.indent is None):
+        if self.indent is None or isinstance(self.indent, str):
+            indent = self.indent
+        else:
+            indent = ' ' * self.indent
+        if _one_shot and c_make_encoder is not None:
             _iterencode = c_make_encoder(
-                markers, self.default, _encoder, self.indent,
+                markers, self.default, _encoder, indent,
                 self.key_separator, self.item_separator, self.sort_keys,
                 self.skipkeys, self.allow_nan)
         else:
             _iterencode = _make_iterencode(
-                markers, self.default, _encoder, self.indent, floatstr,
+                markers, self.default, _encoder, indent, floatstr,
                 self.key_separator, self.item_separator, self.sort_keys,
                 self.skipkeys, _one_shot)
         return _iterencode(o, 0)
@@ -261,10 +272,8 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
         list=list,
         str=str,
         tuple=tuple,
+        _intstr=int.__repr__,
     ):
-
-    if _indent is not None and not isinstance(_indent, str):
-        _indent = ' ' * _indent
 
     def _iterencode_list(lst, _current_indent_level):
         if not lst:
@@ -299,13 +308,13 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
             elif value is False:
                 yield buf + 'false'
             elif isinstance(value, int):
-                # Subclasses of int/float may override __str__, but we still
+                # Subclasses of int/float may override __repr__, but we still
                 # want to encode them as integers/floats in JSON. One example
                 # within the standard library is IntEnum.
-                yield buf + str(int(value))
+                yield buf + _intstr(value)
             elif isinstance(value, float):
                 # see comment above for int
-                yield buf + _floatstr(float(value))
+                yield buf + _floatstr(value)
             else:
                 yield buf
                 if isinstance(value, (list, tuple)):
@@ -342,7 +351,7 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
             item_separator = _item_separator
         first = True
         if _sort_keys:
-            items = sorted(dct.items(), key=lambda kv: kv[0])
+            items = sorted(dct.items())
         else:
             items = dct.items()
         for key, value in items:
@@ -352,7 +361,7 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
             # also allow them.  Many encoders seem to do something like this.
             elif isinstance(key, float):
                 # see comment for int/float in _make_iterencode
-                key = _floatstr(float(key))
+                key = _floatstr(key)
             elif key is True:
                 key = 'true'
             elif key is False:
@@ -361,11 +370,12 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
                 key = 'null'
             elif isinstance(key, int):
                 # see comment for int/float in _make_iterencode
-                key = str(int(key))
+                key = _intstr(key)
             elif _skipkeys:
                 continue
             else:
-                raise TypeError("key " + repr(key) + " is not a string")
+                raise TypeError(f'keys must be str, int, float, bool or None, '
+                                f'not {key.__class__.__name__}')
             if first:
                 first = False
             else:
@@ -382,10 +392,10 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
                 yield 'false'
             elif isinstance(value, int):
                 # see comment for int/float in _make_iterencode
-                yield str(int(value))
+                yield _intstr(value)
             elif isinstance(value, float):
                 # see comment for int/float in _make_iterencode
-                yield _floatstr(float(value))
+                yield _floatstr(value)
             else:
                 if isinstance(value, (list, tuple)):
                     chunks = _iterencode_list(value, _current_indent_level)
@@ -412,10 +422,10 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
             yield 'false'
         elif isinstance(o, int):
             # see comment for int/float in _make_iterencode
-            yield str(int(o))
+            yield _intstr(o)
         elif isinstance(o, float):
             # see comment for int/float in _make_iterencode
-            yield _floatstr(float(o))
+            yield _floatstr(o)
         elif isinstance(o, (list, tuple)):
             yield from _iterencode_list(o, _current_indent_level)
         elif isinstance(o, dict):
