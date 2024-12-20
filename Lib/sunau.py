@@ -97,13 +97,17 @@ but when it is set to the correct value, the header does not have to
 be patched up.
 It is best to first set all parameters, perhaps possibly the
 compression type, and then write audio frames using writeframesraw.
-When all frames have been written, either call writeframes('') or
+When all frames have been written, either call writeframes(b'') or
 close() to patch up the sizes in the header.
 The close() method is called automatically when the class instance
 is destroyed.
 """
 
 from collections import namedtuple
+import warnings
+
+warnings._deprecated(__name__, remove=(3, 13))
+
 
 _sunau_params = namedtuple('_sunau_params',
                            'nchannels sampwidth framerate nframes comptype compname')
@@ -207,15 +211,14 @@ class Au_read:
             raise Error('unknown encoding')
         self._framerate = int(_read_u32(file))
         self._nchannels = int(_read_u32(file))
+        if not self._nchannels:
+            raise Error('bad # of channels')
         self._framesize = self._framesize * self._nchannels
         if self._hdr_size > 24:
             self._info = file.read(self._hdr_size - 24)
-            for i in range(len(self._info)):
-                if self._info[i] == b'\0':
-                    self._info = self._info[:i]
-                    break
+            self._info, _, _ = self._info.partition(b'\0')
         else:
-            self._info = ''
+            self._info = b''
         try:
             self._data_pos = file.tell()
         except (AttributeError, OSError):
@@ -275,7 +278,9 @@ class Au_read:
                 data = self._file.read(nframes * self._framesize)
             self._soundpos += len(data) // self._framesize
             if self._encoding == AUDIO_FILE_ENCODING_MULAW_8:
-                import audioop
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', category=DeprecationWarning)
+                    import audioop
                 data = audioop.ulaw2lin(data, self._sampwidth)
             return data
         return None             # XXX--not implemented yet
@@ -298,9 +303,11 @@ class Au_read:
         self._soundpos = pos
 
     def close(self):
-        if self._opened and self._file:
-            self._file.close()
-        self._file = None
+        file = self._file
+        if file:
+            self._file = None
+            if self._opened:
+                file.close()
 
 class Au_write:
 
@@ -419,7 +426,9 @@ class Au_write:
             data = memoryview(data).cast('B')
         self._ensure_header_written()
         if self._comptype == 'ULAW':
-            import audioop
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=DeprecationWarning)
+                import audioop
             data = audioop.lin2ulaw(data, self._sampwidth)
         nframes = len(data) // self._framesize
         self._file.write(data)
@@ -441,9 +450,10 @@ class Au_write:
                     self._patchheader()
                 self._file.flush()
             finally:
-                if self._opened and self._file:
-                    self._file.close()
+                file = self._file
                 self._file = None
+                if self._opened:
+                    file.close()
 
     #
     # private methods
@@ -521,5 +531,3 @@ def open(f, mode=None):
         return Au_write(f)
     else:
         raise Error("mode must be 'r', 'rb', 'w', or 'wb'")
-
-openfp = open

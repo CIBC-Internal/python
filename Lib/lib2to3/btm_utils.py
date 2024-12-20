@@ -215,12 +215,11 @@ def reduce_tree(node, parent=None):
                 #reduce to None
                 new_node = None
             elif repeater_node.children[0].value == '+':
-                #reduce to a single occurence i.e. do nothing
+                #reduce to a single occurrence i.e. do nothing
                 pass
             else:
                 #TODO: handle {min, max} repeaters
                 raise NotImplementedError
-                pass
 
         #add children
         if details_node and new_node is not None:

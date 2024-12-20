@@ -1,12 +1,10 @@
 """Tests for the pdeps script in the Tools directory."""
 
 import os
-import sys
 import unittest
 import tempfile
-from test import support
 
-from test.test_tools import scriptsdir, skip_if_missing, import_tool
+from test.test_tools import skip_if_missing, import_tool
 
 skip_if_missing()
 
@@ -21,7 +19,7 @@ class PdepsTests(unittest.TestCase):
         # Issue #14492: m_import.match(line) can be None.
         with tempfile.TemporaryDirectory() as tmpdir:
             fn = os.path.join(tmpdir, 'foo')
-            with open(fn, 'w') as stream:
+            with open(fn, 'w', encoding='utf-8') as stream:
                 stream.write("#!/this/will/fail")
             self.pdeps.process(fn, {})
 

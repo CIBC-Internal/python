@@ -1,15 +1,15 @@
-.. highlightlang:: c
+.. highlight:: c
 
 .. _noneobject:
 
-The None Object
----------------
+The ``None`` Object
+-------------------
 
-.. index:: object: None
+.. index:: pair: object; None
 
 Note that the :c:type:`PyTypeObject` for ``None`` is not directly exposed in the
 Python/C API.  Since ``None`` is a singleton, testing for object identity (using
-``==`` in C) is sufficient. There is no :c:func:`PyNone_Check` function for the
+``==`` in C) is sufficient. There is no :c:func:`!PyNone_Check` function for the
 same reason.
 
 
@@ -23,4 +23,4 @@ same reason.
 .. c:macro:: Py_RETURN_NONE
 
    Properly handle returning :c:data:`Py_None` from within a C function (that is,
-   increment the reference count of None and return it.)
+   increment the reference count of ``None`` and return it.)

@@ -1,9 +1,13 @@
 from test import support
+from test.support import import_helper
 import unittest
-import sys
+import warnings
+
 
 # Skip test if nis module does not exist.
-nis = support.import_module('nis')
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    nis = import_helper.import_module('nis')
 
 
 class NisTests(unittest.TestCase):
@@ -36,8 +40,5 @@ class NisTests(unittest.TestCase):
             if done:
                 break
 
-def test_main():
-    support.run_unittest(NisTests)
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

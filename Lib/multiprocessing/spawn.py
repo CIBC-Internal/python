@@ -9,13 +9,13 @@
 #
 
 import os
-import pickle
 import sys
 import runpy
 import types
 
 from . import get_start_method, set_start_method
 from . import process
+from .context import reduction
 from . import util
 
 __all__ = ['_main', 'freeze_support', 'set_executable', 'get_executable',
@@ -30,20 +30,25 @@ if sys.platform != 'win32':
     WINEXE = False
     WINSERVICE = False
 else:
-    WINEXE = (sys.platform == 'win32' and getattr(sys, 'frozen', False))
-    WINSERVICE = sys.executable.lower().endswith("pythonservice.exe")
-
-if WINSERVICE:
-    _python_exe = os.path.join(sys.exec_prefix, 'python.exe')
-else:
-    _python_exe = sys.executable
+    WINEXE = getattr(sys, 'frozen', False)
+    WINSERVICE = sys.executable and sys.executable.lower().endswith("pythonservice.exe")
 
 def set_executable(exe):
     global _python_exe
-    _python_exe = exe
+    if exe is None:
+        _python_exe = exe
+    elif sys.platform == 'win32':
+        _python_exe = os.fsdecode(exe)
+    else:
+        _python_exe = os.fsencode(exe)
 
 def get_executable():
     return _python_exe
+
+if WINSERVICE:
+    set_executable(os.path.join(sys.exec_prefix, 'python.exe'))
+else:
+    set_executable(sys.executable)
 
 #
 #
@@ -86,37 +91,48 @@ def get_command_line(**kwds):
         prog = 'from multiprocessing.spawn import spawn_main; spawn_main(%s)'
         prog %= ', '.join('%s=%r' % item for item in kwds.items())
         opts = util._args_from_interpreter_flags()
-        return [_python_exe] + opts + ['-c', prog, '--multiprocessing-fork']
+        exe = get_executable()
+        return [exe] + opts + ['-c', prog, '--multiprocessing-fork']
 
 
 def spawn_main(pipe_handle, parent_pid=None, tracker_fd=None):
     '''
-    Run code specifed by data received over pipe
+    Run code specified by data received over pipe
     '''
-    assert is_forking(sys.argv)
+    assert is_forking(sys.argv), "Not forking"
     if sys.platform == 'win32':
         import msvcrt
-        from .reduction import steal_handle
-        new_handle = steal_handle(parent_pid, pipe_handle)
+        import _winapi
+
+        if parent_pid is not None:
+            source_process = _winapi.OpenProcess(
+                _winapi.SYNCHRONIZE | _winapi.PROCESS_DUP_HANDLE,
+                False, parent_pid)
+        else:
+            source_process = None
+        new_handle = reduction.duplicate(pipe_handle,
+                                         source_process=source_process)
         fd = msvcrt.open_osfhandle(new_handle, os.O_RDONLY)
+        parent_sentinel = source_process
     else:
-        from . import semaphore_tracker
-        semaphore_tracker._semaphore_tracker._fd = tracker_fd
+        from . import resource_tracker
+        resource_tracker._resource_tracker._fd = tracker_fd
         fd = pipe_handle
-    exitcode = _main(fd)
+        parent_sentinel = os.dup(pipe_handle)
+    exitcode = _main(fd, parent_sentinel)
     sys.exit(exitcode)
 
 
-def _main(fd):
+def _main(fd, parent_sentinel):
     with os.fdopen(fd, 'rb', closefd=True) as from_parent:
         process.current_process()._inheriting = True
         try:
-            preparation_data = pickle.load(from_parent)
+            preparation_data = reduction.pickle.load(from_parent)
             prepare(preparation_data)
-            self = pickle.load(from_parent)
+            self = reduction.pickle.load(from_parent)
         finally:
             del process.current_process()._inheriting
-    return self._bootstrap()
+    return self._bootstrap(parent_sentinel)
 
 
 def _check_not_importing_main():
@@ -134,7 +150,11 @@ def _check_not_importing_main():
                 ...
 
         The "freeze_support()" line can be omitted if the program
-        is not going to be frozen to produce an executable.''')
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        ''')
 
 
 def get_preparation_data(name):
@@ -218,7 +238,7 @@ def prepare(data):
         process.ORIGINAL_DIR = data['orig_dir']
 
     if 'start_method' in data:
-        set_start_method(data['start_method'])
+        set_start_method(data['start_method'], force=True)
 
     if 'init_main_from_name' in data:
         _fixup_main_from_name(data['init_main_from_name'])

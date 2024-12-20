@@ -27,10 +27,31 @@ option -r tells it to recurse down directories found inside
 explicitly given directories.
 """
 
+import warnings
+
+warnings._deprecated(__name__, remove=(3, 13))
+
 # The file structure is top-down except that the test program and its
 # subroutine come last.
 
 __all__ = ['what', 'whathdr']
+
+from collections import namedtuple
+
+SndHeaders = namedtuple('SndHeaders',
+                        'filetype framerate nchannels nframes sampwidth')
+
+SndHeaders.filetype.__doc__ = ("""The value for type indicates the data type
+and will be one of the strings 'aifc', 'aiff', 'au','hcom',
+'sndr', 'sndt', 'voc', 'wav', '8svx', 'sb', 'ub', or 'ul'.""")
+SndHeaders.framerate.__doc__ = ("""The sampling_rate will be either the actual
+value or 0 if unknown or difficult to decode.""")
+SndHeaders.nchannels.__doc__ = ("""The number of channels or 0 if it cannot be
+determined or if the value is difficult to decode.""")
+SndHeaders.nframes.__doc__ = ("""The value for frames will be either the number
+of frames or -1.""")
+SndHeaders.sampwidth.__doc__ = ("""Either the sample size in bits or
+'A' for A-LAW or 'U' for u-LAW.""")
 
 def what(filename):
     """Guess the type of a sound file."""
@@ -45,7 +66,7 @@ def whathdr(filename):
         for tf in tests:
             res = tf(h, f)
             if res:
-                return res
+                return SndHeaders(*res)
         return None
 
 
@@ -56,7 +77,10 @@ def whathdr(filename):
 tests = []
 
 def test_aifc(h, f):
-    import aifc
+    """AIFC and AIFF files"""
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', category=DeprecationWarning)
+        import aifc
     if not h.startswith(b'FORM'):
         return None
     if h[8:12] == b'AIFC':
@@ -77,6 +101,7 @@ tests.append(test_aifc)
 
 
 def test_au(h, f):
+    """AU and SND files"""
     if h.startswith(b'.snd'):
         func = get_long_be
     elif h[:4] in (b'\0ds.', b'dns.'):
@@ -110,6 +135,7 @@ tests.append(test_au)
 
 
 def test_hcom(h, f):
+    """HCOM file"""
     if h[65:69] != b'FSSD' or h[128:132] != b'HCOM':
         return None
     divisor = get_long_be(h[144:148])
@@ -123,6 +149,7 @@ tests.append(test_hcom)
 
 
 def test_voc(h, f):
+    """VOC file"""
     if not h.startswith(b'Creative Voice File\032'):
         return None
     sbseek = get_short_le(h[20:22])
@@ -137,13 +164,14 @@ tests.append(test_voc)
 
 
 def test_wav(h, f):
+    """WAV file"""
     import wave
     # 'RIFF' <len> 'WAVE' 'fmt ' <len>
     if not h.startswith(b'RIFF') or h[8:12] != b'WAVE' or h[12:16] != b'fmt ':
         return None
     f.seek(0)
     try:
-        w = wave.openfp(f, 'r')
+        w = wave.open(f, 'r')
     except (EOFError, wave.Error):
         return None
     return ('wav', w.getframerate(), w.getnchannels(),
@@ -153,6 +181,7 @@ tests.append(test_wav)
 
 
 def test_8svx(h, f):
+    """8SVX file"""
     if not h.startswith(b'FORM') or h[8:12] != b'8SVX':
         return None
     # Should decode it to get #channels -- assume always 1
@@ -162,6 +191,7 @@ tests.append(test_8svx)
 
 
 def test_sndt(h, f):
+    """SNDT file"""
     if h.startswith(b'SOUND'):
         nsamples = get_long_le(h[8:12])
         rate = get_short_le(h[20:22])
@@ -171,6 +201,7 @@ tests.append(test_sndt)
 
 
 def test_sndr(h, f):
+    """SNDR file"""
     if h.startswith(b'\0\0'):
         rate = get_short_le(h[2:4])
         if 4000 <= rate <= 25000:
@@ -224,7 +255,7 @@ def testall(list, recursive, toplevel):
             if recursive or toplevel:
                 print('recursing down:')
                 import glob
-                names = glob.glob(os.path.join(filename, '*'))
+                names = glob.glob(os.path.join(glob.escape(filename), '*'))
                 testall(names, recursive, 0)
             else:
                 print('*** directory (use -r) ***')

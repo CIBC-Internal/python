@@ -1,8 +1,12 @@
 import os
 import unittest
-from test import support
+from test.support import import_helper
+import warnings
 
-spwd = support.import_module('spwd')
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    spwd = import_helper.import_module('spwd')
 
 
 @unittest.skipUnless(hasattr(os, 'geteuid') and os.geteuid() == 0,
@@ -54,6 +58,19 @@ class TestSpwdRoot(unittest.TestCase):
             pass
         else:
             self.assertRaises(TypeError, spwd.getspnam, bytes_name)
+
+
+@unittest.skipUnless(hasattr(os, 'geteuid') and os.geteuid() != 0,
+                     'non-root user required')
+class TestSpwdNonRoot(unittest.TestCase):
+
+    def test_getspnam_exception(self):
+        name = 'bin'
+        try:
+            with self.assertRaises(PermissionError) as cm:
+                spwd.getspnam(name)
+        except KeyError as exc:
+            self.skipTest("spwd entry %r doesn't exist: %s" % (name, exc))
 
 
 if __name__ == "__main__":

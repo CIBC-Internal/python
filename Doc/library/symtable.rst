@@ -67,17 +67,10 @@ Examining Symbol Tables
       Return ``True`` if the block has nested namespaces within it.  These can
       be obtained with :meth:`get_children`.
 
-   .. method:: has_exec()
-
-      Return ``True`` if the block uses ``exec``.
-
-   .. method:: has_import_star()
-
-      Return ``True`` if the block uses a starred from-import.
-
    .. method:: get_identifiers()
 
-      Return a list of names of symbols in this table.
+      Return a view object containing the names of symbols in the table.
+      See the :ref:`documentation of view objects <dict-views>`.
 
    .. method:: lookup(name)
 
@@ -94,7 +87,7 @@ Examining Symbol Tables
 
 .. class:: Function
 
-   A namespace for a function or method.  This class inherits
+   A namespace for a function or method.  This class inherits from
    :class:`SymbolTable`.
 
    .. method:: get_parameters()
@@ -109,6 +102,10 @@ Examining Symbol Tables
 
       Return a tuple containing names of globals in this function.
 
+   .. method:: get_nonlocals()
+
+      Return a tuple containing names of nonlocals in this function.
+
    .. method:: get_frees()
 
       Return a tuple containing names of free variables in this function.
@@ -116,7 +113,7 @@ Examining Symbol Tables
 
 .. class:: Class
 
-   A namespace of a class.  This class inherits :class:`SymbolTable`.
+   A namespace of a class.  This class inherits from :class:`SymbolTable`.
 
    .. method:: get_methods()
 
@@ -148,6 +145,10 @@ Examining Symbol Tables
 
       Return ``True`` if the symbol is global.
 
+   .. method:: is_nonlocal()
+
+      Return ``True`` if the symbol is nonlocal.
+
    .. method:: is_declared_global()
 
       Return ``True`` if the symbol is declared global with a global statement.
@@ -155,6 +156,12 @@ Examining Symbol Tables
    .. method:: is_local()
 
       Return ``True`` if the symbol is local to its block.
+
+   .. method:: is_annotated()
+
+      Return ``True`` if the symbol is annotated.
+
+      .. versionadded:: 3.6
 
    .. method:: is_free()
 
@@ -188,5 +195,5 @@ Examining Symbol Tables
 
    .. method:: get_namespace()
 
-      Return the namespace bound to this name.  If more than one namespace is
-      bound, a :exc:`ValueError` is raised.
+      Return the namespace bound to this name. If more than one or no namespace
+      is bound to this name, a :exc:`ValueError` is raised.

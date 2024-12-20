@@ -3,11 +3,9 @@ import unittest
 import sys
 import os
 from io import BytesIO
-import subprocess
-from test.support import run_unittest
 
 from distutils import cygwinccompiler
-from distutils.cygwinccompiler import (CygwinCCompiler, check_config_h,
+from distutils.cygwinccompiler import (check_config_h,
                                        CONFIG_H_OK, CONFIG_H_NOTOK,
                                        CONFIG_H_UNCERTAIN, get_versions,
                                        get_msvcr)
@@ -148,8 +146,5 @@ class CygwinCCompilerTestCase(support.TempdirManager,
                        '[MSC v.1999 32 bits (Intel)]')
         self.assertRaises(ValueError, get_msvcr)
 
-def test_suite():
-    return unittest.makeSuite(CygwinCCompilerTestCase)
-
 if __name__ == '__main__':
-    run_unittest(test_suite())
+    unittest.main()

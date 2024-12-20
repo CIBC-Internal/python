@@ -1,11 +1,13 @@
-:mod:`msvcrt` -- Useful routines from the MS VC++ runtime
-=========================================================
+:mod:`msvcrt` --- Useful routines from the MS VC++ runtime
+==========================================================
 
 .. module:: msvcrt
    :platform: Windows
    :synopsis: Miscellaneous useful routines from the MS VC++ runtime.
+
 .. sectionauthor:: Fred L. Drake, Jr. <fdrake@acm.org>
 
+--------------
 
 These functions provide access to some useful capabilities on Windows platforms.
 Some higher-level modules use these functions to build the  Windows
@@ -18,7 +20,7 @@ documentation.
 The module implements both the normal and wide char variants of the console I/O
 api. The normal API deals only with ASCII characters and is of limited use
 for internationalized applications. The wide char API should be used where
-ever possible
+ever possible.
 
 .. versionchanged:: 3.3
    Operations in this module now raise :exc:`OSError` where :exc:`IOError`
@@ -36,9 +38,11 @@ File Operations
    Lock part of a file based on file descriptor *fd* from the C runtime.  Raises
    :exc:`OSError` on failure.  The locked region of the file extends from the
    current file position for *nbytes* bytes, and may continue beyond the end of the
-   file.  *mode* must be one of the :const:`LK_\*` constants listed below. Multiple
+   file.  *mode* must be one of the :const:`!LK_\*` constants listed below. Multiple
    regions in a file may be locked at the same time, but may not overlap.  Adjacent
    regions are not merged; they must be unlocked individually.
+
+   .. audit-event:: msvcrt.locking fd,mode,nbytes msvcrt.locking
 
 
 .. data:: LK_LOCK
@@ -75,11 +79,15 @@ File Operations
    and :const:`os.O_TEXT`.  The returned file descriptor may be used as a parameter
    to :func:`os.fdopen` to create a file object.
 
+   .. audit-event:: msvcrt.open_osfhandle handle,flags msvcrt.open_osfhandle
+
 
 .. function:: get_osfhandle(fd)
 
    Return the file handle for the file descriptor *fd*.  Raises :exc:`OSError` if
    *fd* is not recognized.
+
+   .. audit-event:: msvcrt.get_osfhandle fd msvcrt.get_osfhandle
 
 
 .. _msvcrt-console:
@@ -90,7 +98,7 @@ Console I/O
 
 .. function:: kbhit()
 
-   Return true if a keypress is waiting to be read.
+   Return ``True`` if a keypress is waiting to be read.
 
 
 .. function:: getch()
@@ -149,4 +157,19 @@ Other Functions
 .. function:: heapmin()
 
    Force the :c:func:`malloc` heap to clean itself up and return unused blocks to
-   the operating system.  On failure, this raises :exc:`OSError`.
+   the operating system. On failure, this raises :exc:`OSError`.
+
+
+.. data:: CRT_ASSEMBLY_VERSION
+
+   The CRT Assembly version, from the :file:`crtassem.h` header file.
+
+
+.. data:: VC_ASSEMBLY_PUBLICKEYTOKEN
+
+   The VC Assembly public key token, from the :file:`crtassem.h` header file.
+
+
+.. data:: LIBRARIES_ASSEMBLY_NAME_PREFIX
+
+   The Libraries Assembly name prefix, from the :file:`crtassem.h` header file.

@@ -65,12 +65,12 @@ initialize_aggregate(
 
 		arg->size		= ALIGN(arg->size, curalign);
 		arg->size		+= (*ptr)->size;
-		arg->alignment	= (arg->alignment > curalign) ? 
+		arg->alignment	= (arg->alignment > curalign) ?
 			arg->alignment : curalign;
 #else
 		arg->size		= ALIGN(arg->size, (*ptr)->alignment);
 		arg->size		+= (*ptr)->size;
-		arg->alignment	= (arg->alignment > (*ptr)->alignment) ? 
+		arg->alignment	= (arg->alignment > (*ptr)->alignment) ?
 			arg->alignment : (*ptr)->alignment;
 #endif
 
@@ -102,7 +102,7 @@ initialize_aggregate(
 /* Perform machine independent ffi_cif preparation, then call
    machine dependent routine. */
 
-#if defined(X86_DARWIN)
+#if defined(X86_DARWIN) && !defined __x86_64__
 
 static inline bool
 struct_on_stack(
@@ -125,15 +125,15 @@ struct_on_stack(
 	}
 }
 
-#endif	// defined(X86_DARWIN)
+#endif	// defined(X86_DARWIN) && !defined __x86_64__
 
 // Arguments' ffi_type->alignment must be nonzero.
 ffi_status
 ffi_prep_cif(
-/*@out@*/ /*@partial@*/	ffi_cif*		cif, 
+/*@out@*/ /*@partial@*/	ffi_cif*		cif,
 						ffi_abi			abi,
-						unsigned int	nargs, 
-/*@dependent@*/ /*@out@*/ /*@partial@*/ ffi_type*	rtype, 
+						unsigned int	nargs,
+/*@dependent@*/ /*@out@*/ /*@partial@*/ ffi_type*	rtype,
 /*@dependent@*/			ffi_type**		atypes)
 {
 	unsigned int	bytes	= 0;
@@ -184,7 +184,7 @@ ffi_prep_cif(
 		if ((*ptr)->alignment == 0)
 			return FFI_BAD_TYPEDEF;
 
-		/* Perform a sanity check on the argument type, do this 
+		/* Perform a sanity check on the argument type, do this
 		check after the initialization.  */
 		FFI_ASSERT_VALID_TYPE(*ptr);
 

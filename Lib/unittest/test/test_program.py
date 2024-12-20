@@ -2,9 +2,11 @@ import io
 
 import os
 import sys
+import subprocess
 from test import support
 import unittest
 import unittest.test
+from unittest.test.test_result import BufferedWriter
 
 
 class Test_TestProgram(unittest.TestCase):
@@ -56,9 +58,20 @@ class Test_TestProgram(unittest.TestCase):
 
     class FooBar(unittest.TestCase):
         def testPass(self):
-            assert True
+            pass
         def testFail(self):
-            assert False
+            raise AssertionError
+        def testError(self):
+            1/0
+        @unittest.skip('skipping')
+        def testSkipped(self):
+            raise AssertionError
+        @unittest.expectedFailure
+        def testExpectedFailure(self):
+            raise AssertionError
+        @unittest.expectedFailure
+        def testUnexpectedSuccess(self):
+            pass
 
     class FooBarLoader(unittest.TestLoader):
         """Test loader that returns a suite containing FooBar."""
@@ -103,30 +116,52 @@ class Test_TestProgram(unittest.TestCase):
                           program.testNames)
 
     def test_NonExit(self):
+        stream = BufferedWriter()
         program = unittest.main(exit=False,
                                 argv=["foobar"],
-                                testRunner=unittest.TextTestRunner(stream=io.StringIO()),
+                                testRunner=unittest.TextTestRunner(stream=stream),
                                 testLoader=self.FooBarLoader())
         self.assertTrue(hasattr(program, 'result'))
-
+        out = stream.getvalue()
+        self.assertIn('\nFAIL: testFail ', out)
+        self.assertIn('\nERROR: testError ', out)
+        self.assertIn('\nUNEXPECTED SUCCESS: testUnexpectedSuccess ', out)
+        expected = ('\n\nFAILED (failures=1, errors=1, skipped=1, '
+                    'expected failures=1, unexpected successes=1)\n')
+        self.assertTrue(out.endswith(expected))
 
     def test_Exit(self):
+        stream = BufferedWriter()
         self.assertRaises(
             SystemExit,
             unittest.main,
             argv=["foobar"],
-            testRunner=unittest.TextTestRunner(stream=io.StringIO()),
+            testRunner=unittest.TextTestRunner(stream=stream),
             exit=True,
             testLoader=self.FooBarLoader())
-
+        out = stream.getvalue()
+        self.assertIn('\nFAIL: testFail ', out)
+        self.assertIn('\nERROR: testError ', out)
+        self.assertIn('\nUNEXPECTED SUCCESS: testUnexpectedSuccess ', out)
+        expected = ('\n\nFAILED (failures=1, errors=1, skipped=1, '
+                    'expected failures=1, unexpected successes=1)\n')
+        self.assertTrue(out.endswith(expected))
 
     def test_ExitAsDefault(self):
+        stream = BufferedWriter()
         self.assertRaises(
             SystemExit,
             unittest.main,
             argv=["foobar"],
-            testRunner=unittest.TextTestRunner(stream=io.StringIO()),
+            testRunner=unittest.TextTestRunner(stream=stream),
             testLoader=self.FooBarLoader())
+        out = stream.getvalue()
+        self.assertIn('\nFAIL: testFail ', out)
+        self.assertIn('\nERROR: testError ', out)
+        self.assertIn('\nUNEXPECTED SUCCESS: testUnexpectedSuccess ', out)
+        expected = ('\n\nFAILED (failures=1, errors=1, skipped=1, '
+                    'expected failures=1, unexpected successes=1)\n')
+        self.assertTrue(out.endswith(expected))
 
 
 class InitialisableProgram(unittest.TestProgram):
@@ -134,6 +169,7 @@ class InitialisableProgram(unittest.TestProgram):
     result = None
     verbosity = 1
     defaultTest = None
+    tb_locals = False
     testRunner = None
     testLoader = unittest.defaultTestLoader
     module = '__main__'
@@ -147,18 +183,20 @@ RESULT = object()
 class FakeRunner(object):
     initArgs = None
     test = None
-    raiseError = False
+    raiseError = 0
 
     def __init__(self, **kwargs):
         FakeRunner.initArgs = kwargs
         if FakeRunner.raiseError:
-            FakeRunner.raiseError = False
+            FakeRunner.raiseError -= 1
             raise TypeError
 
     def run(self, test):
         FakeRunner.test = test
         return RESULT
 
+
+@support.requires_subprocess()
 class TestCommandLineArgs(unittest.TestCase):
 
     def setUp(self):
@@ -166,7 +204,7 @@ class TestCommandLineArgs(unittest.TestCase):
         self.program.createTests = lambda: None
         FakeRunner.initArgs = None
         FakeRunner.test = None
-        FakeRunner.raiseError = False
+        FakeRunner.raiseError = 0
 
     def testVerbosity(self):
         program = self.program
@@ -185,8 +223,6 @@ class TestCommandLineArgs(unittest.TestCase):
         program = self.program
         for arg, attr in (('buffer', 'buffer'), ('failfast', 'failfast'),
                       ('catch', 'catchbreak')):
-            if attr == 'catch' and not hasInstallHandler:
-                continue
 
             setattr(program, attr, None)
             program.parseArgs([None])
@@ -256,6 +292,7 @@ class TestCommandLineArgs(unittest.TestCase):
         self.assertEqual(FakeRunner.initArgs, {'verbosity': 'verbosity',
                                                 'failfast': 'failfast',
                                                 'buffer': 'buffer',
+                                                'tb_locals': False,
                                                 'warnings': 'warnings'})
         self.assertEqual(FakeRunner.test, 'test')
         self.assertIs(program.result, RESULT)
@@ -274,10 +311,25 @@ class TestCommandLineArgs(unittest.TestCase):
         self.assertEqual(FakeRunner.test, 'test')
         self.assertIs(program.result, RESULT)
 
+    def test_locals(self):
+        program = self.program
+
+        program.testRunner = FakeRunner
+        program.parseArgs([None, '--locals'])
+        self.assertEqual(True, program.tb_locals)
+        program.runTests()
+        self.assertEqual(FakeRunner.initArgs, {'buffer': False,
+                                               'failfast': False,
+                                               'tb_locals': True,
+                                               'verbosity': 1,
+                                               'warnings': None})
+
     def testRunTestsOldRunnerClass(self):
         program = self.program
 
-        FakeRunner.raiseError = True
+        # Two TypeErrors are needed to fall all the way back to old-style
+        # runners - one to fail tb_locals, one to fail buffer etc.
+        FakeRunner.raiseError = 2
         program.testRunner = FakeRunner
         program.verbosity = 'verbosity'
         program.failfast = 'failfast'
@@ -390,6 +442,35 @@ class TestCommandLineArgs(unittest.TestCase):
         # identifier (we have a regex for this in loader.py)
         # for invalid filenames should we raise a useful error rather than
         # leaving the current error message (import of filename fails) in place?
+
+    def testParseArgsSelectedTestNames(self):
+        program = self.program
+        argv = ['progname', '-k', 'foo', '-k', 'bar', '-k', '*pat*']
+
+        program.createTests = lambda: None
+        program.parseArgs(argv)
+
+        self.assertEqual(program.testNamePatterns, ['*foo*', '*bar*', '*pat*'])
+
+    def testSelectedTestNamesFunctionalTest(self):
+        def run_unittest(args):
+            # Use -E to ignore PYTHONSAFEPATH env var
+            cmd = [sys.executable, '-E', '-m', 'unittest'] + args
+            p = subprocess.Popen(cmd,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, cwd=os.path.dirname(__file__))
+            with p:
+                _, stderr = p.communicate()
+            return stderr.decode()
+
+        t = '_test_warnings'
+        self.assertIn('Ran 7 tests', run_unittest([t]))
+        self.assertIn('Ran 7 tests', run_unittest(['-k', 'TestWarnings', t]))
+        self.assertIn('Ran 7 tests', run_unittest(['discover', '-p', '*_test*', '-k', 'TestWarnings']))
+        self.assertIn('Ran 2 tests', run_unittest(['-k', 'f', t]))
+        self.assertIn('Ran 7 tests', run_unittest(['-k', 't', t]))
+        self.assertIn('Ran 3 tests', run_unittest(['-k', '*t', t]))
+        self.assertIn('Ran 7 tests', run_unittest(['-k', '*test_warnings.*Warning*', t]))
+        self.assertIn('Ran 1 test', run_unittest(['-k', '*test_warnings.*warning*', t]))
 
 
 if __name__ == '__main__':

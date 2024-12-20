@@ -3,16 +3,12 @@
 import unittest
 import sys
 import os
-import tempfile
-import shutil
-from test.support import run_unittest
+from test.support import requires_zlib
 
 from distutils.core import Distribution
 from distutils.command.bdist_rpm import bdist_rpm
 from distutils.tests import support
 from distutils.spawn import find_executable
-from distutils import spawn
-from distutils.errors import DistutilsExecError
 
 SETUP_PY = """\
 from distutils.core import setup
@@ -48,10 +44,14 @@ class BuildRpmTestCase(support.TempdirManager,
     # spurious sdtout/stderr output under Mac OS X
     @unittest.skipUnless(sys.platform.startswith('linux'),
                          'spurious sdtout/stderr output under Mac OS X')
+    @requires_zlib()
     @unittest.skipIf(find_executable('rpm') is None,
                      'the rpm command is not found')
     @unittest.skipIf(find_executable('rpmbuild') is None,
                      'the rpmbuild command is not found')
+    # import foo fails with safe path
+    @unittest.skipIf(sys.flags.safe_path,
+                     'PYTHONSAFEPATH changes default sys.path')
     def test_quiet(self):
         # let's create a package
         tmp_dir = self.mkdtemp()
@@ -90,13 +90,17 @@ class BuildRpmTestCase(support.TempdirManager,
     # spurious sdtout/stderr output under Mac OS X
     @unittest.skipUnless(sys.platform.startswith('linux'),
                          'spurious sdtout/stderr output under Mac OS X')
+    @requires_zlib()
     # http://bugs.python.org/issue1533164
     @unittest.skipIf(find_executable('rpm') is None,
                      'the rpm command is not found')
     @unittest.skipIf(find_executable('rpmbuild') is None,
                      'the rpmbuild command is not found')
+    # import foo fails with safe path
+    @unittest.skipIf(sys.flags.safe_path,
+                     'PYTHONSAFEPATH changes default sys.path')
     def test_no_optimize_flag(self):
-        # let's create a package that brakes bdist_rpm
+        # let's create a package that breaks bdist_rpm
         tmp_dir = self.mkdtemp()
         os.environ['HOME'] = tmp_dir   # to confine dir '.rpmdb' creation
         pkg_dir = os.path.join(tmp_dir, 'foo')
@@ -130,8 +134,5 @@ class BuildRpmTestCase(support.TempdirManager,
 
         os.remove(os.path.join(pkg_dir, 'dist', 'foo-0.1-1.noarch.rpm'))
 
-def test_suite():
-    return unittest.makeSuite(BuildRpmTestCase)
-
 if __name__ == '__main__':
-    run_unittest(test_suite())
+    unittest.main()

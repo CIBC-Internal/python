@@ -1,3 +1,7 @@
+import doctest
+import unittest
+
+
 doctests = """
 
 Unpack tuple
@@ -55,7 +59,7 @@ Unpacking non-sequence
     >>> a, b, c = 7
     Traceback (most recent call last):
       ...
-    TypeError: 'int' object is not iterable
+    TypeError: cannot unpack non-iterable int object
 
 Unpacking tuple of wrong size
 
@@ -76,7 +80,7 @@ Unpacking sequence too short
     >>> a, b, c, d = Seq()
     Traceback (most recent call last):
       ...
-    ValueError: need more than 3 values to unpack
+    ValueError: not enough values to unpack (expected 4, got 3)
 
 Unpacking sequence too long
 
@@ -117,14 +121,51 @@ error)
       ...
     test.test_unpack.BozoError
 
+Allow unpacking empty iterables
+
+    >>> () = []
+    >>> [] = ()
+    >>> [] = []
+    >>> () = ()
+
+Unpacking non-iterables should raise TypeError
+
+    >>> () = 42
+    Traceback (most recent call last):
+      ...
+    TypeError: cannot unpack non-iterable int object
+
+Unpacking to an empty iterable should raise ValueError
+
+    >>> () = [42]
+    Traceback (most recent call last):
+      ...
+    ValueError: too many values to unpack (expected 0)
+
 """
 
 __test__ = {'doctests' : doctests}
 
-def test_main(verbose=False):
-    from test import support
-    from test import test_unpack
-    support.run_doctest(test_unpack, verbose)
+def load_tests(loader, tests, pattern):
+    tests.addTest(doctest.DocTestSuite())
+    return tests
+
+
+class TestCornerCases(unittest.TestCase):
+    def test_extended_oparg_not_ignored(self):
+        # https://github.com/python/cpython/issues/91625
+        target = "(" + "y,"*400 + ")"
+        code = f"""def unpack_400(x):
+            {target} = x
+            return y
+        """
+        ns = {}
+        exec(code, ns)
+        unpack_400 = ns["unpack_400"]
+        # Warm up the function for quickening (PEP 659)
+        for _ in range(30):
+            y = unpack_400(range(400))
+            self.assertEqual(y, 399)
 
 if __name__ == "__main__":
-    test_main(verbose=True)
+    unittest.main()

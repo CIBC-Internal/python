@@ -4,6 +4,17 @@
 .. module:: email.header
    :synopsis: Representing non-ASCII headers
 
+**Source code:** :source:`Lib/email/header.py`
+
+--------------
+
+This module is part of the legacy (``Compat32``) email API.  In the current API
+encoding and decoding of headers is handled transparently by the
+dictionary-like API of the :class:`~email.message.EmailMessage` class.  In
+addition to uses in legacy code, this module can be useful in applications that
+need to completely control the character sets used when encoding headers.
+
+The remaining text in this section is the original documentation of the module.
 
 :rfc:`2822` is the base standard that describes the format of email messages.
 It derives from the older :rfc:`822` standard which came into widespread use at
@@ -105,7 +116,7 @@ Here is the :class:`Header` class description:
       if *s* is a byte string.
 
 
-   .. method:: encode(splitchars=';, \\t', maxlinelen=None, linesep='\\n')
+   .. method:: encode(splitchars=';, \t', maxlinelen=None, linesep='\n')
 
       Encode a message header into an RFC-compliant format, possibly wrapping
       long lines and encapsulating non-ASCII parts in base64 or quoted-printable

@@ -36,11 +36,11 @@ ecre = re.compile(r'''
   =\?                   # literal =?
   (?P<charset>[^?]*?)   # non-greedy up to the next ? is the charset
   \?                    # literal ?
-  (?P<encoding>[qb])    # either a "q" or a "b", case insensitive
+  (?P<encoding>[qQbB])  # either a "q" or a "b", case insensitive
   \?                    # literal ?
   (?P<encoded>.*?)      # non-greedy up to the next ?= is the encoded string
   \?=                   # literal ?=
-  ''', re.VERBOSE | re.IGNORECASE | re.MULTILINE)
+  ''', re.VERBOSE | re.MULTILINE)
 
 # Field name regexp, including trailing colon, but not separating whitespace,
 # according to RFC 2822.  Character range is from tilde to exclamation mark.
@@ -49,15 +49,13 @@ fcre = re.compile(r'[\041-\176]+:$')
 
 # Find a header embedded in a putative header value.  Used to check for
 # header injection attack.
-_embeded_header = re.compile(r'\n[^ \t]+:')
+_embedded_header = re.compile(r'\n[^ \t]+:')
 
 
-
 # Helpers
 _max_append = email.quoprimime._max_append
 
 
-
 def decode_header(header):
     """Decode a message header value without converting charset.
 
@@ -152,7 +150,6 @@ def decode_header(header):
     return collapsed
 
 
-
 def make_header(decoded_seq, maxlinelen=None, header_name=None,
                 continuation_ws=' '):
     """Create a Header from a sequence of pairs as returned by decode_header()
@@ -175,7 +172,6 @@ def make_header(decoded_seq, maxlinelen=None, header_name=None,
     return h
 
 
-
 class Header:
     def __init__(self, s=None, charset=None,
                  maxlinelen=None, header_name=None,
@@ -261,9 +257,6 @@ class Header:
         # ourselves to a unicode (of the unencoded header value), swap the
         # args and do another comparison.
         return other == str(self)
-
-    def __ne__(self, other):
-        return not self == other
 
     def append(self, s, charset=None, errors='strict'):
         """Append a string to the MIME header.
@@ -388,7 +381,7 @@ class Header:
         if self._chunks:
             formatter.add_transition()
         value = formatter._str(linesep)
-        if _embeded_header.search(value):
+        if _embedded_header.search(value):
             raise HeaderParseError("header value appears to contain "
                 "an embedded header: {!r}".format(value))
         return value
@@ -412,7 +405,6 @@ class Header:
         self._chunks = chunks
 
 
-
 class _ValueFormatter:
     def __init__(self, headerlen, maxlen, continuation_ws, splitchars):
         self._maxlen = maxlen
@@ -434,7 +426,7 @@ class _ValueFormatter:
         if end_of_line != (' ', ''):
             self._current_line.push(*end_of_line)
         if len(self._current_line) > 0:
-            if self._current_line.is_onlyws():
+            if self._current_line.is_onlyws() and self._lines:
                 self._lines[-1] += str(self._current_line)
             else:
                 self._lines.append(str(self._current_line))

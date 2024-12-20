@@ -1,8 +1,6 @@
 """Tests for distutils.pypirc.pypirc."""
-import sys
 import os
 import unittest
-import tempfile
 
 from distutils.core import PyPIRCCommand
 from distutils.core import Distribution
@@ -10,7 +8,6 @@ from distutils.log import set_threshold
 from distutils.log import WARN
 
 from distutils.tests import support
-from test.support import run_unittest
 
 PYPIRC = """\
 [distutils]
@@ -18,6 +15,7 @@ PYPIRC = """\
 index-servers =
     server1
     server2
+    server3
 
 [server1]
 username:me
@@ -28,6 +26,10 @@ username:meagain
 password: secret
 realm:acme
 repository:http://another.pypi/
+
+[server3]
+username:cbiggles
+password:yh^%#rest-of-my-password
 """
 
 PYPIRC_OLD = """\
@@ -47,16 +49,17 @@ password:xxx
 """
 
 
-class PyPIRCCommandTestCase(support.TempdirManager,
+class BasePyPIRCCommandTestCase(support.TempdirManager,
                             support.LoggingSilencer,
                             support.EnvironGuard,
                             unittest.TestCase):
 
     def setUp(self):
         """Patches the environment."""
-        super(PyPIRCCommandTestCase, self).setUp()
+        super(BasePyPIRCCommandTestCase, self).setUp()
         self.tmp_dir = self.mkdtemp()
         os.environ['HOME'] = self.tmp_dir
+        os.environ['USERPROFILE'] = self.tmp_dir
         self.rc = os.path.join(self.tmp_dir, '.pypirc')
         self.dist = Distribution()
 
@@ -73,7 +76,10 @@ class PyPIRCCommandTestCase(support.TempdirManager,
     def tearDown(self):
         """Removes the patch."""
         set_threshold(self.old_threshold)
-        super(PyPIRCCommandTestCase, self).tearDown()
+        super(BasePyPIRCCommandTestCase, self).tearDown()
+
+
+class PyPIRCCommandTestCase(BasePyPIRCCommandTestCase):
 
     def test_server_registration(self):
         # This test makes sure PyPIRCCommand knows how to:
@@ -87,7 +93,7 @@ class PyPIRCCommandTestCase(support.TempdirManager,
 
         config = list(sorted(config.items()))
         waited = [('password', 'secret'), ('realm', 'pypi'),
-                  ('repository', 'https://pypi.python.org/pypi'),
+                  ('repository', 'https://upload.pypi.org/legacy/'),
                   ('server', 'server1'), ('username', 'me')]
         self.assertEqual(config, waited)
 
@@ -96,7 +102,7 @@ class PyPIRCCommandTestCase(support.TempdirManager,
         config = cmd._read_pypirc()
         config = list(sorted(config.items()))
         waited = [('password', 'secret'), ('realm', 'pypi'),
-                  ('repository', 'https://pypi.python.org/pypi'),
+                  ('repository', 'https://upload.pypi.org/legacy/'),
                   ('server', 'server-login'), ('username', 'tarek')]
         self.assertEqual(config, waited)
 
@@ -113,8 +119,19 @@ class PyPIRCCommandTestCase(support.TempdirManager,
         finally:
             f.close()
 
-def test_suite():
-    return unittest.makeSuite(PyPIRCCommandTestCase)
+    def test_config_interpolation(self):
+        # using the % character in .pypirc should not raise an error (#20120)
+        self.write_file(self.rc, PYPIRC)
+        cmd = self._cmd(self.dist)
+        cmd.repository = 'server3'
+        config = cmd._read_pypirc()
+
+        config = list(sorted(config.items()))
+        waited = [('password', 'yh^%#rest-of-my-password'), ('realm', 'pypi'),
+                  ('repository', 'https://upload.pypi.org/legacy/'),
+                  ('server', 'server3'), ('username', 'cbiggles')]
+        self.assertEqual(config, waited)
+
 
 if __name__ == "__main__":
-    run_unittest(test_suite())
+    unittest.main()

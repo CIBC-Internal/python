@@ -145,7 +145,7 @@ def decode(input, output, header=False):
                 new = new + c; i = i+1
             elif i+1 == n and not partial:
                 partial = 1; break
-            elif i+1 < n and line[i+1] == ESCAPE:
+            elif i+1 < n and line[i+1:i+2] == ESCAPE:
                 new = new + ESCAPE; i = i+2
             elif i+2 < n and ishex(line[i+1:i+2]) and ishex(line[i+2:i+3]):
                 new = new + bytes((unhex(line[i+1:i+3]),)); i = i+3
@@ -204,11 +204,11 @@ def main():
         print("-t: quote tabs")
         print("-d: decode; default encode")
         sys.exit(2)
-    deco = 0
-    tabs = 0
+    deco = False
+    tabs = False
     for o, a in opts:
-        if o == '-t': tabs = 1
-        if o == '-d': deco = 1
+        if o == '-t': tabs = True
+        if o == '-d': deco = True
     if tabs and deco:
         sys.stdout = sys.stderr
         print("-t and -d are mutually exclusive")

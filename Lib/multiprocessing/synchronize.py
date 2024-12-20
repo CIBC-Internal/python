@@ -15,8 +15,7 @@ import threading
 import sys
 import tempfile
 import _multiprocessing
-
-from time import time as _time
+import time
 
 from . import context
 from . import process
@@ -51,8 +50,8 @@ class SemLock(object):
     def __init__(self, kind, value, maxvalue, *, ctx):
         if ctx is None:
             ctx = context._default_context.get_context()
-        name = ctx.get_start_method()
-        unlink_now = sys.platform == 'win32' or name == 'fork'
+        self._is_fork_ctx = ctx.get_start_method() == 'fork'
+        unlink_now = sys.platform == 'win32' or self._is_fork_ctx
         for i in range(100):
             try:
                 sl = self._semlock = _multiprocessing.SemLock(
@@ -77,16 +76,16 @@ class SemLock(object):
             # We only get here if we are on Unix with forking
             # disabled.  When the object is garbage collected or the
             # process shuts down we unlink the semaphore name
-            from .semaphore_tracker import register
-            register(self._semlock.name)
+            from .resource_tracker import register
+            register(self._semlock.name, "semaphore")
             util.Finalize(self, SemLock._cleanup, (self._semlock.name,),
                           exitpriority=0)
 
     @staticmethod
     def _cleanup(name):
-        from .semaphore_tracker import unregister
+        from .resource_tracker import unregister
         sem_unlink(name)
-        unregister(name)
+        unregister(name, "semaphore")
 
     def _make_methods(self):
         self.acquire = self._semlock.acquire
@@ -104,6 +103,11 @@ class SemLock(object):
         if sys.platform == 'win32':
             h = context.get_spawning_popen().duplicate_for_child(sl.handle)
         else:
+            if self._is_fork_ctx:
+                raise RuntimeError('A SemLock created in a fork context is being '
+                                   'shared with a process in a spawn context. This is '
+                                   'not supported. Please use the same context to create '
+                                   'multiprocessing objects and Process.')
             h = sl.handle
         return (h, sl.kind, sl.maxvalue, sl.name)
 
@@ -111,6 +115,8 @@ class SemLock(object):
         self._semlock = _multiprocessing.SemLock._rebuild(*state)
         util.debug('recreated blocker with handle %r' % state[0])
         self._make_methods()
+        # Ensure that deserialized SemLock can be serialized again (gh-108520).
+        self._is_fork_ctx = False
 
     @staticmethod
     def _make_name():
@@ -134,7 +140,7 @@ class Semaphore(SemLock):
             value = self._semlock._get_value()
         except Exception:
             value = 'unknown'
-        return '<Semaphore(value=%s)>' % value
+        return '<%s(value=%s)>' % (self.__class__.__name__, value)
 
 #
 # Bounded semaphore
@@ -150,8 +156,8 @@ class BoundedSemaphore(Semaphore):
             value = self._semlock._get_value()
         except Exception:
             value = 'unknown'
-        return '<BoundedSemaphore(value=%s, maxvalue=%s)>' % \
-               (value, self._semlock.maxvalue)
+        return '<%s(value=%s, maxvalue=%s)>' % \
+               (self.__class__.__name__, value, self._semlock.maxvalue)
 
 #
 # Non-recursive lock
@@ -176,7 +182,7 @@ class Lock(SemLock):
                 name = 'SomeOtherProcess'
         except Exception:
             name = 'unknown'
-        return '<Lock(owner=%s)>' % name
+        return '<%s(owner=%s)>' % (self.__class__.__name__, name)
 
 #
 # Recursive lock
@@ -202,7 +208,7 @@ class RLock(SemLock):
                 name, count = 'SomeOtherProcess', 'nonzero'
         except Exception:
             name, count = 'unknown', 'unknown'
-        return '<RLock(%s, %s)>' % (name, count)
+        return '<%s(%s, %s)>' % (self.__class__.__name__, name, count)
 
 #
 # Condition variable
@@ -243,7 +249,7 @@ class Condition(object):
                            self._woken_count._semlock._get_value())
         except Exception:
             num_waiters = 'unknown'
-        return '<Condition(%s, %s)>' % (self._lock, num_waiters)
+        return '<%s(%s, %s)>' % (self.__class__.__name__, self._lock, num_waiters)
 
     def wait(self, timeout=None):
         assert self._lock._semlock._is_mine(), \
@@ -268,35 +274,21 @@ class Condition(object):
             for i in range(count):
                 self._lock.acquire()
 
-    def notify(self):
+    def notify(self, n=1):
         assert self._lock._semlock._is_mine(), 'lock is not owned'
-        assert not self._wait_semaphore.acquire(False)
-
-        # to take account of timeouts since last notify() we subtract
-        # woken_count from sleeping_count and rezero woken_count
-        while self._woken_count.acquire(False):
-            res = self._sleeping_count.acquire(False)
-            assert res
-
-        if self._sleeping_count.acquire(False): # try grabbing a sleeper
-            self._wait_semaphore.release()      # wake up one sleeper
-            self._woken_count.acquire()         # wait for the sleeper to wake
-
-            # rezero _wait_semaphore in case a timeout just happened
-            self._wait_semaphore.acquire(False)
-
-    def notify_all(self):
-        assert self._lock._semlock._is_mine(), 'lock is not owned'
-        assert not self._wait_semaphore.acquire(False)
+        assert not self._wait_semaphore.acquire(
+            False), ('notify: Should not have been able to acquire '
+                     + '_wait_semaphore')
 
         # to take account of timeouts since last notify*() we subtract
         # woken_count from sleeping_count and rezero woken_count
         while self._woken_count.acquire(False):
             res = self._sleeping_count.acquire(False)
-            assert res
+            assert res, ('notify: Bug in sleeping_count.acquire'
+                         + '- res should not be False')
 
         sleepers = 0
-        while self._sleeping_count.acquire(False):
+        while sleepers < n and self._sleeping_count.acquire(False):
             self._wait_semaphore.release()        # wake up one sleeper
             sleepers += 1
 
@@ -308,18 +300,21 @@ class Condition(object):
             while self._wait_semaphore.acquire(False):
                 pass
 
+    def notify_all(self):
+        self.notify(n=sys.maxsize)
+
     def wait_for(self, predicate, timeout=None):
         result = predicate()
         if result:
             return result
         if timeout is not None:
-            endtime = _time() + timeout
+            endtime = time.monotonic() + timeout
         else:
             endtime = None
             waittime = None
         while not result:
             if endtime is not None:
-                waittime = endtime - _time()
+                waittime = endtime - time.monotonic()
                 if waittime <= 0:
                     break
             self.wait(waittime)
@@ -337,34 +332,24 @@ class Event(object):
         self._flag = ctx.Semaphore(0)
 
     def is_set(self):
-        self._cond.acquire()
-        try:
+        with self._cond:
             if self._flag.acquire(False):
                 self._flag.release()
                 return True
             return False
-        finally:
-            self._cond.release()
 
     def set(self):
-        self._cond.acquire()
-        try:
+        with self._cond:
             self._flag.acquire(False)
             self._flag.release()
             self._cond.notify_all()
-        finally:
-            self._cond.release()
 
     def clear(self):
-        self._cond.acquire()
-        try:
+        with self._cond:
             self._flag.acquire(False)
-        finally:
-            self._cond.release()
 
     def wait(self, timeout=None):
-        self._cond.acquire()
-        try:
+        with self._cond:
             if self._flag.acquire(False):
                 self._flag.release()
             else:
@@ -374,9 +359,10 @@ class Event(object):
                 self._flag.release()
                 return True
             return False
-        finally:
-            self._cond.release()
 
+    def __repr__(self) -> str:
+        set_status = 'set' if self.is_set() else 'unset'
+        return f"<{type(self).__qualname__} at {id(self):#x} {set_status}>"
 #
 # Barrier
 #

@@ -1,10 +1,12 @@
+.. _argparse-tutorial:
+
 *****************
 Argparse Tutorial
 *****************
 
 :author: Tshepang Lekhonkhobe
 
-.. _argparse-tutorial:
+.. currentmodule:: argparse
 
 This tutorial is intended to be a gentle introduction to :mod:`argparse`, the
 recommended command-line parsing module in the Python standard library.
@@ -12,7 +14,7 @@ recommended command-line parsing module in the Python standard library.
 .. note::
 
    There are two other modules that fulfill the same task, namely
-   :mod:`getopt` (an equivalent for :c:func:`getopt` from the C
+   :mod:`getopt` (an equivalent for ``getopt()`` from the C
    language) and the deprecated :mod:`optparse`.
    Note also that :mod:`argparse` is based on :mod:`optparse`,
    and therefore very similar in terms of usage.
@@ -24,7 +26,7 @@ Concepts
 Let's show the sort of functionality that we are going to explore in this
 introductory tutorial by making use of the :command:`ls` command:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ ls
    cpython  devguide  prog.py  pypy  rm-unused-function.patch
@@ -77,13 +79,13 @@ Let us start with a very simple example which does (almost) nothing::
 
 Following is a result of running the code:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py
    $ python3 prog.py --help
    usage: prog.py [-h]
 
-   optional arguments:
+   options:
      -h, --help  show this help message and exit
    $ python3 prog.py --verbose
    usage: prog.py [-h]
@@ -119,7 +121,7 @@ An example::
 
 And running the code:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py
    usage: prog.py [-h] echo
@@ -130,20 +132,20 @@ And running the code:
    positional arguments:
      echo
 
-   optional arguments:
+   options:
      -h, --help  show this help message and exit
    $ python3 prog.py foo
    foo
 
 Here is what's happening:
 
-* We've added the :meth:`add_argument` method, which is what we use to specify
+* We've added the :meth:`~ArgumentParser.add_argument` method, which is what we use to specify
   which command-line options the program is willing to accept. In this case,
   I've named it ``echo`` so that it's in line with its function.
 
 * Calling our program now requires us to specify an option.
 
-* The :meth:`parse_args` method actually returns some data from the
+* The :meth:`~ArgumentParser.parse_args` method actually returns some data from the
   options specified, in this case, ``echo``.
 
 * The variable is some form of 'magic' that :mod:`argparse` performs for free
@@ -164,7 +166,7 @@ by reading the source code. So, let's make it a bit more useful::
 
 And we get:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py -h
    usage: prog.py [-h] echo
@@ -172,7 +174,7 @@ And we get:
    positional arguments:
      echo        echo the string you use here
 
-   optional arguments:
+   options:
      -h, --help  show this help message and exit
 
 Now, how about doing something even more useful::
@@ -185,7 +187,7 @@ Now, how about doing something even more useful::
 
 Following is a result of running the code:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4
    Traceback (most recent call last):
@@ -206,7 +208,7 @@ give it as strings, unless we tell it otherwise. So, let's tell
 
 Following is a result of running the code:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4
    16
@@ -221,7 +223,7 @@ before proceeding.
 Introducing Optional arguments
 ==============================
 
-So far we, have been playing with positional arguments. Let us
+So far we have been playing with positional arguments. Let us
 have a look on how to add optional ones::
 
    import argparse
@@ -233,7 +235,7 @@ have a look on how to add optional ones::
 
 And the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py --verbosity 1
    verbosity turned on
@@ -241,7 +243,7 @@ And the output:
    $ python3 prog.py --help
    usage: prog.py [-h] [--verbosity VERBOSITY]
 
-   optional arguments:
+   options:
      -h, --help            show this help message and exit
      --verbosity VERBOSITY
                            increase output verbosity
@@ -256,7 +258,7 @@ Here is what is happening:
 
 * To show that the option is actually optional, there is no error when running
   the program without it. Note that by default, if an optional argument isn't
-  used, the relevant variable, in this case :attr:`args.verbosity`, is
+  used, the relevant variable, in this case ``args.verbosity``, is
   given ``None`` as a value, which is the reason it fails the truth
   test of the :keyword:`if` statement.
 
@@ -279,7 +281,7 @@ Let's modify the code accordingly::
 
 And the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py --verbose
    verbosity turned on
@@ -289,7 +291,7 @@ And the output:
    $ python3 prog.py --help
    usage: prog.py [-h] [--verbose]
 
-   optional arguments:
+   options:
      -h, --help  show this help message and exit
      --verbose   increase output verbosity
 
@@ -299,7 +301,7 @@ Here is what is happening:
   We even changed the name of the option to match that idea.
   Note that we now specify a new keyword, ``action``, and give it the value
   ``"store_true"``. This means that, if the option is specified,
-  assign the value ``True`` to :data:`args.verbose`.
+  assign the value ``True`` to ``args.verbose``.
   Not specifying it implies ``False``.
 
 * It complains when you specify a value, in true spirit of what flags
@@ -325,14 +327,14 @@ versions of the options. It's quite simple::
 
 And here goes:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py -v
    verbosity turned on
    $ python3 prog.py --help
    usage: prog.py [-h] [-v]
 
-   optional arguments:
+   options:
      -h, --help     show this help message and exit
      -v, --verbose  increase output verbosity
 
@@ -353,13 +355,13 @@ Our program keeps growing in complexity::
    args = parser.parse_args()
    answer = args.square**2
    if args.verbose:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    else:
        print(answer)
 
 And now the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py
    usage: prog.py [-h] [-v] square
@@ -387,15 +389,15 @@ multiple verbosity values, and actually get to use them::
    args = parser.parse_args()
    answer = args.square**2
    if args.verbosity == 2:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    elif args.verbosity == 1:
-       print("{}^2 == {}".format(args.square, answer))
+       print(f"{args.square}^2 == {answer}")
    else:
        print(answer)
 
 And the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4
    16
@@ -421,15 +423,15 @@ Let's fix it by restricting the values the ``--verbosity`` option can accept::
    args = parser.parse_args()
    answer = args.square**2
    if args.verbosity == 2:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    elif args.verbosity == 1:
-       print("{}^2 == {}".format(args.square, answer))
+       print(f"{args.square}^2 == {answer}")
    else:
        print(answer)
 
 And the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4 -v 3
    usage: prog.py [-h] [-v {0,1,2}] square
@@ -440,7 +442,7 @@ And the output:
    positional arguments:
      square                display a square of a given number
 
-   optional arguments:
+   options:
      -h, --help            show this help message and exit
      -v {0,1,2}, --verbosity {0,1,2}
                            increase output verbosity
@@ -461,16 +463,17 @@ verbosity argument (check the output of ``python --help``)::
    args = parser.parse_args()
    answer = args.square**2
    if args.verbosity == 2:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    elif args.verbosity == 1:
-       print("{}^2 == {}".format(args.square, answer))
+       print(f"{args.square}^2 == {answer}")
    else:
        print(answer)
 
 We have introduced another action, "count",
-to count the number of occurrences of a specific optional arguments:
+to count the number of occurrences of specific options.
 
-.. code-block:: sh
+
+.. code-block:: shell-session
 
    $ python3 prog.py 4
    16
@@ -489,7 +492,7 @@ to count the number of occurrences of a specific optional arguments:
    positional arguments:
      square           display a square of a given number
 
-   optional arguments:
+   options:
      -h, --help       show this help message and exit
      -v, --verbosity  increase output verbosity
    $ python3 prog.py 4 -vvv
@@ -503,15 +506,15 @@ to count the number of occurrences of a specific optional arguments:
 * Now here's a demonstration of what the "count" action gives. You've probably
   seen this sort of usage before.
 
-* And, just like the "store_true" action, if you don't specify the ``-v`` flag,
-  that flag is considered to have ``None`` value.
+* And if you don't specify the ``-v`` flag, that flag is considered to have
+  ``None`` value.
 
 * As should be expected, specifying the long form of the flag, we should get
   the same output.
 
 * Sadly, our help output isn't very informative on the new ability our script
   has acquired, but that can always be fixed by improving the documentation for
-  out script (e.g. via the ``help`` keyword argument).
+  our script (e.g. via the ``help`` keyword argument).
 
 * That last output exposes a bug in our program.
 
@@ -529,15 +532,15 @@ Let's fix::
 
    # bugfix: replace == with >=
    if args.verbosity >= 2:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    elif args.verbosity >= 1:
-       print("{}^2 == {}".format(args.square, answer))
+       print(f"{args.square}^2 == {answer}")
    else:
        print(answer)
 
 And this is what it gives:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4 -vvv
    the square of 4 equals 16
@@ -547,7 +550,8 @@ And this is what it gives:
    Traceback (most recent call last):
      File "prog.py", line 11, in <module>
        if args.verbosity >= 2:
-   TypeError: unorderable types: NoneType() >= int()
+   TypeError: '>=' not supported between instances of 'NoneType' and 'int'
+
 
 * First output went well, and fixes the bug we had before.
   That is, we want any value >= 2 to be as verbose as possible.
@@ -565,9 +569,9 @@ Let's fix that bug::
    args = parser.parse_args()
    answer = args.square**2
    if args.verbosity >= 2:
-       print("the square of {} equals {}".format(args.square, answer))
+       print(f"the square of {args.square} equals {answer}")
    elif args.verbosity >= 1:
-       print("{}^2 == {}".format(args.square, answer))
+       print(f"{args.square}^2 == {answer}")
    else:
        print(answer)
 
@@ -580,7 +584,7 @@ it gets the ``None`` value, and that cannot be compared to an int value
 
 And:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4
    16
@@ -605,15 +609,15 @@ not just squares::
    args = parser.parse_args()
    answer = args.x**args.y
    if args.verbosity >= 2:
-       print("{} to the power {} equals {}".format(args.x, args.y, answer))
+       print(f"{args.x} to the power {args.y} equals {answer}")
    elif args.verbosity >= 1:
-       print("{}^{} == {}".format(args.x, args.y, answer))
+       print(f"{args.x}^{args.y} == {answer}")
    else:
        print(answer)
 
 Output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py
    usage: prog.py [-h] [-v] x y
@@ -625,7 +629,7 @@ Output:
      x                the base
      y                the exponent
 
-   optional arguments:
+   options:
      -h, --help       show this help message and exit
      -v, --verbosity
    $ python3 prog.py 4 2 -v
@@ -644,14 +648,14 @@ to display *more* text instead::
    args = parser.parse_args()
    answer = args.x**args.y
    if args.verbosity >= 2:
-       print("Running '{}'".format(__file__))
+       print(f"Running '{__file__}'")
    if args.verbosity >= 1:
-       print("{}^{} == ".format(args.x, args.y), end="")
+       print(f"{args.x}^{args.y} == ", end="")
    print(answer)
 
 Output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4 2
    16
@@ -667,7 +671,7 @@ Conflicting options
 
 So far, we have been working with two methods of an
 :class:`argparse.ArgumentParser` instance. Let's introduce a third one,
-:meth:`add_mutually_exclusive_group`. It allows for us to specify options that
+:meth:`~ArgumentParser.add_mutually_exclusive_group`. It allows for us to specify options that
 conflict with each other. Let's also change the rest of the program so that
 the new functionality makes more sense:
 we'll introduce the ``--quiet`` option,
@@ -687,14 +691,14 @@ which will be the opposite of the ``--verbose`` one::
    if args.quiet:
        print(answer)
    elif args.verbose:
-       print("{} to the power {} equals {}".format(args.x, args.y, answer))
+       print(f"{args.x} to the power {args.y} equals {answer}")
    else:
-       print("{}^{} == {}".format(args.x, args.y, answer))
+       print(f"{args.x}^{args.y} == {answer}")
 
 Our program is now simpler, and we've lost some functionality for the sake of
 demonstration. Anyways, here's the output:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py 4 2
    4^2 == 16
@@ -730,15 +734,15 @@ your program, just in case they don't know::
    if args.quiet:
        print(answer)
    elif args.verbose:
-       print("{} to the power {} equals {}".format(args.x, args.y, answer))
+       print(f"{args.x} to the power {args.y} equals {answer}")
    else:
-       print("{}^{} == {}".format(args.x, args.y, answer))
+       print(f"{args.x}^{args.y} == {answer}")
 
 Note that slight difference in the usage text. Note the ``[-v | -q]``,
 which tells us that we can either use ``-v`` or ``-q``,
 but not both at the same time:
 
-.. code-block:: sh
+.. code-block:: shell-session
 
    $ python3 prog.py --help
    usage: prog.py [-h] [-v | -q] x y
@@ -749,11 +753,64 @@ but not both at the same time:
      x              the base
      y              the exponent
 
-   optional arguments:
+   options:
      -h, --help     show this help message and exit
      -v, --verbose
      -q, --quiet
 
+
+How to translate the argparse output
+====================================
+
+The output of the :mod:`argparse` module such as its help text and error
+messages are all made translatable using the :mod:`gettext` module. This
+allows applications to easily localize messages produced by
+:mod:`argparse`. See also :ref:`i18n-howto`.
+
+For instance, in this :mod:`argparse` output:
+
+.. code-block:: shell-session
+
+   $ python prog.py --help
+   usage: prog.py [-h] [-v | -q] x y
+
+   calculate X to the power of Y
+
+   positional arguments:
+     x              the base
+     y              the exponent
+
+   options:
+     -h, --help     show this help message and exit
+     -v, --verbose
+     -q, --quiet
+
+The strings ``usage:``, ``positional arguments:``, ``options:`` and
+``show this help message and exit`` are all translatable.
+
+In order to translate these strings, they must first be extracted
+into a ``.po`` file. For example, using `Babel <https://babel.pocoo.org/>`__,
+run this command:
+
+.. code-block:: shell-session
+
+  $ pybabel extract -o messages.po /usr/lib/python3.12/argparse.py
+
+This command will extract all translatable strings from the :mod:`argparse`
+module and output them into a file named ``messages.po``. This command assumes
+that your Python installation is in ``/usr/lib``.
+
+You can find out the location of the :mod:`argparse` module on your system
+using this script::
+
+   import argparse
+   print(argparse.__file__)
+
+Once the messages in the ``.po`` file are translated and the translations are
+installed using :mod:`gettext`, :mod:`argparse` will be able to display the
+translated messages.
+
+To translate your own strings in the :mod:`argparse` output, use :mod:`gettext`.
 
 Conclusion
 ==========

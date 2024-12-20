@@ -8,7 +8,7 @@ from distutils.command.install_lib import install_lib
 from distutils.extension import Extension
 from distutils.tests import support
 from distutils.errors import DistutilsOptionError
-from test.support import run_unittest
+from test.support import requires_subprocess
 
 
 class InstallLibTestCase(support.TempdirManager,
@@ -35,6 +35,7 @@ class InstallLibTestCase(support.TempdirManager,
         self.assertEqual(cmd.optimize, 2)
 
     @unittest.skipIf(sys.dont_write_bytecode, 'byte-compile disabled')
+    @requires_subprocess()
     def test_byte_compile(self):
         project_dir, dist = self.create_dist()
         os.chdir(project_dir)
@@ -44,12 +45,11 @@ class InstallLibTestCase(support.TempdirManager,
         f = os.path.join(project_dir, 'foo.py')
         self.write_file(f, '# python file')
         cmd.byte_compile([f])
-        pyc_file = importlib.util.cache_from_source('foo.py',
-                                                    debug_override=True)
-        pyo_file = importlib.util.cache_from_source('foo.py',
-                                                    debug_override=False)
+        pyc_file = importlib.util.cache_from_source('foo.py', optimization='')
+        pyc_opt_file = importlib.util.cache_from_source('foo.py',
+                                                    optimization=cmd.optimize)
         self.assertTrue(os.path.exists(pyc_file))
-        self.assertTrue(os.path.exists(pyo_file))
+        self.assertTrue(os.path.exists(pyc_opt_file))
 
     def test_get_outputs(self):
         project_dir, dist = self.create_dist()
@@ -66,8 +66,8 @@ class InstallLibTestCase(support.TempdirManager,
         cmd.distribution.packages = ['spam']
         cmd.distribution.script_name = 'setup.py'
 
-        # get_outputs should return 4 elements: spam/__init__.py, .pyc and
-        # .pyo, foo.import-tag-abiflags.so / foo.pyd
+        # get_outputs should return 4 elements: spam/__init__.py and .pyc,
+        # foo.import-tag-abiflags.so / foo.pyd
         outputs = cmd.get_outputs()
         self.assertEqual(len(outputs), 4, outputs)
 
@@ -91,6 +91,7 @@ class InstallLibTestCase(support.TempdirManager,
         inputs = cmd.get_inputs()
         self.assertEqual(len(inputs), 2, inputs)
 
+    @requires_subprocess()
     def test_dont_write_bytecode(self):
         # makes sure byte_compile is not used
         dist = self.create_dist()[1]
@@ -105,11 +106,9 @@ class InstallLibTestCase(support.TempdirManager,
         finally:
             sys.dont_write_bytecode = old_dont_write_bytecode
 
-        self.assertIn('byte-compiling is disabled', self.logs[0][1])
+        self.assertIn('byte-compiling is disabled',
+                      self.logs[0][1] % self.logs[0][2])
 
-
-def test_suite():
-    return unittest.makeSuite(InstallLibTestCase)
 
 if __name__ == "__main__":
-    run_unittest(test_suite())
+    unittest.main()

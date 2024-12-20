@@ -13,7 +13,6 @@ from email.feedparser import FeedParser, BytesFeedParser
 from email._policybase import compat32
 
 
-
 class Parser:
     def __init__(self, _class=None, *, policy=compat32):
         """Parser of RFC 2822 and MIME email messages.
@@ -23,7 +22,7 @@ class Parser:
         textual representation of the message.
 
         The string must be formatted as a block of RFC 2822 headers and header
-        continuation lines, optionally preceeded by a `Unix-from' header.  The
+        continuation lines, optionally preceded by a `Unix-from' header.  The
         header block is terminated either by the end of the string or by a
         blank line.
 
@@ -68,7 +67,6 @@ class Parser:
         return self.parse(StringIO(text), headersonly=headersonly)
 
 
-
 class HeaderParser(Parser):
     def parse(self, fp, headersonly=True):
         return Parser.parse(self, fp, True)
@@ -76,7 +74,7 @@ class HeaderParser(Parser):
     def parsestr(self, text, headersonly=True):
         return Parser.parsestr(self, text, True)
 
-
+
 class BytesParser:
 
     def __init__(self, *args, **kw):
@@ -87,7 +85,7 @@ class BytesParser:
         textual representation of the message.
 
         The input must be formatted as a block of RFC 2822 headers and header
-        continuation lines, optionally preceeded by a `Unix-from' header.  The
+        continuation lines, optionally preceded by a `Unix-from' header.  The
         header block is terminated either by the end of the input or by a
         blank line.
 

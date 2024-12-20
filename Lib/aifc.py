@@ -121,7 +121,7 @@ but when it is set to the correct value, the header does not have to
 be patched up.
 It is best to first set all parameters, perhaps possibly the
 compression type, and then write audio frames using writeframesraw.
-When all frames have been written, either call writeframes('') or
+When all frames have been written, either call writeframes(b'') or
 close() to patch up the sizes in the header.
 Marks can be added anytime.  If there are any marks, you must call
 close() after all frames have been written.
@@ -138,7 +138,11 @@ import struct
 import builtins
 import warnings
 
-__all__ = ["Error", "open", "openfp"]
+__all__ = ["Error", "open"]
+
+
+warnings._deprecated(__name__, remove=(3, 13))
+
 
 class Error(Exception):
     pass
@@ -149,25 +153,25 @@ def _read_long(file):
     try:
         return struct.unpack('>l', file.read(4))[0]
     except struct.error:
-        raise EOFError
+        raise EOFError from None
 
 def _read_ulong(file):
     try:
         return struct.unpack('>L', file.read(4))[0]
     except struct.error:
-        raise EOFError
+        raise EOFError from None
 
 def _read_short(file):
     try:
         return struct.unpack('>h', file.read(2))[0]
     except struct.error:
-        raise EOFError
+        raise EOFError from None
 
 def _read_ushort(file):
     try:
         return struct.unpack('>H', file.read(2))[0]
     except struct.error:
-        raise EOFError
+        raise EOFError from None
 
 def _read_string(file):
     length = ord(file.read(1))
@@ -251,11 +255,22 @@ def _write_float(f, x):
     _write_ulong(f, himant)
     _write_ulong(f, lomant)
 
-from chunk import Chunk
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from chunk import Chunk
 from collections import namedtuple
 
 _aifc_params = namedtuple('_aifc_params',
                           'nchannels sampwidth framerate nframes comptype compname')
+
+_aifc_params.nchannels.__doc__ = 'Number of audio channels (1 for mono, 2 for stereo)'
+_aifc_params.sampwidth.__doc__ = 'Sample width in bytes'
+_aifc_params.framerate.__doc__ = 'Sampling frequency'
+_aifc_params.nframes.__doc__ = 'Number of audio frames'
+_aifc_params.comptype.__doc__ = 'Compression type ("NONE" for AIFF files)'
+_aifc_params.compname.__doc__ = ("""\
+A human-readable version of the compression type
+('not compressed' for AIFF files)""")
 
 
 class Aifc_read:
@@ -294,6 +309,8 @@ class Aifc_read:
     # _ssnd_chunk -- instantiation of a chunk class for the SSND chunk
     # _framesize -- size of one frame in the file
 
+    _file = None  # Set here since __del__ checks it
+
     def initfp(self, file):
         self._version = 0
         self._convert = None
@@ -311,6 +328,7 @@ class Aifc_read:
         else:
             raise Error('not an AIFF or AIFF-C file')
         self._comm_chunk_read = 0
+        self._ssnd_chunk = None
         while 1:
             self._ssnd_seek_needed = 1
             try:
@@ -335,9 +353,15 @@ class Aifc_read:
 
     def __init__(self, f):
         if isinstance(f, str):
-            f = builtins.open(f, 'rb')
-        # else, assume it is an open file object already
-        self.initfp(f)
+            file_object = builtins.open(f, 'rb')
+            try:
+                self.initfp(file_object)
+            except:
+                file_object.close()
+                raise
+        else:
+            # assume it is an open file object already
+            self.initfp(f)
 
     def __enter__(self):
         return self
@@ -356,7 +380,10 @@ class Aifc_read:
         self._soundpos = 0
 
     def close(self):
-        self._file.close()
+        file = self._file
+        if file is not None:
+            self._file = None
+            file.close()
 
     def tell(self):
         return self._soundpos
@@ -426,26 +453,42 @@ class Aifc_read:
     #
 
     def _alaw2lin(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         return audioop.alaw2lin(data, 2)
 
     def _ulaw2lin(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         return audioop.ulaw2lin(data, 2)
 
     def _adpcm2lin(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         if not hasattr(self, '_adpcmstate'):
             # first time
             self._adpcmstate = None
         data, self._adpcmstate = audioop.adpcm2lin(data, 2, self._adpcmstate)
         return data
 
+    def _sowt2lin(self, data):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
+        return audioop.byteswap(data, 2)
+
     def _read_comm_chunk(self, chunk):
         self._nchannels = _read_short(chunk)
         self._nframes = _read_long(chunk)
         self._sampwidth = (_read_short(chunk) + 7) // 8
         self._framerate = int(_read_float(chunk))
+        if self._sampwidth <= 0:
+            raise Error('bad sample width')
+        if self._nchannels <= 0:
+            raise Error('bad # of channels')
         self._framesize = self._nchannels * self._sampwidth
         if self._aifc:
             #DEBUG: SGI's soundeditor produces a bad size :-(
@@ -472,6 +515,8 @@ class Aifc_read:
                     self._convert = self._ulaw2lin
                 elif self._comptype in (b'alaw', b'ALAW'):
                     self._convert = self._alaw2lin
+                elif self._comptype in (b'sowt', b'SOWT'):
+                    self._convert = self._sowt2lin
                 else:
                     raise Error('unsupported compression type')
                 self._sampwidth = 2
@@ -529,18 +574,23 @@ class Aifc_write:
     # _datalength -- the size of the audio samples written to the header
     # _datawritten -- the size of the audio samples actually written
 
+    _file = None  # Set here since __del__ checks it
+
     def __init__(self, f):
         if isinstance(f, str):
-            filename = f
-            f = builtins.open(f, 'wb')
+            file_object = builtins.open(f, 'wb')
+            try:
+                self.initfp(file_object)
+            except:
+                file_object.close()
+                raise
+
+            # treat .aiff file extensions as non-compressed audio
+            if f.endswith('.aiff'):
+                self._aifc = 0
         else:
-            # else, assume it is an open file object already
-            filename = '???'
-        self.initfp(f)
-        if filename[-5:] == '.aiff':
-            self._aifc = 0
-        else:
-            self._aifc = 1
+            # assume it is an open file object already
+            self.initfp(f)
 
     def initfp(self, file):
         self._file = file
@@ -629,7 +679,7 @@ class Aifc_write:
         if self._nframeswritten:
             raise Error('cannot change parameters after starting to write')
         if comptype not in (b'NONE', b'ulaw', b'ULAW',
-                            b'alaw', b'ALAW', b'G722'):
+                            b'alaw', b'ALAW', b'G722', b'sowt', b'SOWT'):
             raise Error('unsupported compression type')
         self._comptype = comptype
         self._compname = compname
@@ -650,7 +700,7 @@ class Aifc_write:
         if self._nframeswritten:
             raise Error('cannot change parameters after starting to write')
         if comptype not in (b'NONE', b'ulaw', b'ULAW',
-                            b'alaw', b'ALAW', b'G722'):
+                            b'alaw', b'ALAW', b'G722', b'sowt', b'SOWT'):
             raise Error('unsupported compression type')
         self.setnchannels(nchannels)
         self.setsampwidth(sampwidth)
@@ -734,28 +784,43 @@ class Aifc_write:
     #
 
     def _lin2alaw(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         return audioop.lin2alaw(data, 2)
 
     def _lin2ulaw(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         return audioop.lin2ulaw(data, 2)
 
     def _lin2adpcm(self, data):
-        import audioop
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
         if not hasattr(self, '_adpcmstate'):
             self._adpcmstate = None
         data, self._adpcmstate = audioop.lin2adpcm(data, 2, self._adpcmstate)
         return data
 
+    def _lin2sowt(self, data):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=DeprecationWarning)
+            import audioop
+        return audioop.byteswap(data, 2)
+
     def _ensure_header_written(self, datasize):
         if not self._nframeswritten:
-            if self._comptype in (b'ULAW', b'ulaw', b'ALAW', b'alaw', b'G722'):
+            if self._comptype in (b'ULAW', b'ulaw',
+                b'ALAW', b'alaw', b'G722',
+                b'sowt', b'SOWT'):
                 if not self._sampwidth:
                     self._sampwidth = 2
                 if self._sampwidth != 2:
                     raise Error('sample width must be 2 when compressing '
-                                'with ulaw/ULAW, alaw/ALAW or G7.22 (ADPCM)')
+                                'with ulaw/ULAW, alaw/ALAW, sowt/SOWT '
+                                'or G7.22 (ADPCM)')
             if not self._nchannels:
                 raise Error('# channels not specified')
             if not self._sampwidth:
@@ -771,6 +836,8 @@ class Aifc_write:
             self._convert = self._lin2ulaw
         elif self._comptype in (b'alaw', b'ALAW'):
             self._convert = self._lin2alaw
+        elif self._comptype in (b'sowt', b'SOWT'):
+            self._convert = self._lin2sowt
 
     def _write_header(self, initlength):
         if self._aifc and self._comptype != b'NONE':
@@ -890,7 +957,6 @@ def open(f, mode=None):
     else:
         raise Error("mode must be 'r', 'rb', 'w', or 'wb'")
 
-openfp = open # B/W compatibility
 
 if __name__ == '__main__':
     import sys

@@ -5,7 +5,6 @@ import os
 
 from distutils.errors import DistutilsPlatformError
 from distutils.tests import support
-from test.support import run_unittest
 
 # A manifest with the only assembly reference being the msvcrt assembly, so
 # should have the assembly completely stripped.  Note that although the
@@ -125,7 +124,7 @@ class msvc9compilerTestCase(support.TempdirManager,
         self.assertRaises(KeyError, Reg.get_value, 'xxx', 'xxx')
 
         # looking for values that should exist on all
-        # windows registeries versions.
+        # windows registry versions.
         path = r'Control Panel\Desktop'
         v = Reg.get_value(path, 'dragfullwindows')
         self.assertIn(v, ('0', '1', '2'))
@@ -177,8 +176,5 @@ class msvc9compilerTestCase(support.TempdirManager,
         self.assertIsNone(got)
 
 
-def test_suite():
-    return unittest.makeSuite(msvc9compilerTestCase)
-
 if __name__ == "__main__":
-    run_unittest(test_suite())
+    unittest.main()

@@ -2,9 +2,12 @@
 A testcase which accesses *values* in a dll.
 """
 
+import _imp
+import importlib.util
 import unittest
 import sys
 from ctypes import *
+from test.support import import_helper
 
 import _ctypes_test
 
@@ -28,8 +31,7 @@ class ValuesTestCase(unittest.TestCase):
         ctdll = CDLL(_ctypes_test.__file__)
         self.assertRaises(ValueError, c_int.in_dll, ctdll, "Undefined_Symbol")
 
-@unittest.skipUnless(sys.platform == 'win32', 'Windows-specific test')
-class Win_ValuesTestCase(unittest.TestCase):
+class PythonValuesTestCase(unittest.TestCase):
     """This test only works when python itself is a dll/shared library"""
 
     def test_optimizeflag(self):
@@ -51,38 +53,44 @@ class Win_ValuesTestCase(unittest.TestCase):
         class struct_frozen(Structure):
             _fields_ = [("name", c_char_p),
                         ("code", POINTER(c_ubyte)),
-                        ("size", c_int)]
+                        ("size", c_int),
+                        ("is_package", c_int),
+                        ("get_code", POINTER(c_ubyte)),  # Function ptr
+                        ]
         FrozenTable = POINTER(struct_frozen)
 
-        ft = FrozenTable.in_dll(pythonapi, "PyImport_FrozenModules")
-        # ft is a pointer to the struct_frozen entries:
-        items = []
-        # _frozen_importlib changes size whenever importlib._bootstrap
-        # changes, so it gets a special case.  We should make sure it's
-        # found, but don't worry about its size too much.
-        _fzn_implib_seen = False
-        for entry in ft:
-            # This is dangerous. We *can* iterate over a pointer, but
-            # the loop will not terminate (maybe with an access
-            # violation;-) because the pointer instance has no size.
-            if entry.name is None:
-                break
+        modules = []
+        for group in ["Bootstrap", "Stdlib", "Test"]:
+            ft = FrozenTable.in_dll(pythonapi, f"_PyImport_Frozen{group}")
+            # ft is a pointer to the struct_frozen entries:
+            for entry in ft:
+                # This is dangerous. We *can* iterate over a pointer, but
+                # the loop will not terminate (maybe with an access
+                # violation;-) because the pointer instance has no size.
+                if entry.name is None:
+                    break
+                modname = entry.name.decode("ascii")
+                modules.append(modname)
+                with self.subTest(modname):
+                    if entry.size != 0:
+                        # Do a sanity check on entry.size and entry.code.
+                        self.assertGreater(abs(entry.size), 10)
+                        self.assertTrue([entry.code[i] for i in range(abs(entry.size))])
+                    # Check the module's package-ness.
+                    with import_helper.frozen_modules():
+                        spec = importlib.util.find_spec(modname)
+                    if entry.is_package:
+                        # It's a package.
+                        self.assertIsNotNone(spec.submodule_search_locations)
+                    else:
+                        self.assertIsNone(spec.submodule_search_locations)
 
-            if entry.name == b'_frozen_importlib':
-                _fzn_implib_seen = True
-                self.assertTrue(entry.size,
-                    "_frozen_importlib was reported as having no size")
-                continue
-            items.append((entry.name, entry.size))
-
-        expected = [(b"__hello__", 161),
-                    (b"__phello__", -161),
-                    (b"__phello__.spam", 161),
-                    ]
-        self.assertEqual(items, expected)
-
-        self.assertTrue(_fzn_implib_seen,
-            "_frozen_importlib wasn't found in PyImport_FrozenModules")
+        with import_helper.frozen_modules():
+            expected = _imp._frozen_module_names()
+        self.maxDiff = None
+        self.assertEqual(modules, expected,
+                         "_PyImport_FrozenBootstrap example "
+                         "in Doc/library/ctypes.rst may be out of date")
 
         from ctypes import _pointer_type_cache
         del _pointer_type_cache[struct_frozen]

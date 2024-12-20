@@ -1,12 +1,14 @@
 # tests for slice objects; in particular the indices method.
 
-import unittest
-from test import support
-from pickle import loads, dumps
-
 import itertools
 import operator
 import sys
+import unittest
+import weakref
+import copy
+
+from pickle import loads, dumps
+from test import support
 
 
 def evaluate_slice_index(arg):
@@ -80,7 +82,8 @@ class SliceTest(unittest.TestCase):
     def test_hash(self):
         # Verify clearing of SF bug #800796
         self.assertRaises(TypeError, hash, slice(5))
-        self.assertRaises(TypeError, slice(5).__hash__)
+        with self.assertRaises(TypeError):
+            slice(5).__hash__()
 
     def test_cmp(self):
         s1 = slice(1, 2, 3)
@@ -233,15 +236,58 @@ class SliceTest(unittest.TestCase):
         self.assertEqual(tmp, [(slice(1, 2), 42)])
 
     def test_pickle(self):
+        import pickle
+
         s = slice(10, 20, 3)
-        for protocol in (0,1,2):
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             t = loads(dumps(s, protocol))
             self.assertEqual(s, t)
             self.assertEqual(s.indices(15), t.indices(15))
             self.assertNotEqual(id(s), id(t))
 
-def test_main():
-    support.run_unittest(SliceTest)
+    def test_copy(self):
+        s = slice(1, 10)
+        c = copy.copy(s)
+        self.assertIs(s, c)
+
+        s = slice(1, 10, 2)
+        c = copy.copy(s)
+        self.assertIs(s, c)
+
+        # Corner case for mutable indices:
+        s = slice([1, 2], [3, 4], [5, 6])
+        c = copy.copy(s)
+        self.assertIs(s, c)
+        self.assertIs(s.start, c.start)
+        self.assertIs(s.stop, c.stop)
+        self.assertIs(s.step, c.step)
+
+    def test_deepcopy(self):
+        s = slice(1, 10)
+        c = copy.deepcopy(s)
+        self.assertEqual(s, c)
+
+        s = slice(1, 10, 2)
+        c = copy.deepcopy(s)
+        self.assertEqual(s, c)
+
+        # Corner case for mutable indices:
+        s = slice([1, 2], [3, 4], [5, 6])
+        c = copy.deepcopy(s)
+        self.assertIsNot(s, c)
+        self.assertEqual(s, c)
+        self.assertIsNot(s.start, c.start)
+        self.assertIsNot(s.stop, c.stop)
+        self.assertIsNot(s.step, c.step)
+
+    def test_cycle(self):
+        class myobj(): pass
+        o = myobj()
+        o.s = slice(o)
+        w = weakref.ref(o)
+        o = None
+        support.gc_collect()
+        self.assertIsNone(w())
 
 if __name__ == "__main__":
-    test_main()
+    unittest.main()

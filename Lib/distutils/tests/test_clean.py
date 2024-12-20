@@ -1,12 +1,9 @@
 """Tests for distutils.command.clean."""
-import sys
 import os
 import unittest
-import getpass
 
 from distutils.command.clean import clean
 from distutils.tests import support
-from test.support import run_unittest
 
 class cleanTestCase(support.TempdirManager,
                     support.LoggingSilencer,
@@ -44,8 +41,5 @@ class cleanTestCase(support.TempdirManager,
         cmd.ensure_finalized()
         cmd.run()
 
-def test_suite():
-    return unittest.makeSuite(cleanTestCase)
-
 if __name__ == "__main__":
-    run_unittest(test_suite())
+    unittest.main()

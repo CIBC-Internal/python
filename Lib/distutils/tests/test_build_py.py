@@ -9,7 +9,7 @@ from distutils.core import Distribution
 from distutils.errors import DistutilsFileError
 
 from distutils.tests import support
-from test.support import run_unittest
+from test.support import requires_subprocess
 
 
 class BuildPyTestCase(support.TempdirManager,
@@ -89,6 +89,7 @@ class BuildPyTestCase(support.TempdirManager,
             self.fail("failed package_data test when package_dir is ''")
 
     @unittest.skipIf(sys.dont_write_bytecode, 'byte-compile disabled')
+    @requires_subprocess()
     def test_byte_compile(self):
         project_dir, dist = self.create_dist(py_modules=['boiledeggs'])
         os.chdir(project_dir)
@@ -106,6 +107,7 @@ class BuildPyTestCase(support.TempdirManager,
                          ['boiledeggs.%s.pyc' % sys.implementation.cache_tag])
 
     @unittest.skipIf(sys.dont_write_bytecode, 'byte-compile disabled')
+    @requires_subprocess()
     def test_byte_compile_optimized(self):
         project_dir, dist = self.create_dist(py_modules=['boiledeggs'])
         os.chdir(project_dir)
@@ -120,8 +122,8 @@ class BuildPyTestCase(support.TempdirManager,
         found = os.listdir(cmd.build_lib)
         self.assertEqual(sorted(found), ['__pycache__', 'boiledeggs.py'])
         found = os.listdir(os.path.join(cmd.build_lib, '__pycache__'))
-        self.assertEqual(sorted(found),
-                         ['boiledeggs.%s.pyo' % sys.implementation.cache_tag])
+        expect = 'boiledeggs.{}.opt-1.pyc'.format(sys.implementation.cache_tag)
+        self.assertEqual(sorted(found), [expect])
 
     def test_dir_in_package_data(self):
         """
@@ -168,11 +170,9 @@ class BuildPyTestCase(support.TempdirManager,
         finally:
             sys.dont_write_bytecode = old_dont_write_bytecode
 
-        self.assertIn('byte-compiling is disabled', self.logs[0][1])
+        self.assertIn('byte-compiling is disabled',
+                      self.logs[0][1] % self.logs[0][2])
 
-
-def test_suite():
-    return unittest.makeSuite(BuildPyTestCase)
 
 if __name__ == "__main__":
-    run_unittest(test_suite())
+    unittest.main()

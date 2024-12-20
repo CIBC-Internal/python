@@ -3,15 +3,17 @@
 
 .. module:: tkinter.ttk
    :synopsis: Tk themed widget set
+
 .. sectionauthor:: Guilherme Polo <ggpolo@gmail.com>
 
+**Source code:** :source:`Lib/tkinter/ttk.py`
 
 .. index:: single: ttk
 
+--------------
+
 The :mod:`tkinter.ttk` module provides access to the Tk themed widget set,
-introduced in Tk 8.5. If Python has not been compiled against Tk 8.5, this
-module can still be accessed if *Tile* has been installed.  The former
-method using Tk 8.5 provides additional benefits including anti-aliased font
+introduced in Tk 8.5. It provides additional benefits including anti-aliased font
 rendering under X11 and window transparency (requiring a composition
 window manager on X11).
 
@@ -22,7 +24,7 @@ appearance.
 
 .. seealso::
 
-   `Tk Widget Styling Support <http://www.tcl.tk/cgi-bin/tct/tip/48>`_
+   `Tk Widget Styling Support <https://core.tcl.tk/tips/doc/trunk/tip/48.md>`_
       A document introducing theming support for Tk
 
 
@@ -54,7 +56,7 @@ for improved styling effects.
 
 .. seealso::
 
-   `Converting existing applications to use Tile widgets <http://tktable.sourceforge.net/tile/doc/converting.txt>`_
+   `Converting existing applications to use Tile widgets <https://tktable.sourceforge.net/tile/doc/converting.txt>`_
      A monograph (using Tcl terminology) about differences typically
      encountered when moving applications to use the new widgets.
 
@@ -62,13 +64,13 @@ for improved styling effects.
 Ttk Widgets
 -----------
 
-Ttk comes with 17 widgets, eleven of which already existed in tkinter:
+Ttk comes with 18 widgets, twelve of which already existed in tkinter:
 :class:`Button`, :class:`Checkbutton`, :class:`Entry`, :class:`Frame`,
 :class:`Label`, :class:`LabelFrame`, :class:`Menubutton`, :class:`PanedWindow`,
-:class:`Radiobutton`, :class:`Scale` and :class:`Scrollbar`. The other six are
-new: :class:`Combobox`, :class:`Notebook`, :class:`Progressbar`,
-:class:`Separator`, :class:`Sizegrip` and :class:`Treeview`. And all them are
-subclasses of :class:`Widget`.
+:class:`Radiobutton`, :class:`Scale`, :class:`Scrollbar`, and :class:`Spinbox`.
+The other six are new: :class:`Combobox`, :class:`Notebook`,
+:class:`Progressbar`, :class:`Separator`, :class:`Sizegrip` and
+:class:`Treeview`. And all them are subclasses of :class:`Widget`.
 
 Using the Ttk widgets gives the application an improved look and feel.
 As discussed above, there are differences in how the styling is coded.
@@ -100,34 +102,35 @@ themed widgets and is not supposed to be directly instantiated.
 Standard Options
 ^^^^^^^^^^^^^^^^
 
-All the :mod:`ttk` Widgets accepts the following options:
+All the :mod:`ttk` Widgets accept the following options:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +-----------+--------------------------------------------------------------+
-   | Option    | Description                                                  |
-   +===========+==============================================================+
-   | class     | Specifies the window class. The class is used when querying  |
-   |           | the option database for the window's other options, to       |
-   |           | determine the default bindtags for the window, and to select |
-   |           | the widget's default layout and style. This is a read-only   |
-   |           | which may only be specified when the window is created       |
-   +-----------+--------------------------------------------------------------+
-   | cursor    | Specifies the mouse cursor to be used for the widget. If set |
-   |           | to the empty string (the default), the cursor is inherited   |
-   |           | for the parent widget.                                       |
-   +-----------+--------------------------------------------------------------+
-   | takefocus | Determines whether the window accepts the focus during       |
-   |           | keyboard traversal. 0, 1 or an empty string is returned.     |
-   |           | If 0 is returned, it means that the window should be skipped |
-   |           | entirely during keyboard traversal. If 1, it means that the  |
-   |           | window should receive the input focus as long as it is       |
-   |           | viewable. And an empty string means that the traversal       |
-   |           | scripts make the decision about whether or not to focus      |
-   |           | on the window.                                               |
-   +-----------+--------------------------------------------------------------+
-   | style     | May be used to specify a custom widget style.                |
-   +-----------+--------------------------------------------------------------+
++-----------+--------------------------------------------------------------+
+| Option    | Description                                                  |
++===========+==============================================================+
+| class     | Specifies the window class. The class is used when querying  |
+|           | the option database for the window's other options, to       |
+|           | determine the default bindtags for the window, and to select |
+|           | the widget's default layout and style. This option is        |
+|           | read-only, and may only be specified when the window is      |
+|           | created.                                                     |
++-----------+--------------------------------------------------------------+
+| cursor    | Specifies the mouse cursor to be used for the widget. If set |
+|           | to the empty string (the default), the cursor is inherited   |
+|           | for the parent widget.                                       |
++-----------+--------------------------------------------------------------+
+| takefocus | Determines whether the window accepts the focus during       |
+|           | keyboard traversal. 0, 1 or an empty string is returned.     |
+|           | If 0 is returned, it means that the window should be skipped |
+|           | entirely during keyboard traversal. If 1, it means that the  |
+|           | window should receive the input focus as long as it is       |
+|           | viewable. And an empty string means that the traversal       |
+|           | scripts make the decision about whether or not to focus      |
+|           | on the window.                                               |
++-----------+--------------------------------------------------------------+
+| style     | May be used to specify a custom widget style.                |
++-----------+--------------------------------------------------------------+
 
 
 Scrollable Widget Options
@@ -136,24 +139,24 @@ Scrollable Widget Options
 The following options are supported by widgets that are controlled by a
 scrollbar.
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +----------------+---------------------------------------------------------+
-   | Option         | Description                                             |
-   +================+=========================================================+
-   | xscrollcommand | Used to communicate with horizontal scrollbars.         |
-   |                |                                                         |
-   |                | When the view in the widget's window change, the widget |
-   |                | will generate a Tcl command based on the scrollcommand. |
-   |                |                                                         |
-   |                | Usually this option consists of the method              |
-   |                | :meth:`Scrollbar.set` of some scrollbar. This will cause|
-   |                | the scrollbar to be updated whenever the view in the    |
-   |                | window changes.                                         |
-   +----------------+---------------------------------------------------------+
-   | yscrollcommand | Used to communicate with vertical scrollbars.           |
-   |                | For some more information, see above.                   |
-   +----------------+---------------------------------------------------------+
++----------------+---------------------------------------------------------+
+| Option         | Description                                             |
++================+=========================================================+
+| xscrollcommand | Used to communicate with horizontal scrollbars.         |
+|                |                                                         |
+|                | When the view in the widget's window change, the widget |
+|                | will generate a Tcl command based on the scrollcommand. |
+|                |                                                         |
+|                | Usually this option consists of the method              |
+|                | :meth:`Scrollbar.set` of some scrollbar. This will cause|
+|                | the scrollbar to be updated whenever the view in the    |
+|                | window changes.                                         |
++----------------+---------------------------------------------------------+
+| yscrollcommand | Used to communicate with vertical scrollbars.           |
+|                | For some more information, see above.                   |
++----------------+---------------------------------------------------------+
 
 
 Label Options
@@ -162,93 +165,93 @@ Label Options
 The following options are supported by labels, buttons and other button-like
 widgets.
 
-   .. tabularcolumns:: |l|p{0.7\linewidth}|
+.. tabularcolumns:: |l|p{0.7\linewidth}|
 
-   +--------------+-----------------------------------------------------------+
-   | Option       | Description                                               |
-   +==============+===========================================================+
-   | text         | Specifies a text string to be displayed inside the widget.|
-   +--------------+-----------------------------------------------------------+
-   | textvariable | Specifies a name whose value will be used in place of the |
-   |              | text option resource.                                     |
-   +--------------+-----------------------------------------------------------+
-   | underline    | If set, specifies the index (0-based) of a character to   |
-   |              | underline in the text string. The underline character is  |
-   |              | used for mnemonic activation.                             |
-   +--------------+-----------------------------------------------------------+
-   | image        | Specifies an image to display. This is a list of 1 or more|
-   |              | elements. The first element is the default image name. The|
-   |              | rest of the list if a sequence of statespec/value pairs as|
-   |              | defined by :meth:`Style.map`, specifying different images |
-   |              | to use when the widget is in a particular state or a      |
-   |              | combination of states. All images in the list should have |
-   |              | the same size.                                            |
-   +--------------+-----------------------------------------------------------+
-   | compound     | Specifies how to display the image relative to the text,  |
-   |              | in the case both text and images options are present.     |
-   |              | Valid values are:                                         |
-   |              |                                                           |
-   |              | * text: display text only                                 |
-   |              | * image: display image only                               |
-   |              | * top, bottom, left, right: display image above, below,   |
-   |              |   left of, or right of the text, respectively.            |
-   |              | * none: the default. display the image if present,        |
-   |              |   otherwise the text.                                     |
-   +--------------+-----------------------------------------------------------+
-   | width        | If greater than zero, specifies how much space, in        |
-   |              | character widths, to allocate for the text label, if less |
-   |              | than zero, specifies a minimum width. If zero or          |
-   |              | unspecified, the natural width of the text label is used. |
-   +--------------+-----------------------------------------------------------+
++--------------+-----------------------------------------------------------+
+| Option       | Description                                               |
++==============+===========================================================+
+| text         | Specifies a text string to be displayed inside the widget.|
++--------------+-----------------------------------------------------------+
+| textvariable | Specifies a name whose value will be used in place of the |
+|              | text option resource.                                     |
++--------------+-----------------------------------------------------------+
+| underline    | If set, specifies the index (0-based) of a character to   |
+|              | underline in the text string. The underline character is  |
+|              | used for mnemonic activation.                             |
++--------------+-----------------------------------------------------------+
+| image        | Specifies an image to display. This is a list of 1 or more|
+|              | elements. The first element is the default image name. The|
+|              | rest of the list if a sequence of statespec/value pairs as|
+|              | defined by :meth:`Style.map`, specifying different images |
+|              | to use when the widget is in a particular state or a      |
+|              | combination of states. All images in the list should have |
+|              | the same size.                                            |
++--------------+-----------------------------------------------------------+
+| compound     | Specifies how to display the image relative to the text,  |
+|              | in the case both text and images options are present.     |
+|              | Valid values are:                                         |
+|              |                                                           |
+|              | * text: display text only                                 |
+|              | * image: display image only                               |
+|              | * top, bottom, left, right: display image above, below,   |
+|              |   left of, or right of the text, respectively.            |
+|              | * none: the default. display the image if present,        |
+|              |   otherwise the text.                                     |
++--------------+-----------------------------------------------------------+
+| width        | If greater than zero, specifies how much space, in        |
+|              | character widths, to allocate for the text label, if less |
+|              | than zero, specifies a minimum width. If zero or          |
+|              | unspecified, the natural width of the text label is used. |
++--------------+-----------------------------------------------------------+
 
 
 Compatibility Options
 ^^^^^^^^^^^^^^^^^^^^^
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +--------+----------------------------------------------------------------+
-   | Option | Description                                                    |
-   +========+================================================================+
-   | state  | May be set to "normal" or "disabled" to control the "disabled" |
-   |        | state bit. This is a write-only option: setting it changes the |
-   |        | widget state, but the :meth:`Widget.state` method does not     |
-   |        | affect this option.                                            |
-   +--------+----------------------------------------------------------------+
++--------+----------------------------------------------------------------+
+| Option | Description                                                    |
++========+================================================================+
+| state  | May be set to "normal" or "disabled" to control the "disabled" |
+|        | state bit. This is a write-only option: setting it changes the |
+|        | widget state, but the :meth:`Widget.state` method does not     |
+|        | affect this option.                                            |
++--------+----------------------------------------------------------------+
 
 Widget States
 ^^^^^^^^^^^^^
 
 The widget state is a bitmap of independent state flags.
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +------------+-------------------------------------------------------------+
-   | Flag       | Description                                                 |
-   +============+=============================================================+
-   | active     | The mouse cursor is over the widget and pressing a mouse    |
-   |            | button will cause some action to occur                      |
-   +------------+-------------------------------------------------------------+
-   | disabled   | Widget is disabled under program control                    |
-   +------------+-------------------------------------------------------------+
-   | focus      | Widget has keyboard focus                                   |
-   +------------+-------------------------------------------------------------+
-   | pressed    | Widget is being pressed                                     |
-   +------------+-------------------------------------------------------------+
-   | selected   | "On", "true", or "current" for things like Checkbuttons and |
-   |            | radiobuttons                                                |
-   +------------+-------------------------------------------------------------+
-   | background | Windows and Mac have a notion of an "active" or foreground  |
-   |            | window. The *background* state is set for widgets in a      |
-   |            | background window, and cleared for those in the foreground  |
-   |            | window                                                      |
-   +------------+-------------------------------------------------------------+
-   | readonly   | Widget should not allow user modification                   |
-   +------------+-------------------------------------------------------------+
-   | alternate  | A widget-specific alternate display format                  |
-   +------------+-------------------------------------------------------------+
-   | invalid    | The widget's value is invalid                               |
-   +------------+-------------------------------------------------------------+
++------------+-------------------------------------------------------------+
+| Flag       | Description                                                 |
++============+=============================================================+
+| active     | The mouse cursor is over the widget and pressing a mouse    |
+|            | button will cause some action to occur                      |
++------------+-------------------------------------------------------------+
+| disabled   | Widget is disabled under program control                    |
++------------+-------------------------------------------------------------+
+| focus      | Widget has keyboard focus                                   |
++------------+-------------------------------------------------------------+
+| pressed    | Widget is being pressed                                     |
++------------+-------------------------------------------------------------+
+| selected   | "On", "true", or "current" for things like Checkbuttons and |
+|            | radiobuttons                                                |
++------------+-------------------------------------------------------------+
+| background | Windows and Mac have a notion of an "active" or foreground  |
+|            | window. The *background* state is set for widgets in a      |
+|            | background window, and cleared for those in the foreground  |
+|            | window                                                      |
++------------+-------------------------------------------------------------+
+| readonly   | Widget should not allow user modification                   |
++------------+-------------------------------------------------------------+
+| alternate  | A widget-specific alternate display format                  |
++------------+-------------------------------------------------------------+
+| invalid    | The widget's value is invalid                               |
++------------+-------------------------------------------------------------+
 
 A state specification is a sequence of state names, optionally prefixed with
 an exclamation point indicating that the bit is off.
@@ -283,7 +286,7 @@ methods :meth:`tkinter.Widget.cget` and :meth:`tkinter.Widget.configure`.
       Modify or inquire widget state. If *statespec* is specified, sets the
       widget state according to it and return a new *statespec* indicating
       which flags were changed. If *statespec* is not specified, returns
-      the currently-enabled state flags.
+      the currently enabled state flags.
 
    *statespec* will usually be a list or a tuple.
 
@@ -298,7 +301,7 @@ Besides the methods inherited from :class:`Widget`: :meth:`Widget.cget`,
 :meth:`Widget.configure`, :meth:`Widget.identify`, :meth:`Widget.instate`
 and :meth:`Widget.state`, and the following inherited from :class:`Entry`:
 :meth:`Entry.bbox`, :meth:`Entry.delete`, :meth:`Entry.icursor`,
-:meth:`Entry.index`, :meth:`Entry.inset`, :meth:`Entry.selection`,
+:meth:`Entry.index`, :meth:`Entry.insert`, :meth:`Entry.selection`,
 :meth:`Entry.xview`, it has some other methods, described at
 :class:`ttk.Combobox`.
 
@@ -308,43 +311,43 @@ Options
 
 This widget accepts the following specific options:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +-----------------+--------------------------------------------------------+
-   | Option          | Description                                            |
-   +=================+========================================================+
-   | exportselection | Boolean value. If set, the widget selection is linked  |
-   |                 | to the Window Manager selection (which can be returned |
-   |                 | by invoking Misc.selection_get, for example).          |
-   +-----------------+--------------------------------------------------------+
-   | justify         | Specifies how the text is aligned within the widget.   |
-   |                 | One of "left", "center", or "right".                   |
-   +-----------------+--------------------------------------------------------+
-   | height          | Specifies the height of the pop-down listbox, in rows. |
-   +-----------------+--------------------------------------------------------+
-   | postcommand     | A script (possibly registered with Misc.register) that |
-   |                 | is called immediately before displaying the values. It |
-   |                 | may specify which values to display.                   |
-   +-----------------+--------------------------------------------------------+
-   | state           | One of "normal", "readonly", or "disabled". In the     |
-   |                 | "readonly" state, the value may not be edited directly,|
-   |                 | and the user can only selection of the values from the |
-   |                 | dropdown list. In the "normal" state, the text field is|
-   |                 | directly editable. In the "disabled" state, no         |
-   |                 | interaction is possible.                               |
-   +-----------------+--------------------------------------------------------+
-   | textvariable    | Specifies a name whose value is linked to the widget   |
-   |                 | value. Whenever the value associated with that name    |
-   |                 | changes, the widget value is updated, and vice versa.  |
-   |                 | See :class:`tkinter.StringVar`.                        |
-   +-----------------+--------------------------------------------------------+
-   | values          | Specifies the list of values to display in the         |
-   |                 | drop-down listbox.                                     |
-   +-----------------+--------------------------------------------------------+
-   | width           | Specifies an integer value indicating the desired width|
-   |                 | of the entry window, in average-size characters of the |
-   |                 | widget's font.                                         |
-   +-----------------+--------------------------------------------------------+
++-----------------+--------------------------------------------------------+
+| Option          | Description                                            |
++=================+========================================================+
+| exportselection | Boolean value. If set, the widget selection is linked  |
+|                 | to the Window Manager selection (which can be returned |
+|                 | by invoking Misc.selection_get, for example).          |
++-----------------+--------------------------------------------------------+
+| justify         | Specifies how the text is aligned within the widget.   |
+|                 | One of "left", "center", or "right".                   |
++-----------------+--------------------------------------------------------+
+| height          | Specifies the height of the pop-down listbox, in rows. |
++-----------------+--------------------------------------------------------+
+| postcommand     | A script (possibly registered with Misc.register) that |
+|                 | is called immediately before displaying the values. It |
+|                 | may specify which values to display.                   |
++-----------------+--------------------------------------------------------+
+| state           | One of "normal", "readonly", or "disabled". In the     |
+|                 | "readonly" state, the value may not be edited directly,|
+|                 | and the user can only selection of the values from the |
+|                 | dropdown list. In the "normal" state, the text field is|
+|                 | directly editable. In the "disabled" state, no         |
+|                 | interaction is possible.                               |
++-----------------+--------------------------------------------------------+
+| textvariable    | Specifies a name whose value is linked to the widget   |
+|                 | value. Whenever the value associated with that name    |
+|                 | changes, the widget value is updated, and vice versa.  |
+|                 | See :class:`tkinter.StringVar`.                        |
++-----------------+--------------------------------------------------------+
+| values          | Specifies the list of values to display in the         |
+|                 | drop-down listbox.                                     |
++-----------------+--------------------------------------------------------+
+| width           | Specifies an integer value indicating the desired width|
+|                 | of the entry window, in average-size characters of the |
+|                 | widget's font.                                         |
++-----------------+--------------------------------------------------------+
 
 
 Virtual events
@@ -376,12 +379,93 @@ ttk.Combobox
       Sets the value of the combobox to *value*.
 
 
+Spinbox
+-------
+The :class:`ttk.Spinbox` widget is a :class:`ttk.Entry` enhanced with increment
+and decrement arrows.  It can be used for numbers or lists of string values.
+This widget is a subclass of :class:`Entry`.
+
+Besides the methods inherited from :class:`Widget`: :meth:`Widget.cget`,
+:meth:`Widget.configure`, :meth:`Widget.identify`, :meth:`Widget.instate`
+and :meth:`Widget.state`, and the following inherited from :class:`Entry`:
+:meth:`Entry.bbox`, :meth:`Entry.delete`, :meth:`Entry.icursor`,
+:meth:`Entry.index`, :meth:`Entry.insert`, :meth:`Entry.xview`,
+it has some other methods, described at :class:`ttk.Spinbox`.
+
+Options
+^^^^^^^
+
+This widget accepts the following specific options:
+
+.. tabularcolumns:: |l|L|
+
++----------------------+------------------------------------------------------+
+| Option               | Description                                          |
++======================+======================================================+
+| from                 | Float value.  If set, this is the minimum value to   |
+|                      | which the decrement button will decrement.  Must be  |
+|                      | spelled as ``from_`` when used as an argument, since |
+|                      | ``from`` is a Python keyword.                        |
++----------------------+------------------------------------------------------+
+| to                   | Float value.  If set, this is the maximum value to   |
+|                      | which the increment button will increment.           |
++----------------------+------------------------------------------------------+
+| increment            | Float value.  Specifies the amount which the         |
+|                      | increment/decrement buttons change the               |
+|                      | value. Defaults to 1.0.                              |
++----------------------+------------------------------------------------------+
+| values               | Sequence of string or float values.  If specified,   |
+|                      | the increment/decrement buttons will cycle through   |
+|                      | the items in this sequence rather than incrementing  |
+|                      | or decrementing numbers.                             |
+|                      |                                                      |
++----------------------+------------------------------------------------------+
+| wrap                 | Boolean value.  If ``True``, increment and decrement |
+|                      | buttons will cycle from the ``to`` value to the      |
+|                      | ``from`` value or the ``from`` value to the ``to``   |
+|                      | value, respectively.                                 |
++----------------------+------------------------------------------------------+
+| format               | String value.  This specifies the format of numbers  |
+|                      | set by the increment/decrement buttons.  It must be  |
+|                      | in the form "%W.Pf", where W is the padded width of  |
+|                      | the value, P is the precision, and '%' and 'f' are   |
+|                      | literal.                                             |
++----------------------+------------------------------------------------------+
+| command              | Python callable.  Will be called with no arguments   |
+|                      | whenever either of the increment or decrement buttons|
+|                      | are pressed.                                         |
+|                      |                                                      |
++----------------------+------------------------------------------------------+
+
+
+Virtual events
+^^^^^^^^^^^^^^
+
+The spinbox widget generates an **<<Increment>>** virtual event when the
+user presses <Up>, and a **<<Decrement>>** virtual event when the user
+presses <Down>.
+
+ttk.Spinbox
+^^^^^^^^^^^^
+
+.. class:: Spinbox
+
+   .. method:: get()
+
+      Returns the current value of the spinbox.
+
+
+   .. method:: set(value)
+
+      Sets the value of the spinbox to *value*.
+
+
 Notebook
 --------
 
 Ttk Notebook widget manages a collection of windows and displays a single
 one at a time. Each child window is associated with a tab, which the user
-may select to change the currently-displayed window.
+may select to change the currently displayed window.
 
 
 Options
@@ -389,25 +473,25 @@ Options
 
 This widget accepts the following specific options:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +---------+----------------------------------------------------------------+
-   | Option  | Description                                                    |
-   +=========+================================================================+
-   | height  | If present and greater than zero, specifies the desired height |
-   |         | of the pane area (not including internal padding or tabs).     |
-   |         | Otherwise, the maximum height of all panes is used.            |
-   +---------+----------------------------------------------------------------+
-   | padding | Specifies the amount of extra space to add around the outside  |
-   |         | of the notebook. The padding is a list up to four length       |
-   |         | specifications left top right bottom. If fewer than four       |
-   |         | elements are specified, bottom defaults to top, right defaults |
-   |         | to left, and top defaults to left.                             |
-   +---------+----------------------------------------------------------------+
-   | width   | If present and greater than zero, specified the desired width  |
-   |         | of the pane area (not including internal padding). Otherwise,  |
-   |         | the maximum width of all panes is used.                        |
-   +---------+----------------------------------------------------------------+
++---------+----------------------------------------------------------------+
+| Option  | Description                                                    |
++=========+================================================================+
+| height  | If present and greater than zero, specifies the desired height |
+|         | of the pane area (not including internal padding or tabs).     |
+|         | Otherwise, the maximum height of all panes is used.            |
++---------+----------------------------------------------------------------+
+| padding | Specifies the amount of extra space to add around the outside  |
+|         | of the notebook. The padding is a list up to four length       |
+|         | specifications left top right bottom. If fewer than four       |
+|         | elements are specified, bottom defaults to top, right defaults |
+|         | to left, and top defaults to left.                             |
++---------+----------------------------------------------------------------+
+| width   | If present and greater than zero, specified the desired width  |
+|         | of the pane area (not including internal padding). Otherwise,  |
+|         | the maximum width of all panes is used.                        |
++---------+----------------------------------------------------------------+
 
 
 Tab Options
@@ -415,39 +499,39 @@ Tab Options
 
 There are also specific options for tabs:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +-----------+--------------------------------------------------------------+
-   | Option    | Description                                                  |
-   +===========+==============================================================+
-   | state     | Either "normal", "disabled" or "hidden". If "disabled", then |
-   |           | the tab is not selectable. If "hidden", then the tab is not  |
-   |           | shown.                                                       |
-   +-----------+--------------------------------------------------------------+
-   | sticky    | Specifies how the child window is positioned within the pane |
-   |           | area. Value is a string containing zero or more of the       |
-   |           | characters "n", "s", "e" or "w". Each letter refers to a     |
-   |           | side (north, south, east or west) that the child window will |
-   |           | stick to, as per the :meth:`grid` geometry manager.          |
-   +-----------+--------------------------------------------------------------+
-   | padding   | Specifies the amount of extra space to add between the       |
-   |           | notebook and this pane. Syntax is the same as for the option |
-   |           | padding used by this widget.                                 |
-   +-----------+--------------------------------------------------------------+
-   | text      | Specifies a text to be displayed in the tab.                 |
-   +-----------+--------------------------------------------------------------+
-   | image     | Specifies an image to display in the tab. See the option     |
-   |           | image described in :class:`Widget`.                          |
-   +-----------+--------------------------------------------------------------+
-   | compound  | Specifies how to display the image relative to the text, in  |
-   |           | the case both options text and image are present. See        |
-   |           | `Label Options`_ for legal values.                           |
-   +-----------+--------------------------------------------------------------+
-   | underline | Specifies the index (0-based) of a character to underline in |
-   |           | the text string. The underlined character is used for        |
-   |           | mnemonic activation if :meth:`Notebook.enable_traversal` is  |
-   |           | called.                                                      |
-   +-----------+--------------------------------------------------------------+
++-----------+--------------------------------------------------------------+
+| Option    | Description                                                  |
++===========+==============================================================+
+| state     | Either "normal", "disabled" or "hidden". If "disabled", then |
+|           | the tab is not selectable. If "hidden", then the tab is not  |
+|           | shown.                                                       |
++-----------+--------------------------------------------------------------+
+| sticky    | Specifies how the child window is positioned within the pane |
+|           | area. Value is a string containing zero or more of the       |
+|           | characters "n", "s", "e" or "w". Each letter refers to a     |
+|           | side (north, south, east or west) that the child window will |
+|           | stick to, as per the :meth:`grid` geometry manager.          |
++-----------+--------------------------------------------------------------+
+| padding   | Specifies the amount of extra space to add between the       |
+|           | notebook and this pane. Syntax is the same as for the option |
+|           | padding used by this widget.                                 |
++-----------+--------------------------------------------------------------+
+| text      | Specifies a text to be displayed in the tab.                 |
++-----------+--------------------------------------------------------------+
+| image     | Specifies an image to display in the tab. See the option     |
+|           | image described in :class:`Widget`.                          |
++-----------+--------------------------------------------------------------+
+| compound  | Specifies how to display the image relative to the text, in  |
+|           | the case both options text and image are present. See        |
+|           | `Label Options`_ for legal values.                           |
++-----------+--------------------------------------------------------------+
+| underline | Specifies the index (0-based) of a character to underline in |
+|           | the text string. The underlined character is used for        |
+|           | mnemonic activation if :meth:`Notebook.enable_traversal` is  |
+|           | called.                                                      |
++-----------+--------------------------------------------------------------+
 
 
 Tab Identifiers
@@ -459,7 +543,7 @@ of the following forms:
 * An integer between zero and the number of tabs
 * The name of a child window
 * A positional specification of the form "@x,y", which identifies the tab
-* The literal string "current", which identifies the currently-selected tab
+* The literal string "current", which identifies the currently selected tab
 * The literal string "end", which returns the number of tabs (only valid for
   :meth:`Notebook.index`)
 
@@ -529,7 +613,7 @@ ttk.Notebook
       Selects the specified *tab_id*.
 
       The associated child window will be displayed, and the
-      previously-selected window (if different) is unmapped. If *tab_id* is
+      previously selected window (if different) is unmapped. If *tab_id* is
       omitted, returns the widget name of the currently selected pane.
 
 
@@ -554,9 +638,9 @@ ttk.Notebook
       This will extend the bindings for the toplevel window containing the
       notebook as follows:
 
-      * Control-Tab: selects the tab following the currently selected one.
-      * Shift-Control-Tab: selects the tab preceding the currently selected one.
-      * Alt-K: where K is the mnemonic (underlined) character of any tab, will
+      * :kbd:`Control-Tab`: selects the tab following the currently selected one.
+      * :kbd:`Shift-Control-Tab`: selects the tab preceding the currently selected one.
+      * :kbd:`Alt-K`: where *K* is the mnemonic (underlined) character of any tab, will
         select that tab.
 
       Multiple notebooks in a single toplevel may be enabled for traversal,
@@ -579,36 +663,36 @@ Options
 
 This widget accepts the following specific options:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +----------+---------------------------------------------------------------+
-   | Option   | Description                                                   |
-   +==========+===============================================================+
-   | orient   | One of "horizontal" or "vertical". Specifies the orientation  |
-   |          | of the progress bar.                                          |
-   +----------+---------------------------------------------------------------+
-   | length   | Specifies the length of the long axis of the progress bar     |
-   |          | (width if horizontal, height if vertical).                    |
-   +----------+---------------------------------------------------------------+
-   | mode     | One of "determinate" or "indeterminate".                      |
-   +----------+---------------------------------------------------------------+
-   | maximum  | A number specifying the maximum value. Defaults to 100.       |
-   +----------+---------------------------------------------------------------+
-   | value    | The current value of the progress bar. In "determinate" mode, |
-   |          | this represents the amount of work completed. In              |
-   |          | "indeterminate" mode, it is interpreted as modulo *maximum*;  |
-   |          | that is, the progress bar completes one "cycle" when its value|
-   |          | increases by *maximum*.                                       |
-   +----------+---------------------------------------------------------------+
-   | variable | A name which is linked to the option value. If specified, the |
-   |          | value of the progress bar is automatically set to the value of|
-   |          | this name whenever the latter is modified.                    |
-   +----------+---------------------------------------------------------------+
-   | phase    | Read-only option. The widget periodically increments the value|
-   |          | of this option whenever its value is greater than 0 and, in   |
-   |          | determinate mode, less than maximum. This option may be used  |
-   |          | by the current theme to provide additional animation effects. |
-   +----------+---------------------------------------------------------------+
++----------+---------------------------------------------------------------+
+| Option   | Description                                                   |
++==========+===============================================================+
+| orient   | One of "horizontal" or "vertical". Specifies the orientation  |
+|          | of the progress bar.                                          |
++----------+---------------------------------------------------------------+
+| length   | Specifies the length of the long axis of the progress bar     |
+|          | (width if horizontal, height if vertical).                    |
++----------+---------------------------------------------------------------+
+| mode     | One of "determinate" or "indeterminate".                      |
++----------+---------------------------------------------------------------+
+| maximum  | A number specifying the maximum value. Defaults to 100.       |
++----------+---------------------------------------------------------------+
+| value    | The current value of the progress bar. In "determinate" mode, |
+|          | this represents the amount of work completed. In              |
+|          | "indeterminate" mode, it is interpreted as modulo *maximum*;  |
+|          | that is, the progress bar completes one "cycle" when its value|
+|          | increases by *maximum*.                                       |
++----------+---------------------------------------------------------------+
+| variable | A name which is linked to the option value. If specified, the |
+|          | value of the progress bar is automatically set to the value of|
+|          | this name whenever the latter is modified.                    |
++----------+---------------------------------------------------------------+
+| phase    | Read-only option. The widget periodically increments the value|
+|          | of this option whenever its value is greater than 0 and, in   |
+|          | determinate mode, less than maximum. This option may be used  |
+|          | by the current theme to provide additional animation effects. |
++----------+---------------------------------------------------------------+
 
 
 ttk.Progressbar
@@ -650,14 +734,14 @@ Options
 
 This widget accepts the following specific option:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +--------+----------------------------------------------------------------+
-   | Option | Description                                                    |
-   +========+================================================================+
-   | orient | One of "horizontal" or "vertical". Specifies the orientation of|
-   |        | the separator.                                                 |
-   +--------+----------------------------------------------------------------+
++--------+----------------------------------------------------------------+
+| Option | Description                                                    |
++========+================================================================+
+| orient | One of "horizontal" or "vertical". Specifies the orientation of|
+|        | the separator.                                                 |
++--------+----------------------------------------------------------------+
 
 
 Sizegrip
@@ -673,7 +757,7 @@ ones inherited from :class:`ttk.Widget`.
 Platform-specific notes
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-* On MacOS X, toplevel windows automatically include a built-in size grip
+* On macOS, toplevel windows automatically include a built-in size grip
   by default. Adding a :class:`Sizegrip` is harmless, since the built-in
   grip will just mask the widget.
 
@@ -700,7 +784,7 @@ the widget option ``displaycolumns``. The tree widget can also display column
 headings. Columns may be accessed by number or symbolic names listed in the
 widget option columns. See `Column Identifiers`_.
 
-Each item is identified by an unique name. The widget will generate item IDs
+Each item is identified by a unique name. The widget will generate item IDs
 if they are not supplied by the caller. There is a distinguished root item,
 named ``{}``. The root item itself is not displayed; its children appear at the
 top level of the hierarchy.
@@ -718,49 +802,49 @@ Options
 
 This widget accepts the following specific options:
 
-   .. tabularcolumns:: |l|p{0.7\linewidth}|
+.. tabularcolumns:: |l|p{0.7\linewidth}|
 
-   +----------------+--------------------------------------------------------+
-   | Option         | Description                                            |
-   +================+========================================================+
-   | columns        | A list of column identifiers, specifying the number of |
-   |                | columns and their names.                               |
-   +----------------+--------------------------------------------------------+
-   | displaycolumns | A list of column identifiers (either symbolic or       |
-   |                | integer indices) specifying which data columns are     |
-   |                | displayed and the order in which they appear, or the   |
-   |                | string "#all".                                         |
-   +----------------+--------------------------------------------------------+
-   | height         | Specifies the number of rows which should be visible.  |
-   |                | Note: the requested width is determined from the sum   |
-   |                | of the column widths.                                  |
-   +----------------+--------------------------------------------------------+
-   | padding        | Specifies the internal padding for the widget. The     |
-   |                | padding is a list of up to four length specifications. |
-   +----------------+--------------------------------------------------------+
-   | selectmode     | Controls how the built-in class bindings manage the    |
-   |                | selection. One of "extended", "browse" or "none".      |
-   |                | If set to "extended" (the default), multiple items may |
-   |                | be selected. If "browse", only a single item will be   |
-   |                | selected at a time. If "none", the selection will not  |
-   |                | be changed.                                            |
-   |                |                                                        |
-   |                | Note that the application code and tag bindings can set|
-   |                | the selection however they wish, regardless of the     |
-   |                | value  of this option.                                 |
-   +----------------+--------------------------------------------------------+
-   | show           | A list containing zero or more of the following values,|
-   |                | specifying which elements of the tree to display.      |
-   |                |                                                        |
-   |                | * tree: display tree labels in column #0.              |
-   |                | * headings: display the heading row.                   |
-   |                |                                                        |
-   |                | The default is "tree headings", i.e., show all         |
-   |                | elements.                                              |
-   |                |                                                        |
-   |                | **Note**: Column #0 always refers to the tree column,  |
-   |                | even if show="tree" is not specified.                  |
-   +----------------+--------------------------------------------------------+
++----------------+--------------------------------------------------------+
+| Option         | Description                                            |
++================+========================================================+
+| columns        | A list of column identifiers, specifying the number of |
+|                | columns and their names.                               |
++----------------+--------------------------------------------------------+
+| displaycolumns | A list of column identifiers (either symbolic or       |
+|                | integer indices) specifying which data columns are     |
+|                | displayed and the order in which they appear, or the   |
+|                | string "#all".                                         |
++----------------+--------------------------------------------------------+
+| height         | Specifies the number of rows which should be visible.  |
+|                | Note: the requested width is determined from the sum   |
+|                | of the column widths.                                  |
++----------------+--------------------------------------------------------+
+| padding        | Specifies the internal padding for the widget. The     |
+|                | padding is a list of up to four length specifications. |
++----------------+--------------------------------------------------------+
+| selectmode     | Controls how the built-in class bindings manage the    |
+|                | selection. One of "extended", "browse" or "none".      |
+|                | If set to "extended" (the default), multiple items may |
+|                | be selected. If "browse", only a single item will be   |
+|                | selected at a time. If "none", the selection will not  |
+|                | be changed.                                            |
+|                |                                                        |
+|                | Note that the application code and tag bindings can set|
+|                | the selection however they wish, regardless of the     |
+|                | value  of this option.                                 |
++----------------+--------------------------------------------------------+
+| show           | A list containing zero or more of the following values,|
+|                | specifying which elements of the tree to display.      |
+|                |                                                        |
+|                | * tree: display tree labels in column #0.              |
+|                | * headings: display the heading row.                   |
+|                |                                                        |
+|                | The default is "tree headings", i.e., show all         |
+|                | elements.                                              |
+|                |                                                        |
+|                | **Note**: Column #0 always refers to the tree column,  |
+|                | even if show="tree" is not specified.                  |
++----------------+--------------------------------------------------------+
 
 
 Item Options
@@ -769,27 +853,27 @@ Item Options
 The following item options may be specified for items in the insert and item
 widget commands.
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +--------+---------------------------------------------------------------+
-   | Option | Description                                                   |
-   +========+===============================================================+
-   | text   | The textual label to display for the item.                    |
-   +--------+---------------------------------------------------------------+
-   | image  | A Tk Image, displayed to the left of the label.               |
-   +--------+---------------------------------------------------------------+
-   | values | The list of values associated with the item.                  |
-   |        |                                                               |
-   |        | Each item should have the same number of values as the widget |
-   |        | option columns. If there are fewer values than columns, the   |
-   |        | remaining values are assumed empty. If there are more values  |
-   |        | than columns, the extra values are ignored.                   |
-   +--------+---------------------------------------------------------------+
-   | open   | True/False value indicating whether the item's children should|
-   |        | be displayed or hidden.                                       |
-   +--------+---------------------------------------------------------------+
-   | tags   | A list of tags associated with this item.                     |
-   +--------+---------------------------------------------------------------+
++--------+---------------------------------------------------------------+
+| Option | Description                                                   |
++========+===============================================================+
+| text   | The textual label to display for the item.                    |
++--------+---------------------------------------------------------------+
+| image  | A Tk Image, displayed to the left of the label.               |
++--------+---------------------------------------------------------------+
+| values | The list of values associated with the item.                  |
+|        |                                                               |
+|        | Each item should have the same number of values as the widget |
+|        | option columns. If there are fewer values than columns, the   |
+|        | remaining values are assumed empty. If there are more values  |
+|        | than columns, the extra values are ignored.                   |
++--------+---------------------------------------------------------------+
+| open   | ``True``/``False`` value indicating whether the item's        |
+|        | children should be displayed or hidden.                       |
++--------+---------------------------------------------------------------+
+| tags   | A list of tags associated with this item.                     |
++--------+---------------------------------------------------------------+
 
 
 Tag Options
@@ -797,20 +881,20 @@ Tag Options
 
 The following options may be specified on tags:
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +------------+-----------------------------------------------------------+
-   | Option     | Description                                               |
-   +============+===========================================================+
-   | foreground | Specifies the text foreground color.                      |
-   +------------+-----------------------------------------------------------+
-   | background | Specifies the cell or item background color.              |
-   +------------+-----------------------------------------------------------+
-   | font       | Specifies the font to use when drawing text.              |
-   +------------+-----------------------------------------------------------+
-   | image      | Specifies the item image, in case the item's image option |
-   |            | is empty.                                                 |
-   +------------+-----------------------------------------------------------+
++------------+-----------------------------------------------------------+
+| Option     | Description                                               |
++============+===========================================================+
+| foreground | Specifies the text foreground color.                      |
++------------+-----------------------------------------------------------+
+| background | Specifies the cell or item background color.              |
++------------+-----------------------------------------------------------+
+| font       | Specifies the font to use when drawing text.              |
++------------+-----------------------------------------------------------+
+| image      | Specifies the item image, in case the item's image option |
+|            | is empty.                                                 |
++------------+-----------------------------------------------------------+
 
 
 Column Identifiers
@@ -842,19 +926,19 @@ Virtual Events
 
 The Treeview widget generates the following virtual events.
 
-   .. tabularcolumns:: |l|L|
+.. tabularcolumns:: |l|L|
 
-   +--------------------+--------------------------------------------------+
-   | Event              | Description                                      |
-   +====================+==================================================+
-   | <<TreeviewSelect>> | Generated whenever the selection changes.        |
-   +--------------------+--------------------------------------------------+
-   | <<TreeviewOpen>>   | Generated just before settings the focus item to |
-   |                    | open=True.                                       |
-   +--------------------+--------------------------------------------------+
-   | <<TreeviewClose>>  | Generated just after setting the focus item to   |
-   |                    | open=False.                                      |
-   +--------------------+--------------------------------------------------+
++--------------------+--------------------------------------------------+
+| Event              | Description                                      |
++====================+==================================================+
+| <<TreeviewSelect>> | Generated whenever the selection changes.        |
++--------------------+--------------------------------------------------+
+| <<TreeviewOpen>>   | Generated just before settings the focus item to |
+|                    | open=True.                                       |
++--------------------+--------------------------------------------------+
+| <<TreeviewClose>>  | Generated just after setting the focus item to   |
+|                    | open=False.                                      |
++--------------------+--------------------------------------------------+
 
 The :meth:`Treeview.focus` and :meth:`Treeview.selection` methods can be used
 to determine the affected item or items.
@@ -902,19 +986,19 @@ ttk.Treeview
 
       The valid options/values are:
 
-      * id
+      *id*
          Returns the column name. This is a read-only option.
-      * anchor: One of the standard Tk anchor values.
+      *anchor*: One of the standard Tk anchor values.
          Specifies how the text in this column should be aligned with respect
          to the cell.
-      * minwidth: width
+      *minwidth*: width
          The minimum width of the column in pixels. The treeview widget will
          not make the column any smaller than specified by this option when
          the widget is resized or the user drags a column.
-      * stretch: True/False
+      *stretch*: ``True``/``False``
          Specifies whether the column's width should be adjusted when
          the widget is resized.
-      * width: width
+      *width*: width
          The width of the column in pixels.
 
       To configure the tree column, call this with column = "#0"
@@ -957,14 +1041,14 @@ ttk.Treeview
 
       The valid options/values are:
 
-      * text: text
+      *text*: text
          The text to display in the column heading.
-      * image: imageName
+      *image*: imageName
          Specifies an image to display to the right of the column heading.
-      * anchor: anchor
+      *anchor*: anchor
          Specifies how the heading text should be aligned. One of the standard
          Tk anchor values.
-      * command: callback
+      *command*: callback
          A callback to be invoked when the heading label is pressed.
 
       To configure the tree column heading, call this with column = "#0".
@@ -1034,7 +1118,7 @@ ttk.Treeview
       as the item identifier; *iid* must not already exist in the tree.
       Otherwise, a new unique identifier is generated.
 
-      See `Item Options`_ for the list of available points.
+      See `Item Options`_ for the list of available options.
 
 
    .. method:: item(item, option=None, **kw)
@@ -1089,30 +1173,45 @@ ttk.Treeview
       the tree.
 
 
-   .. method:: selection(selop=None, items=None)
+   .. method:: selection()
 
-      If *selop* is not specified, returns selected items. Otherwise, it will
-      act according to the following selection methods.
+      Returns a tuple of selected items.
+
+      .. versionchanged:: 3.8
+         ``selection()`` no longer takes arguments.  For changing the selection
+         state use the following selection methods.
 
 
-   .. method:: selection_set(items)
+   .. method:: selection_set(*items)
 
       *items* becomes the new selection.
 
+      .. versionchanged:: 3.6
+         *items* can be passed as separate arguments, not just as a single tuple.
 
-   .. method:: selection_add(items)
+
+   .. method:: selection_add(*items)
 
       Add *items* to the selection.
 
+      .. versionchanged:: 3.6
+         *items* can be passed as separate arguments, not just as a single tuple.
 
-   .. method:: selection_remove(items)
+
+   .. method:: selection_remove(*items)
 
       Remove *items* from the selection.
 
+      .. versionchanged:: 3.6
+         *items* can be passed as separate arguments, not just as a single tuple.
 
-   .. method:: selection_toggle(items)
+
+   .. method:: selection_toggle(*items)
 
       Toggle the selection state of each item in *items*.
+
+      .. versionchanged:: 3.6
+         *items* can be passed as separate arguments, not just as a single tuple.
 
 
    .. method:: set(item, column=None, value=None)
@@ -1167,13 +1266,13 @@ Ttk Styling
 Each widget in :mod:`ttk` is assigned a style, which specifies the set of
 elements making up the widget and how they are arranged, along with dynamic
 and default settings for element options. By default the style name is the
-same as the widget's class name, but it may be overriden by the widget's style
+same as the widget's class name, but it may be overridden by the widget's style
 option. If you don't know the class name of a widget, use the method
 :meth:`Misc.winfo_class` (somewidget.winfo_class()).
 
 .. seealso::
 
-   `Tcl'2004 conference presentation <http://tktable.sourceforge.net/tile/tile-tcl2004.pdf>`_
+   `Tcl'2004 conference presentation <https://tktable.sourceforge.net/tile/tile-tcl2004.pdf>`_
       This document explains how the theme engine works
 
 
@@ -1292,32 +1391,41 @@ option. If you don't know the class name of a widget, use the method
    .. method:: element_create(elementname, etype, *args, **kw)
 
       Create a new element in the current theme, of the given *etype* which is
-      expected to be either "image", "from" or "vsapi". The latter is only
-      available in Tk 8.6a for Windows XP and Vista and is not described here.
+      expected to be either "image" or "from".
 
       If "image" is used, *args* should contain the default image name followed
       by statespec/value pairs (this is the imagespec), and *kw* may have the
       following options:
 
-       * border=padding
-          padding is a list of up to four integers, specifying the left, top,
-          right, and bottom borders, respectively.
+      border=padding
+         padding is a list of up to four integers, specifying the left, top,
+         right, and bottom borders, respectively.
 
-       * height=height
-          Specifies a minimum height for the element. If less than zero, the
-          base image's height is used as a default.
+      height=height
+         Specifies a minimum height for the element. If less than zero, the
+         base image's height is used as a default.
 
-       * padding=padding
-          Specifies the element's interior padding. Defaults to border's value
-          if not specified.
+      padding=padding
+         Specifies the element's interior padding. Defaults to border's value
+         if not specified.
 
-       * sticky=spec
-          Specifies how the image is placed within the final parcel. spec
-          contains zero or more characters "n", "s", "w", or "e".
+      sticky=spec
+         Specifies how the image is placed within the final parcel. spec
+         contains zero or more characters "n", "s", "w", or "e".
 
-       * width=width
-          Specifies a minimum width for the element. If less than zero, the
-          base image's width is used as a default.
+      width=width
+         Specifies a minimum width for the element. If less than zero, the
+         base image's width is used as a default.
+
+      Example::
+
+         img1 = tkinter.PhotoImage(master=root, file='button.png')
+         img1 = tkinter.PhotoImage(master=root, file='button-pressed.png')
+         img1 = tkinter.PhotoImage(master=root, file='button-active.png')
+         style = ttk.Style(root)
+         style.element_create('Button.button', 'image',
+                              img1, ('pressed', img2), ('active', img3),
+                              border=(2, 4), sticky='we')
 
       If "from" is used as the value of *etype*,
       :meth:`element_create` will clone an existing
@@ -1325,6 +1433,11 @@ option. If you don't know the class name of a widget, use the method
       the element will be cloned, and optionally an element to clone from.
       If this element to clone from is not specified, an empty element will
       be used. *kw* is discarded.
+
+      Example::
+
+         style = ttk.Style(root)
+         style.element_create('plain.background', 'from', 'default')
 
 
    .. method:: element_names()
@@ -1399,28 +1512,29 @@ option. If you don't know the class name of a widget, use the method
 Layouts
 ^^^^^^^
 
-A layout can be just None, if it takes no options, or a dict of
+A layout can be just ``None``, if it takes no options, or a dict of
 options specifying how to arrange the element. The layout mechanism
 uses a simplified version of the pack geometry manager: given an
-initial cavity, each element is allocated a parcel. Valid
-options/values are:
+initial cavity, each element is allocated a parcel.
 
- * side: whichside
-    Specifies which side of the cavity to place the element; one of
-    top, right, bottom or left. If omitted, the element occupies the
-    entire cavity.
+The valid options/values are:
 
- * sticky: nswe
-    Specifies where the element is placed inside its allocated parcel.
+*side*: whichside
+   Specifies which side of the cavity to place the element; one of
+   top, right, bottom or left. If omitted, the element occupies the
+   entire cavity.
 
- * unit: 0 or 1
-    If set to 1, causes the element and all of its descendants to be treated as
-    a single element for the purposes of :meth:`Widget.identify` et al. It's
-    used for things like scrollbar thumbs with grips.
+*sticky*: nswe
+   Specifies where the element is placed inside its allocated parcel.
 
- * children: [sublayout... ]
-    Specifies a list of elements to place inside the element. Each
-    element is a tuple (or other sequence type) where the first item is
-    the layout name, and the other is a `Layout`_.
+*unit*: 0 or 1
+   If set to 1, causes the element and all of its descendants to be treated as
+   a single element for the purposes of :meth:`Widget.identify` et al. It's
+   used for things like scrollbar thumbs with grips.
+
+*children*: [sublayout... ]
+   Specifies a list of elements to place inside the element. Each
+   element is a tuple (or other sequence type) where the first item is
+   the layout name, and the other is a `Layout`_.
 
 .. _Layout: `Layouts`_

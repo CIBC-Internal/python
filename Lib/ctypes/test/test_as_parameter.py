@@ -24,7 +24,7 @@ class BasicWrapTestCase(unittest.TestCase):
         f.argtypes = [c_byte, c_wchar, c_int, c_long, c_float, c_double]
         result = f(self.wrap(1), self.wrap("x"), self.wrap(3), self.wrap(4), self.wrap(5.0), self.wrap(6.0))
         self.assertEqual(result, 139)
-        self.assertTrue(type(result), int)
+        self.assertIs(type(result), int)
 
     def test_pointers(self):
         f = dll._testfunc_p_p
@@ -122,6 +122,7 @@ class BasicWrapTestCase(unittest.TestCase):
         result = f(self.wrap(-10), self.wrap(cb))
         self.assertEqual(result, -18)
 
+    @need_symbol('c_longlong')
     def test_longlong_callbacks(self):
 
         f = dll._testfunc_callback_q_qf
@@ -169,6 +170,10 @@ class BasicWrapTestCase(unittest.TestCase):
         s2h = dll.ret_2h_func(self.wrap(inp))
         self.assertEqual((s2h.x, s2h.y), (99*2, 88*3))
 
+        # Test also that the original struct was unmodified (i.e. was passed by
+        # value)
+        self.assertEqual((inp.x, inp.y), (99, 88))
+
     def test_struct_return_8H(self):
         class S8I(Structure):
             _fields_ = [("a", c_int),
@@ -189,18 +194,18 @@ class BasicWrapTestCase(unittest.TestCase):
     def test_recursive_as_param(self):
         from ctypes import c_int
 
-        class A(object):
+        class A:
             pass
 
         a = A()
         a._as_parameter_ = a
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RecursionError):
             c_int.from_param(a)
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class AsParamWrapper(object):
+class AsParamWrapper:
     def __init__(self, param):
         self._as_parameter_ = param
 
@@ -209,7 +214,7 @@ class AsParamWrapperTestCase(BasicWrapTestCase):
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-class AsParamPropertyWrapper(object):
+class AsParamPropertyWrapper:
     def __init__(self, param):
         self._param = param
 
@@ -221,6 +226,17 @@ class AsParamPropertyWrapperTestCase(BasicWrapTestCase):
     wrap = AsParamPropertyWrapper
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+class AsParamNestedWrapperTestCase(BasicWrapTestCase):
+    """Test that _as_parameter_ is evaluated recursively.
+
+    The _as_parameter_ attribute can be another object which
+    defines its own _as_parameter_ attribute.
+    """
+
+    def wrap(self, param):
+        return AsParamWrapper(AsParamWrapper(AsParamWrapper(param)))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,9 +3,13 @@
 
 .. module:: urllib.error
    :synopsis: Exception classes raised by urllib.request.
+
 .. moduleauthor:: Jeremy Hylton <jeremy@alum.mit.edu>
 .. sectionauthor:: Senthil Kumaran <orsenthil@gmail.com>
 
+**Source code:** :source:`Lib/urllib/error.py`
+
+--------------
 
 The :mod:`urllib.error` module defines the exception classes for exceptions
 raised by :mod:`urllib.request`.  The base exception class is :exc:`URLError`.
@@ -23,8 +27,8 @@ The following exceptions are raised by :mod:`urllib.error` as appropriate:
       exception instance.
 
    .. versionchanged:: 3.3
-      :exc:`URLError` has been made a subclass of :exc:`OSError` instead
-      of :exc:`IOError`.
+      :exc:`URLError` used to be a subtype of :exc:`IOError`, which is now an
+      alias of :exc:`OSError`.
 
 
 .. exception:: HTTPError
@@ -37,8 +41,7 @@ The following exceptions are raised by :mod:`urllib.error` as appropriate:
 
    .. attribute:: code
 
-      An HTTP status code as defined in `RFC 2616
-      <http://www.faqs.org/rfcs/rfc2616.html>`_.  This numeric value corresponds
+      An HTTP status code as defined in :rfc:`2616`.  This numeric value corresponds
       to a value found in the dictionary of codes as found in
       :attr:`http.server.BaseHTTPRequestHandler.responses`.
 
@@ -58,6 +61,8 @@ The following exceptions are raised by :mod:`urllib.error` as appropriate:
    This exception is raised when the :func:`~urllib.request.urlretrieve`
    function detects that
    the amount of the downloaded data is less than the expected amount (given by
-   the *Content-Length* header).  The :attr:`content` attribute stores the
-   downloaded (and supposedly truncated) data.
+   the *Content-Length* header).
 
+   .. attribute:: content
+
+      The downloaded (and supposedly truncated) data.
