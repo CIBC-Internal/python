@@ -1,9 +1,9 @@
 """Test that sys.modules is used properly by import."""
 from .. import util
-from . import util as import_util
 import sys
 from types import MethodType
 import unittest
+import warnings
 
 
 class UseCache:
@@ -39,15 +39,17 @@ class UseCache:
                 self.__import__(name)
             self.assertEqual(cm.exception.name, name)
 
-Frozen_UseCache, Source_UseCache = util.test_both(
-        UseCache, __import__=import_util.__import__)
+
+(Frozen_UseCache,
+ Source_UseCache
+ ) = util.test_both(UseCache, __import__=util.__import__)
 
 
 class ImportlibUseCache(UseCache, unittest.TestCase):
 
     # Pertinent only to PEP 302; exec_module() doesn't return a module.
 
-    __import__ = import_util.__import__[1]
+    __import__ = util.__import__['Source']
 
     def create_mock(self, *names, return_=None):
         mock = util.mock_modules(*names)
@@ -62,30 +64,36 @@ class ImportlibUseCache(UseCache, unittest.TestCase):
     #   to when to use the module in sys.modules and when not to.
     def test_using_cache_after_loader(self):
         # [from cache on return]
-        with self.create_mock('module') as mock:
-            with util.import_state(meta_path=[mock]):
-                module = self.__import__('module')
-                self.assertEqual(id(module), id(sys.modules['module']))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            with self.create_mock('module') as mock:
+                with util.import_state(meta_path=[mock]):
+                    module = self.__import__('module')
+                    self.assertEqual(id(module), id(sys.modules['module']))
 
     # See test_using_cache_after_loader() for reasoning.
     def test_using_cache_for_assigning_to_attribute(self):
         # [from cache to attribute]
-        with self.create_mock('pkg.__init__', 'pkg.module') as importer:
-            with util.import_state(meta_path=[importer]):
-                module = self.__import__('pkg.module')
-                self.assertTrue(hasattr(module, 'module'))
-                self.assertEqual(id(module.module),
-                                 id(sys.modules['pkg.module']))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            with self.create_mock('pkg.__init__', 'pkg.module') as importer:
+                with util.import_state(meta_path=[importer]):
+                    module = self.__import__('pkg.module')
+                    self.assertTrue(hasattr(module, 'module'))
+                    self.assertEqual(id(module.module),
+                                    id(sys.modules['pkg.module']))
 
     # See test_using_cache_after_loader() for reasoning.
     def test_using_cache_for_fromlist(self):
         # [from cache for fromlist]
-        with self.create_mock('pkg.__init__', 'pkg.module') as importer:
-            with util.import_state(meta_path=[importer]):
-                module = self.__import__('pkg', fromlist=['module'])
-                self.assertTrue(hasattr(module, 'module'))
-                self.assertEqual(id(module.module),
-                                 id(sys.modules['pkg.module']))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            with self.create_mock('pkg.__init__', 'pkg.module') as importer:
+                with util.import_state(meta_path=[importer]):
+                    module = self.__import__('pkg', fromlist=['module'])
+                    self.assertTrue(hasattr(module, 'module'))
+                    self.assertEqual(id(module.module),
+                                    id(sys.modules['pkg.module']))
 
 
 if __name__ == '__main__':

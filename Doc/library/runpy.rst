@@ -3,6 +3,7 @@
 
 .. module:: runpy
    :synopsis: Locate and run Python modules without importing them first.
+
 .. moduleauthor:: Nick Coghlan <ncoghlan@gmail.com>
 
 **Source code:** :source:`Lib/runpy.py`
@@ -36,7 +37,8 @@ The :mod:`runpy` module provides two functions:
    import mechanism (refer to :pep:`302` for details) and then executed in a
    fresh module namespace.
 
-   If the supplied module name refers to a package rather than a normal
+   The *mod_name* argument should be an absolute module name.
+   If the module name refers to a package rather than a normal
    module, then that package is imported and the ``__main__`` submodule within
    that package is then executed and the resulting module globals dictionary
    returned.
@@ -91,7 +93,7 @@ The :mod:`runpy` module provides two functions:
       run this way, as well as ensuring the real module name is always
       accessible as ``__spec__.name``.
 
-.. function:: run_path(file_path, init_globals=None, run_name=None)
+.. function:: run_path(path_name, init_globals=None, run_name=None)
 
    .. index::
       module: __main__
@@ -138,7 +140,7 @@ The :mod:`runpy` module provides two functions:
 
    A number of alterations are also made to the :mod:`sys` module. Firstly,
    ``sys.path`` may be altered as described above. ``sys.argv[0]`` is updated
-   with the value of ``file_path`` and ``sys.modules[__name__]`` is updated
+   with the value of ``path_name`` and ``sys.modules[__name__]`` is updated
    with a temporary module object for the module being executed. All
    modifications to items in :mod:`sys` are reverted before the function
    returns.

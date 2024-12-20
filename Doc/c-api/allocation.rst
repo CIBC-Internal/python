@@ -1,4 +1,4 @@
-.. highlightlang:: c
+.. highlight:: c
 
 .. _allocating-objects:
 
@@ -14,7 +14,7 @@ Allocating Objects on the Heap
 
 .. c:function:: PyObject* PyObject_Init(PyObject *op, PyTypeObject *type)
 
-   Initialize a newly-allocated object *op* with its type and initial
+   Initialize a newly allocated object *op* with its type and initial
    reference.  Returns the initialized object.  If *type* indicates that the
    object participates in the cyclic garbage detector, it is added to the
    detector's set of observed objects. Other fields of the object are not
@@ -31,9 +31,11 @@ Allocating Objects on the Heap
 
    Allocate a new Python object using the C structure type *TYPE* and the
    Python type object *type*.  Fields not defined by the Python object header
-   are not initialized; the object's reference count will be one.  The size of
-   the memory allocation is determined from the :c:member:`~PyTypeObject.tp_basicsize` field of
-   the type object.
+   are not initialized.
+   The caller will own the only reference to the object
+   (i.e. its reference count will be one).
+   The size of the memory allocation is determined from the
+   :c:member:`~PyTypeObject.tp_basicsize` field of the type object.
 
 
 .. c:function:: TYPE* PyObject_NewVar(TYPE, PyTypeObject *type, Py_ssize_t size)
@@ -48,7 +50,7 @@ Allocating Objects on the Heap
    improving the memory management efficiency.
 
 
-.. c:function:: void PyObject_Del(PyObject *op)
+.. c:function:: void PyObject_Del(void *op)
 
    Releases memory allocated to an object using :c:func:`PyObject_New` or
    :c:func:`PyObject_NewVar`.  This is normally called from the

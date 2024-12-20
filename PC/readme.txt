@@ -18,7 +18,7 @@ All PC ports use this scheme to try to set up a module search path:
 
   1) The script location; the current directory without script.
   2) The PYTHONPATH variable, if set.
-  3) For Win32 platforms (NT/95), paths specified in the Registry.
+  3) Paths specified in the Registry.
   4) Default directories lib, lib/win, lib/test, lib/tkinter;
      these are searched relative to the environment variable
      PYTHONHOME, if set, or relative to the executable and its
@@ -26,8 +26,8 @@ All PC ports use this scheme to try to set up a module search path:
      or the current directory (not useful).
   5) The directory containing the executable.
 
-The best installation strategy is to put the Python executable (and
-DLL, for Win32 platforms) in some convenient directory such as
+The best installation strategy is to put the Python executable and
+DLL in some convenient directory such as
 C:/python, and copy all library files and subdirectories (using XCOPY)
 to C:/python/lib.  Then you don't need to set PYTHONPATH.  Otherwise,
 set the environment variable PYTHONPATH to your Python search path.
@@ -71,13 +71,6 @@ getpathp.c     Default sys.path calculations (for all PC platforms).
 dllbase_nt.txt A (manually maintained) list of base addresses for
                various DLLs, to avoid run-time relocation.
 
-example_nt     A subdirectory showing how to build an extension as a
-               DLL.
-
-Legacy support for older versions of Visual Studio
-==================================================
-The subdirectories VC6, VS7.1 and VS8.0 contain legacy support older
-versions of Microsoft Visual Studio. See PCbuild/readme.txt.
 
 Note for Windows 3.x and DOS users
 ==================================

@@ -1,3 +1,7 @@
+.. testsetup::
+
+   import ipaddress
+
 .. _ipaddress-howto:
 
 ***************************************
@@ -28,7 +32,7 @@ A Note on IP Versions
 ---------------------
 
 For readers that aren't particularly familiar with IP addressing, it's
-important to know that the Internet Protocol is currently in the process
+important to know that the Internet Protocol (IP) is currently in the process
 of moving from version 4 of the protocol to version 6. This transition is
 occurring largely because version 4 of the protocol doesn't provide enough
 addresses to handle the needs of the whole world, especially given the
@@ -48,11 +52,6 @@ when working with IP addressing. The simplest way to create addresses is
 to use the :func:`ipaddress.ip_address` factory function, which automatically
 determines whether to create an IPv4 or IPv6 address based on the passed in
 value:
-
-.. testsetup::
-   >>> import ipaddress
-
-::
 
    >>> ipaddress.ip_address('192.0.2.1')
    IPv4Address('192.0.2.1')

@@ -61,17 +61,16 @@ class bdist(Command):
                       'nt': 'zip'}
 
     # Establish the preferred order (for the --help-formats option).
-    format_commands = ['rpm', 'gztar', 'bztar', 'ztar', 'tar',
-                       'wininst', 'zip', 'msi']
+    format_commands = ['rpm', 'gztar', 'bztar', 'xztar', 'ztar', 'tar',
+                       'zip', 'msi']
 
     # And the real information.
     format_command = {'rpm':   ('bdist_rpm',  "RPM distribution"),
                       'gztar': ('bdist_dumb', "gzip'ed tar file"),
                       'bztar': ('bdist_dumb', "bzip2'ed tar file"),
+                      'xztar': ('bdist_dumb', "xz'ed tar file"),
                       'ztar':  ('bdist_dumb', "compressed tar file"),
                       'tar':   ('bdist_dumb', "tar file"),
-                      'wininst': ('bdist_wininst',
-                                  "Windows executable installer"),
                       'zip':   ('bdist_dumb', "ZIP file"),
                       'msi':   ('bdist_msi',  "Microsoft Installer")
                       }

@@ -4,7 +4,13 @@
 .. module:: spwd
    :platform: Unix
    :synopsis: The shadow password database (getspnam() and friends).
+   :deprecated:
 
+.. deprecated:: 3.11
+   The :mod:`spwd` module is deprecated
+   (see :pep:`PEP 594 <594#spwd>` for details and alternatives).
+
+--------------
 
 This module provides access to the Unix shadow password database. It is
 available on various Unix versions.
@@ -54,6 +60,9 @@ The following functions are defined:
 
    Return the shadow password database entry for the given user name.
 
+   .. versionchanged:: 3.6
+      Raises a :exc:`PermissionError` instead of :exc:`KeyError` if the user
+      doesn't have privileges.
 
 .. function:: getspall()
 

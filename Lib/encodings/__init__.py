@@ -12,7 +12,7 @@
     * getregentry() -> codecs.CodecInfo object
     The getregentry() API must return a CodecInfo object with encoder, decoder,
     incrementalencoder, incrementaldecoder, streamwriter and streamreader
-    atttributes which adhere to the Python Codec Interface Standard.
+    attributes which adhere to the Python Codec Interface Standard.
 
     In addition, a module may optionally also define the following
     APIs which are then used by the package's codec search function:
@@ -29,6 +29,7 @@ Written by Marc-Andre Lemburg (mal@lemburg.com).
 """#"
 
 import codecs
+import sys
 from . import aliases
 
 _cache = {}
@@ -48,19 +49,20 @@ def normalize_encoding(encoding):
         collapsed and replaced with a single underscore, e.g. '  -;#'
         becomes '_'. Leading and trailing underscores are removed.
 
-        Note that encoding names should be ASCII only; if they do use
-        non-ASCII characters, these must be Latin-1 compatible.
+        Note that encoding names should be ASCII only.
 
     """
     if isinstance(encoding, bytes):
         encoding = str(encoding, "ascii")
+
     chars = []
     punct = False
     for c in encoding:
         if c.isalnum() or c == '.':
             if punct and chars:
                 chars.append('_')
-            chars.append(c)
+            if c.isascii():
+                chars.append(c)
             punct = False
         else:
             punct = True
@@ -97,6 +99,8 @@ def search_function(encoding):
             mod = __import__('encodings.' + modname, fromlist=_import_tail,
                              level=0)
         except ImportError:
+            # ImportError may occur because 'encodings.(modname)' does not exist,
+            # or because it imports a name that does not exist (see mbcs and oem)
             pass
         else:
             break
@@ -150,3 +154,17 @@ def search_function(encoding):
 
 # Register the search_function in the Python codec registry
 codecs.register(search_function)
+
+if sys.platform == 'win32':
+    def _alias_mbcs(encoding):
+        try:
+            import _winapi
+            ansi_code_page = "cp%s" % _winapi.GetACP()
+            if encoding == ansi_code_page:
+                import encodings.mbcs
+                return encodings.mbcs.getregentry()
+        except ImportError:
+            # Imports may fail while we are shutting down
+            pass
+
+    codecs.register(_alias_mbcs)

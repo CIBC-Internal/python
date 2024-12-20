@@ -5,9 +5,16 @@
 .. module:: nis
    :platform: Unix
    :synopsis: Interface to Sun's NIS (Yellow Pages) library.
+   :deprecated:
+
 .. moduleauthor:: Fred Gansevles <Fred.Gansevles@cs.utwente.nl>
 .. sectionauthor:: Moshe Zadka <moshez@zadka.site.co.il>
 
+.. deprecated:: 3.11
+   The :mod:`nis` module is deprecated
+   (see :pep:`PEP 594 <594#nis>` for details).
+
+--------------
 
 The :mod:`nis` module gives a thin wrapper around the NIS library, useful for
 central administration of several hosts.
@@ -26,7 +33,7 @@ The :mod:`nis` module defines the following functions:
 
    Note that *mapname* is first checked if it is an alias to another name.
 
-   The *domain* argument allows to override the NIS domain used for the lookup. If
+   The *domain* argument allows overriding the NIS domain used for the lookup. If
    unspecified, lookup is in the default NIS domain.
 
 
@@ -38,7 +45,7 @@ The :mod:`nis` module defines the following functions:
 
    Note that *mapname* is first checked if it is an alias to another name.
 
-   The *domain* argument allows to override the NIS domain used for the lookup. If
+   The *domain* argument allows overriding the NIS domain used for the lookup. If
    unspecified, lookup is in the default NIS domain.
 
 
@@ -46,7 +53,7 @@ The :mod:`nis` module defines the following functions:
 
    Return a list of all valid maps.
 
-   The *domain* argument allows to override the NIS domain used for the lookup. If
+   The *domain* argument allows overriding the NIS domain used for the lookup. If
    unspecified, lookup is in the default NIS domain.
 
 

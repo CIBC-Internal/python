@@ -14,12 +14,15 @@ this type and there is exactly one in existence.
 */
 
 #include "Python.h"
-#include "structmember.h"
+#include "pycore_abstract.h"      // _PyIndex_Check()
+#include "pycore_long.h"          // _PyLong_GetZero()
+#include "pycore_object.h"        // _PyObject_GC_TRACK()
+#include "structmember.h"         // PyMemberDef
 
 static PyObject *
 ellipsis_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 {
-    if (PyTuple_GET_SIZE(args) || (kwargs && PyDict_Size(kwargs))) {
+    if (PyTuple_GET_SIZE(args) || (kwargs && PyDict_GET_SIZE(kwargs))) {
         PyErr_SetString(PyExc_TypeError, "EllipsisType takes no arguments");
         return NULL;
     }
@@ -34,13 +37,13 @@ ellipsis_repr(PyObject *op)
 }
 
 static PyObject *
-ellipsis_reduce(PyObject *op)
+ellipsis_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
     return PyUnicode_FromString("Ellipsis");
 }
 
 static PyMethodDef ellipsis_methods[] = {
-    {"__reduce__", (PyCFunction)ellipsis_reduce, METH_NOARGS, NULL},
+    {"__reduce__", ellipsis_reduce, METH_NOARGS, NULL},
     {NULL, NULL}
 };
 
@@ -50,10 +53,10 @@ PyTypeObject PyEllipsis_Type = {
     0,                                  /* tp_basicsize */
     0,                                  /* tp_itemsize */
     0, /*never called*/                 /* tp_dealloc */
-    0,                                  /* tp_print */
+    0,                                  /* tp_vectorcall_offset */
     0,                                  /* tp_getattr */
     0,                                  /* tp_setattr */
-    0,                                  /* tp_reserved */
+    0,                                  /* tp_as_async */
     ellipsis_repr,                      /* tp_repr */
     0,                                  /* tp_as_number */
     0,                                  /* tp_as_sequence */
@@ -93,16 +96,13 @@ PyObject _Py_EllipsisObject = {
 
 /* Slice object implementation */
 
-/* Using a cache is very effective since typically only a single slice is
- * created and then deleted again
- */
-static PySliceObject *slice_cache = NULL;
-void PySlice_Fini(void)
+
+void _PySlice_Fini(PyInterpreterState *interp)
 {
-    PySliceObject *obj = slice_cache;
+    PySliceObject *obj = interp->slice_cache;
     if (obj != NULL) {
-        slice_cache = NULL;
-        PyObject_Del(obj);
+        interp->slice_cache = NULL;
+        PyObject_GC_Del(obj);
     }
 }
 
@@ -113,28 +113,38 @@ void PySlice_Fini(void)
 PyObject *
 PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
 {
-    PySliceObject *obj;
-    if (slice_cache != NULL) {
-        obj = slice_cache;
-        slice_cache = NULL;
-        _Py_NewReference((PyObject *)obj);
-    } else {
-        obj = PyObject_New(PySliceObject, &PySlice_Type);
-        if (obj == NULL)
-            return NULL;
+    if (step == NULL) {
+        step = Py_None;
+    }
+    if (start == NULL) {
+        start = Py_None;
+    }
+    if (stop == NULL) {
+        stop = Py_None;
     }
 
-    if (step == NULL) step = Py_None;
-    Py_INCREF(step);
-    if (start == NULL) start = Py_None;
-    Py_INCREF(start);
-    if (stop == NULL) stop = Py_None;
-    Py_INCREF(stop);
+    PyInterpreterState *interp = _PyInterpreterState_GET();
+    PySliceObject *obj;
+    if (interp->slice_cache != NULL) {
+        obj = interp->slice_cache;
+        interp->slice_cache = NULL;
+        _Py_NewReference((PyObject *)obj);
+    }
+    else {
+        obj = PyObject_GC_New(PySliceObject, &PySlice_Type);
+        if (obj == NULL) {
+            return NULL;
+        }
+    }
 
+    Py_INCREF(step);
     obj->step = step;
+    Py_INCREF(start);
     obj->start = start;
+    Py_INCREF(stop);
     obj->stop = stop;
 
+    _PyObject_GC_TRACK(obj);
     return (PyObject *) obj;
 }
 
@@ -190,14 +200,13 @@ PySlice_GetIndices(PyObject *_r, Py_ssize_t length,
 }
 
 int
-PySlice_GetIndicesEx(PyObject *_r, Py_ssize_t length,
-                     Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step,
-                     Py_ssize_t *slicelength)
+PySlice_Unpack(PyObject *_r,
+               Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step)
 {
     PySliceObject *r = (PySliceObject*)_r;
     /* this is harder to get right than you might think */
 
-    Py_ssize_t defstart, defstop;
+    Py_BUILD_ASSERT(PY_SSIZE_T_MIN + 1 <= -PY_SSIZE_T_MAX);
 
     if (r->step == Py_None) {
         *step = 1;
@@ -218,42 +227,75 @@ PySlice_GetIndicesEx(PyObject *_r, Py_ssize_t length,
             *step = -PY_SSIZE_T_MAX;
     }
 
-    defstart = *step < 0 ? length-1 : 0;
-    defstop = *step < 0 ? -1 : length;
-
     if (r->start == Py_None) {
-        *start = defstart;
+        *start = *step < 0 ? PY_SSIZE_T_MAX : 0;
     }
     else {
         if (!_PyEval_SliceIndex(r->start, start)) return -1;
-        if (*start < 0) *start += length;
-        if (*start < 0) *start = (*step < 0) ? -1 : 0;
-        if (*start >= length)
-            *start = (*step < 0) ? length - 1 : length;
     }
 
     if (r->stop == Py_None) {
-        *stop = defstop;
+        *stop = *step < 0 ? PY_SSIZE_T_MIN : PY_SSIZE_T_MAX;
     }
     else {
         if (!_PyEval_SliceIndex(r->stop, stop)) return -1;
-        if (*stop < 0) *stop += length;
-        if (*stop < 0) *stop = (*step < 0) ? -1 : 0;
-        if (*stop >= length)
-            *stop = (*step < 0) ? length - 1 : length;
     }
 
-    if ((*step < 0 && *stop >= *start)
-        || (*step > 0 && *start >= *stop)) {
-        *slicelength = 0;
+    return 0;
+}
+
+Py_ssize_t
+PySlice_AdjustIndices(Py_ssize_t length,
+                      Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t step)
+{
+    /* this is harder to get right than you might think */
+
+    assert(step != 0);
+    assert(step >= -PY_SSIZE_T_MAX);
+
+    if (*start < 0) {
+        *start += length;
+        if (*start < 0) {
+            *start = (step < 0) ? -1 : 0;
+        }
     }
-    else if (*step < 0) {
-        *slicelength = (*stop-*start+1)/(*step)+1;
+    else if (*start >= length) {
+        *start = (step < 0) ? length - 1 : length;
+    }
+
+    if (*stop < 0) {
+        *stop += length;
+        if (*stop < 0) {
+            *stop = (step < 0) ? -1 : 0;
+        }
+    }
+    else if (*stop >= length) {
+        *stop = (step < 0) ? length - 1 : length;
+    }
+
+    if (step < 0) {
+        if (*stop < *start) {
+            return (*start - *stop - 1) / (-step) + 1;
+        }
     }
     else {
-        *slicelength = (*stop-*start-1)/(*step)+1;
+        if (*start < *stop) {
+            return (*stop - *start - 1) / step + 1;
+        }
     }
+    return 0;
+}
 
+#undef PySlice_GetIndicesEx
+
+int
+PySlice_GetIndicesEx(PyObject *_r, Py_ssize_t length,
+                     Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step,
+                     Py_ssize_t *slicelength)
+{
+    if (PySlice_Unpack(_r, start, stop, step) < 0)
+        return -1;
+    *slicelength = PySlice_AdjustIndices(length, start, stop, *step);
     return 0;
 }
 
@@ -264,7 +306,7 @@ slice_new(PyTypeObject *type, PyObject *args, PyObject *kw)
 
     start = stop = step = NULL;
 
-    if (!_PyArg_NoKeywords("slice()", kw))
+    if (!_PyArg_NoKeywords("slice", kw))
         return NULL;
 
     if (!PyArg_UnpackTuple(args, "slice", 1, 3, &start, &stop, &step))
@@ -288,13 +330,17 @@ Create a slice object.  This is used for extended slicing (e.g. a[0:10:2]).");
 static void
 slice_dealloc(PySliceObject *r)
 {
+    PyInterpreterState *interp = _PyInterpreterState_GET();
+    _PyObject_GC_UNTRACK(r);
     Py_DECREF(r->step);
     Py_DECREF(r->start);
     Py_DECREF(r->stop);
-    if (slice_cache == NULL)
-        slice_cache = r;
-    else
-        PyObject_Del(r);
+    if (interp->slice_cache == NULL) {
+        interp->slice_cache = r;
+    }
+    else {
+        PyObject_GC_Del(r);
+    }
 }
 
 static PyObject *
@@ -316,7 +362,7 @@ static PyMemberDef slice_members[] = {
 static PyObject*
 evaluate_slice_index(PyObject *v)
 {
-    if (PyIndex_Check(v)) {
+    if (_PyIndex_Check(v)) {
         return PyNumber_Index(v);
     }
     else {
@@ -342,9 +388,8 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
 
     /* Convert step to an integer; raise for zero step. */
     if (self->step == Py_None) {
-        step = PyLong_FromLong(1L);
-        if (step == NULL)
-            goto error;
+        step = _PyLong_GetOne();
+        Py_INCREF(step);
         step_is_negative = 0;
     }
     else {
@@ -372,10 +417,8 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
             goto error;
     }
     else {
-        lower = PyLong_FromLong(0L);
-        if (lower == NULL)
-            goto error;
-
+        lower = _PyLong_GetZero();
+        Py_INCREF(lower);
         upper = length;
         Py_INCREF(upper);
     }
@@ -513,7 +556,7 @@ S. Out of bounds indices are clipped in a manner consistent with the\n\
 handling of normal slices.");
 
 static PyObject *
-slice_reduce(PySliceObject* self)
+slice_reduce(PySliceObject* self, PyObject *Py_UNUSED(ignored))
 {
     return Py_BuildValue("O(OOO)", Py_TYPE(self), self->start, self->stop, self->step);
 }
@@ -531,14 +574,11 @@ static PyMethodDef slice_methods[] = {
 static PyObject *
 slice_richcompare(PyObject *v, PyObject *w, int op)
 {
-    PyObject *t1;
-    PyObject *t2;
-    PyObject *res;
-
     if (!PySlice_Check(v) || !PySlice_Check(w))
         Py_RETURN_NOTIMPLEMENTED;
 
     if (v == w) {
+        PyObject *res;
         /* XXX Do we really need this shortcut?
            There's a unit test for it, but is that fair? */
         switch (op) {
@@ -555,35 +595,37 @@ slice_richcompare(PyObject *v, PyObject *w, int op)
         return res;
     }
 
-    t1 = PyTuple_New(3);
-    if (t1 == NULL)
+
+    PyObject *t1 = PyTuple_Pack(3,
+                                ((PySliceObject *)v)->start,
+                                ((PySliceObject *)v)->stop,
+                                ((PySliceObject *)v)->step);
+    if (t1 == NULL) {
         return NULL;
-    t2 = PyTuple_New(3);
+    }
+
+    PyObject *t2 = PyTuple_Pack(3,
+                                ((PySliceObject *)w)->start,
+                                ((PySliceObject *)w)->stop,
+                                ((PySliceObject *)w)->step);
     if (t2 == NULL) {
         Py_DECREF(t1);
         return NULL;
     }
 
-    PyTuple_SET_ITEM(t1, 0, ((PySliceObject *)v)->start);
-    PyTuple_SET_ITEM(t1, 1, ((PySliceObject *)v)->stop);
-    PyTuple_SET_ITEM(t1, 2, ((PySliceObject *)v)->step);
-    PyTuple_SET_ITEM(t2, 0, ((PySliceObject *)w)->start);
-    PyTuple_SET_ITEM(t2, 1, ((PySliceObject *)w)->stop);
-    PyTuple_SET_ITEM(t2, 2, ((PySliceObject *)w)->step);
-
-    res = PyObject_RichCompare(t1, t2, op);
-
-    PyTuple_SET_ITEM(t1, 0, NULL);
-    PyTuple_SET_ITEM(t1, 1, NULL);
-    PyTuple_SET_ITEM(t1, 2, NULL);
-    PyTuple_SET_ITEM(t2, 0, NULL);
-    PyTuple_SET_ITEM(t2, 1, NULL);
-    PyTuple_SET_ITEM(t2, 2, NULL);
-
+    PyObject *res = PyObject_RichCompare(t1, t2, op);
     Py_DECREF(t1);
     Py_DECREF(t2);
-
     return res;
+}
+
+static int
+slice_traverse(PySliceObject *v, visitproc visit, void *arg)
+{
+    Py_VISIT(v->start);
+    Py_VISIT(v->stop);
+    Py_VISIT(v->step);
+    return 0;
 }
 
 PyTypeObject PySlice_Type = {
@@ -592,10 +634,10 @@ PyTypeObject PySlice_Type = {
     sizeof(PySliceObject),      /* Basic object size */
     0,                          /* Item size for varobject */
     (destructor)slice_dealloc,                  /* tp_dealloc */
-    0,                                          /* tp_print */
+    0,                                          /* tp_vectorcall_offset */
     0,                                          /* tp_getattr */
     0,                                          /* tp_setattr */
-    0,                                          /* tp_reserved */
+    0,                                          /* tp_as_async */
     (reprfunc)slice_repr,                       /* tp_repr */
     0,                                          /* tp_as_number */
     0,                                          /* tp_as_sequence */
@@ -606,9 +648,9 @@ PyTypeObject PySlice_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT,                         /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,    /* tp_flags */
     slice_doc,                                  /* tp_doc */
-    0,                                          /* tp_traverse */
+    (traverseproc)slice_traverse,               /* tp_traverse */
     0,                                          /* tp_clear */
     slice_richcompare,                          /* tp_richcompare */
     0,                                          /* tp_weaklistoffset */

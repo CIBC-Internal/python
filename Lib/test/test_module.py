@@ -1,8 +1,9 @@
 # Test the module type
 import unittest
 import weakref
-from test.support import run_unittest, gc_collect
-from test.script_helper import assert_python_ok
+from test.support import gc_collect
+from test.support import import_helper
+from test.support.script_helper import assert_python_ok
 
 import sys
 ModuleType = type(sys)
@@ -22,13 +23,29 @@ class ModuleTests(unittest.TestCase):
         # and __doc__ is None
         foo = ModuleType.__new__(ModuleType)
         self.assertTrue(foo.__dict__ is None)
-        self.assertRaises(SystemError, dir, foo)
+        self.assertRaises(TypeError, dir, foo)
         try:
             s = foo.__name__
             self.fail("__name__ = %s" % repr(s))
         except AttributeError:
             pass
         self.assertEqual(foo.__doc__, ModuleType.__doc__)
+
+    def test_uninitialized_missing_getattr(self):
+        # Issue 8297
+        # test the text in the AttributeError of an uninitialized module
+        foo = ModuleType.__new__(ModuleType)
+        self.assertRaisesRegex(
+                AttributeError, "module has no attribute 'not_here'",
+                getattr, foo, "not_here")
+
+    def test_missing_getattr(self):
+        # Issue 8297
+        # test the text in the AttributeError
+        foo = ModuleType("foo")
+        self.assertRaisesRegex(
+                AttributeError, "module 'foo' has no attribute 'not_here'",
+                getattr, foo, "not_here")
 
     def test_no_docstring(self):
         # Regularly initialized module, no docstring
@@ -107,6 +124,57 @@ a = A(destroyed)"""
         del m
         gc_collect()
         self.assertIs(wr(), None)
+
+    def test_module_getattr(self):
+        import test.good_getattr as gga
+        from test.good_getattr import test
+        self.assertEqual(test, "There is test")
+        self.assertEqual(gga.x, 1)
+        self.assertEqual(gga.y, 2)
+        with self.assertRaisesRegex(AttributeError,
+                                    "Deprecated, use whatever instead"):
+            gga.yolo
+        self.assertEqual(gga.whatever, "There is whatever")
+        del sys.modules['test.good_getattr']
+
+    def test_module_getattr_errors(self):
+        import test.bad_getattr as bga
+        from test import bad_getattr2
+        self.assertEqual(bga.x, 1)
+        self.assertEqual(bad_getattr2.x, 1)
+        with self.assertRaises(TypeError):
+            bga.nope
+        with self.assertRaises(TypeError):
+            bad_getattr2.nope
+        del sys.modules['test.bad_getattr']
+        if 'test.bad_getattr2' in sys.modules:
+            del sys.modules['test.bad_getattr2']
+
+    def test_module_dir(self):
+        import test.good_getattr as gga
+        self.assertEqual(dir(gga), ['a', 'b', 'c'])
+        del sys.modules['test.good_getattr']
+
+    def test_module_dir_errors(self):
+        import test.bad_getattr as bga
+        from test import bad_getattr2
+        with self.assertRaises(TypeError):
+            dir(bga)
+        with self.assertRaises(TypeError):
+            dir(bad_getattr2)
+        del sys.modules['test.bad_getattr']
+        if 'test.bad_getattr2' in sys.modules:
+            del sys.modules['test.bad_getattr2']
+
+    def test_module_getattr_tricky(self):
+        from test import bad_getattr3
+        # these lookups should not crash
+        with self.assertRaises(AttributeError):
+            bad_getattr3.one
+        with self.assertRaises(AttributeError):
+            bad_getattr3.delgetattr
+        if 'test.bad_getattr3' in sys.modules:
+            del sys.modules['test.bad_getattr3']
 
     def test_module_repr_minimal(self):
         # reprs when modules have no __file__, __name__, or __loader__
@@ -211,12 +279,70 @@ a = A(destroyed)"""
             b"len = len",
             b"shutil.rmtree = rmtree"})
 
+    def test_descriptor_errors_propagate(self):
+        class Descr:
+            def __get__(self, o, t):
+                raise RuntimeError
+        class M(ModuleType):
+            melon = Descr()
+        self.assertRaises(RuntimeError, getattr, M("mymod"), "melon")
+
+    def test_lazy_create_annotations(self):
+        # module objects lazy create their __annotations__ dict on demand.
+        # the annotations dict is stored in module.__dict__.
+        # a freshly created module shouldn't have an annotations dict yet.
+        foo = ModuleType("foo")
+        for i in range(4):
+            self.assertFalse("__annotations__" in foo.__dict__)
+            d = foo.__annotations__
+            self.assertTrue("__annotations__" in foo.__dict__)
+            self.assertEqual(foo.__annotations__, d)
+            self.assertEqual(foo.__dict__['__annotations__'], d)
+            if i % 2:
+                del foo.__annotations__
+            else:
+                del foo.__dict__['__annotations__']
+
+    def test_setting_annotations(self):
+        foo = ModuleType("foo")
+        for i in range(4):
+            self.assertFalse("__annotations__" in foo.__dict__)
+            d = {'a': int}
+            foo.__annotations__ = d
+            self.assertTrue("__annotations__" in foo.__dict__)
+            self.assertEqual(foo.__annotations__, d)
+            self.assertEqual(foo.__dict__['__annotations__'], d)
+            if i % 2:
+                del foo.__annotations__
+            else:
+                del foo.__dict__['__annotations__']
+
+    def test_annotations_getset_raises(self):
+        # module has no dict, all operations fail
+        foo = ModuleType.__new__(ModuleType)
+        with self.assertRaises(TypeError):
+            print(foo.__annotations__)
+        with self.assertRaises(TypeError):
+            foo.__annotations__ = {}
+        with self.assertRaises(TypeError):
+            del foo.__annotations__
+
+        # double delete
+        foo = ModuleType("foo")
+        foo.__annotations__ = {}
+        del foo.__annotations__
+        with self.assertRaises(AttributeError):
+            del foo.__annotations__
+
+    def test_annotations_are_created_correctly(self):
+        ann_module4 = import_helper.import_fresh_module('test.ann_module4')
+        self.assertTrue("__annotations__" in ann_module4.__dict__)
+        del ann_module4.__annotations__
+        self.assertFalse("__annotations__" in ann_module4.__dict__)
+
+
     # frozen and namespace module reprs are tested in importlib.
 
 
-def test_main():
-    run_unittest(ModuleTests)
-
-
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

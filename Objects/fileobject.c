@@ -2,8 +2,10 @@
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
+#include "pycore_runtime.h"  // _PyRuntime
 
-#ifdef HAVE_GETC_UNLOCKED
+#if defined(HAVE_GETC_UNLOCKED) && !defined(_Py_MEMORY_SANITIZER)
+/* clang MemorySanitizer doesn't yet understand getc_unlocked. */
 #define GETC(f) getc_unlocked(f)
 #define FLOCKFILE(f) flockfile(f)
 #define FUNLOCKFILE(f) funlockfile(f)
@@ -23,6 +25,8 @@
 extern "C" {
 #endif
 
+_Py_IDENTIFIER(open);
+
 /* External C interface */
 
 PyObject *
@@ -30,14 +34,14 @@ PyFile_FromFd(int fd, const char *name, const char *mode, int buffering, const c
               const char *errors, const char *newline, int closefd)
 {
     PyObject *io, *stream;
-    _Py_IDENTIFIER(open);
 
-    io = PyImport_ImportModule("io");
+    /* import _io in case we are being used to open io.py */
+    io = PyImport_ImportModule("_io");
     if (io == NULL)
         return NULL;
-    stream = _PyObject_CallMethodId(io, &PyId_open, "isisssi", fd, mode,
+    stream = _PyObject_CallMethodId(io, &PyId_open, "isisssO", fd, mode,
                                  buffering, encoding, errors,
-                                 newline, closefd);
+                                 newline, closefd ? Py_True : Py_False);
     Py_DECREF(io);
     if (stream == NULL)
         return NULL;
@@ -49,6 +53,7 @@ PyFile_FromFd(int fd, const char *name, const char *mode, int buffering, const c
 PyObject *
 PyFile_GetLine(PyObject *f, int n)
 {
+    _Py_IDENTIFIER(readline);
     PyObject *result;
 
     if (f == NULL) {
@@ -56,36 +61,22 @@ PyFile_GetLine(PyObject *f, int n)
         return NULL;
     }
 
-    {
-        PyObject *reader;
-        PyObject *args;
-        _Py_IDENTIFIER(readline);
-
-        reader = _PyObject_GetAttrId(f, &PyId_readline);
-        if (reader == NULL)
-            return NULL;
-        if (n <= 0)
-            args = PyTuple_New(0);
-        else
-            args = Py_BuildValue("(i)", n);
-        if (args == NULL) {
-            Py_DECREF(reader);
-            return NULL;
-        }
-        result = PyEval_CallObject(reader, args);
-        Py_DECREF(reader);
-        Py_DECREF(args);
-        if (result != NULL && !PyBytes_Check(result) &&
-            !PyUnicode_Check(result)) {
-            Py_DECREF(result);
-            result = NULL;
-            PyErr_SetString(PyExc_TypeError,
-                       "object.readline() returned non-string");
-        }
+    if (n <= 0) {
+        result = _PyObject_CallMethodIdNoArgs(f, &PyId_readline);
+    }
+    else {
+        result = _PyObject_CallMethodId(f, &PyId_readline, "i", n);
+    }
+    if (result != NULL && !PyBytes_Check(result) &&
+        !PyUnicode_Check(result)) {
+        Py_DECREF(result);
+        result = NULL;
+        PyErr_SetString(PyExc_TypeError,
+                   "object.readline() returned non-string");
     }
 
     if (n < 0 && result != NULL && PyBytes_Check(result)) {
-        char *s = PyBytes_AS_STRING(result);
+        const char *s = PyBytes_AS_STRING(result);
         Py_ssize_t len = PyBytes_GET_SIZE(result);
         if (len == 0) {
             Py_DECREF(result);
@@ -94,7 +85,7 @@ PyFile_GetLine(PyObject *f, int n)
                             "EOF when reading a line");
         }
         else if (s[len-1] == '\n') {
-            if (result->ob_refcnt == 1)
+            if (Py_REFCNT(result) == 1)
                 _PyBytes_Resize(&result, len-1);
             else {
                 PyObject *v;
@@ -127,7 +118,7 @@ PyFile_GetLine(PyObject *f, int n)
 int
 PyFile_WriteObject(PyObject *v, PyObject *f, int flags)
 {
-    PyObject *writer, *value, *args, *result;
+    PyObject *writer, *value, *result;
     _Py_IDENTIFIER(write);
 
     if (f == NULL) {
@@ -146,14 +137,7 @@ PyFile_WriteObject(PyObject *v, PyObject *f, int flags)
         Py_DECREF(writer);
         return -1;
     }
-    args = PyTuple_Pack(1, value);
-    if (args == NULL) {
-        Py_DECREF(value);
-        Py_DECREF(writer);
-        return -1;
-    }
-    result = PyEval_CallObject(writer, args);
-    Py_DECREF(args);
+    result = PyObject_CallOneArg(writer, value);
     Py_DECREF(value);
     Py_DECREF(writer);
     if (result == NULL)
@@ -202,9 +186,11 @@ PyObject_AsFileDescriptor(PyObject *o)
     if (PyLong_Check(o)) {
         fd = _PyLong_AsInt(o);
     }
-    else if ((meth = _PyObject_GetAttrId(o, &PyId_fileno)) != NULL)
-    {
-        PyObject *fno = PyEval_CallObject(meth, NULL);
+    else if (_PyObject_LookupAttrId(o, &PyId_fileno, &meth) < 0) {
+        return -1;
+    }
+    else if (meth != NULL) {
+        PyObject *fno = _PyObject_CallNoArg(meth);
         Py_DECREF(meth);
         if (fno == NULL)
             return -1;
@@ -235,6 +221,17 @@ PyObject_AsFileDescriptor(PyObject *o)
         return -1;
     }
     return fd;
+}
+
+int
+_PyLong_FileDescriptor_Converter(PyObject *o, void *ptr)
+{
+    int fd = PyObject_AsFileDescriptor(o);
+    if (fd == -1) {
+        return 0;
+    }
+    *(int *)ptr = fd;
+    return 1;
 }
 
 /*
@@ -328,29 +325,6 @@ typedef struct {
     int fd;
 } PyStdPrinter_Object;
 
-static PyObject *
-stdprinter_new(PyTypeObject *type, PyObject *args, PyObject *kews)
-{
-    PyStdPrinter_Object *self;
-
-    assert(type != NULL && type->tp_alloc != NULL);
-
-    self = (PyStdPrinter_Object *) type->tp_alloc(type, 0);
-    if (self != NULL) {
-        self->fd = -1;
-    }
-
-    return (PyObject *) self;
-}
-
-static int
-stdprinter_init(PyObject *self, PyObject *args, PyObject *kwds)
-{
-    PyErr_SetString(PyExc_TypeError,
-                    "cannot create 'stderrprinter' instances");
-    return -1;
-}
-
 PyObject *
 PyFile_NewStdPrinter(int fd)
 {
@@ -372,8 +346,14 @@ PyFile_NewStdPrinter(int fd)
 static PyObject *
 stdprinter_write(PyStdPrinter_Object *self, PyObject *args)
 {
-    char *c;
+    PyObject *unicode;
+    PyObject *bytes = NULL;
+    const char *str;
     Py_ssize_t n;
+    int err;
+
+    /* The function can clear the current exception */
+    assert(!PyErr_Occurred());
 
     if (self->fd < 0) {
         /* fd might be invalid on Windows
@@ -383,26 +363,32 @@ stdprinter_write(PyStdPrinter_Object *self, PyObject *args)
         Py_RETURN_NONE;
     }
 
-    if (!PyArg_ParseTuple(args, "s", &c)) {
+    if (!PyArg_ParseTuple(args, "U", &unicode)) {
         return NULL;
     }
-    n = strlen(c);
 
-    Py_BEGIN_ALLOW_THREADS
-    errno = 0;
-#ifdef MS_WINDOWS
-    if (n > INT_MAX)
-        n = INT_MAX;
-    n = write(self->fd, c, (int)n);
-#else
-    n = write(self->fd, c, n);
-#endif
-    Py_END_ALLOW_THREADS
+    /* Encode Unicode to UTF-8/backslashreplace */
+    str = PyUnicode_AsUTF8AndSize(unicode, &n);
+    if (str == NULL) {
+        PyErr_Clear();
+        bytes = _PyUnicode_AsUTF8String(unicode, "backslashreplace");
+        if (bytes == NULL)
+            return NULL;
+        str = PyBytes_AS_STRING(bytes);
+        n = PyBytes_GET_SIZE(bytes);
+    }
 
-    if (n < 0) {
-        if (errno == EAGAIN)
+    n = _Py_write(self->fd, str, n);
+    /* save errno, it can be modified indirectly by Py_XDECREF() */
+    err = errno;
+
+    Py_XDECREF(bytes);
+
+    if (n == -1) {
+        if (err == EAGAIN) {
+            PyErr_Clear();
             Py_RETURN_NONE;
-        PyErr_SetFromErrno(PyExc_IOError);
+        }
         return NULL;
     }
 
@@ -410,7 +396,7 @@ stdprinter_write(PyStdPrinter_Object *self, PyObject *args)
 }
 
 static PyObject *
-stdprinter_fileno(PyStdPrinter_Object *self)
+stdprinter_fileno(PyStdPrinter_Object *self, PyObject *Py_UNUSED(ignored))
 {
     return PyLong_FromLong((long) self->fd);
 }
@@ -418,18 +404,18 @@ stdprinter_fileno(PyStdPrinter_Object *self)
 static PyObject *
 stdprinter_repr(PyStdPrinter_Object *self)
 {
-    return PyUnicode_FromFormat("<stdprinter(fd=%d) object at 0x%x>",
+    return PyUnicode_FromFormat("<stdprinter(fd=%d) object at %p>",
                                 self->fd, self);
 }
 
 static PyObject *
-stdprinter_noop(PyStdPrinter_Object *self)
+stdprinter_noop(PyStdPrinter_Object *self, PyObject *Py_UNUSED(ignored))
 {
     Py_RETURN_NONE;
 }
 
 static PyObject *
-stdprinter_isatty(PyStdPrinter_Object *self)
+stdprinter_isatty(PyStdPrinter_Object *self, PyObject *Py_UNUSED(ignored))
 {
     long res;
     if (self->fd < 0) {
@@ -455,8 +441,7 @@ static PyMethodDef stdprinter_methods[] = {
 static PyObject *
 get_closed(PyStdPrinter_Object *self, void *closure)
 {
-    Py_INCREF(Py_False);
-    return Py_False;
+    Py_RETURN_FALSE;
 }
 
 static PyObject *
@@ -485,10 +470,10 @@ PyTypeObject PyStdPrinter_Type = {
     0,                                          /* tp_itemsize */
     /* methods */
     0,                                          /* tp_dealloc */
-    0,                                          /* tp_print */
+    0,                                          /* tp_vectorcall_offset */
     0,                                          /* tp_getattr */
     0,                                          /* tp_setattr */
-    0,                                          /* tp_reserved */
+    0,                                          /* tp_as_async */
     (reprfunc)stdprinter_repr,                  /* tp_repr */
     0,                                          /* tp_as_number */
     0,                                          /* tp_as_sequence */
@@ -499,7 +484,7 @@ PyTypeObject PyStdPrinter_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT,                         /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION, /* tp_flags */
     0,                                          /* tp_doc */
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
@@ -515,11 +500,76 @@ PyTypeObject PyStdPrinter_Type = {
     0,                                          /* tp_descr_get */
     0,                                          /* tp_descr_set */
     0,                                          /* tp_dictoffset */
-    stdprinter_init,                            /* tp_init */
+    0,                                          /* tp_init */
     PyType_GenericAlloc,                        /* tp_alloc */
-    stdprinter_new,                             /* tp_new */
+    0,                                          /* tp_new */
     PyObject_Del,                               /* tp_free */
 };
+
+
+/* ************************** open_code hook ***************************
+ * The open_code hook allows embedders to override the method used to
+ * open files that are going to be used by the runtime to execute code
+ */
+
+int
+PyFile_SetOpenCodeHook(Py_OpenCodeHookFunction hook, void *userData) {
+    if (Py_IsInitialized() &&
+        PySys_Audit("setopencodehook", NULL) < 0) {
+        return -1;
+    }
+
+    if (_PyRuntime.open_code_hook) {
+        if (Py_IsInitialized()) {
+            PyErr_SetString(PyExc_SystemError,
+                "failed to change existing open_code hook");
+        }
+        return -1;
+    }
+
+    _PyRuntime.open_code_hook = hook;
+    _PyRuntime.open_code_userdata = userData;
+    return 0;
+}
+
+PyObject *
+PyFile_OpenCodeObject(PyObject *path)
+{
+    PyObject *iomod, *f = NULL;
+
+    if (!PyUnicode_Check(path)) {
+        PyErr_Format(PyExc_TypeError, "'path' must be 'str', not '%.200s'",
+                     Py_TYPE(path)->tp_name);
+        return NULL;
+    }
+
+    Py_OpenCodeHookFunction hook = _PyRuntime.open_code_hook;
+    if (hook) {
+        f = hook(path, _PyRuntime.open_code_userdata);
+    } else {
+        iomod = PyImport_ImportModule("_io");
+        if (iomod) {
+            f = _PyObject_CallMethodId(iomod, &PyId_open, "Os",
+                                       path, "rb");
+            Py_DECREF(iomod);
+        }
+    }
+
+    return f;
+}
+
+PyObject *
+PyFile_OpenCode(const char *utf8path)
+{
+    PyObject *pathobj = PyUnicode_FromString(utf8path);
+    PyObject *f;
+    if (!pathobj) {
+        return NULL;
+    }
+    f = PyFile_OpenCodeObject(pathobj);
+    Py_DECREF(pathobj);
+    return f;
+}
 
 
 #ifdef __cplusplus

@@ -43,10 +43,10 @@ class MIMEAudio(MIMENonMultipart):
     """Class for generating audio/* MIME documents."""
 
     def __init__(self, _audiodata, _subtype=None,
-                 _encoder=encoders.encode_base64, **_params):
+                 _encoder=encoders.encode_base64, *, policy=None, **_params):
         """Create an audio/* type MIME document.
 
-        _audiodata is a string containing the raw audio data.  If this data
+        _audiodata contains the bytes for the raw audio data.  If this data
         can be decoded by the standard Python `sndhdr' module, then the
         subtype will be automatically included in the Content-Type header.
         Otherwise, you can specify  the specific audio subtype via the
@@ -68,6 +68,7 @@ class MIMEAudio(MIMENonMultipart):
             _subtype = _whatsnd(_audiodata)
         if _subtype is None:
             raise TypeError('Could not find audio MIME subtype')
-        MIMENonMultipart.__init__(self, 'audio', _subtype, **_params)
+        MIMENonMultipart.__init__(self, 'audio', _subtype, policy=policy,
+                                  **_params)
         self.set_payload(_audiodata)
         _encoder(self)

@@ -4,6 +4,7 @@ from .. import util
 machinery = util.import_importlib('importlib.machinery')
 
 import unittest
+import warnings
 
 
 class FindSpecTests(abc.FinderTests):
@@ -37,8 +38,10 @@ class FindSpecTests(abc.FinderTests):
         spec = self.find('<not real>')
         self.assertIsNone(spec)
 
-Frozen_FindSpecTests, Source_FindSpecTests = util.test_both(FindSpecTests,
-                                                            machinery=machinery)
+
+(Frozen_FindSpecTests,
+ Source_FindSpecTests
+ ) = util.test_both(FindSpecTests, machinery=machinery)
 
 
 class FinderTests(abc.FinderTests):
@@ -47,7 +50,9 @@ class FinderTests(abc.FinderTests):
 
     def find(self, name, path=None):
         finder = self.machinery.FrozenImporter
-        return finder.find_module(name, path)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return finder.find_module(name, path)
 
     def test_module(self):
         name = '__hello__'
@@ -72,8 +77,10 @@ class FinderTests(abc.FinderTests):
         loader = self.find('<not real>')
         self.assertIsNone(loader)
 
-Frozen_FinderTests, Source_FinderTests = util.test_both(FinderTests,
-                                                        machinery=machinery)
+
+(Frozen_FinderTests,
+ Source_FinderTests
+ ) = util.test_both(FinderTests, machinery=machinery)
 
 
 if __name__ == '__main__':

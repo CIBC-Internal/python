@@ -120,7 +120,7 @@ having the entire data set in memory at one time.  List comprehensions don't fit
 into this picture very well because they produce a Python list object containing
 all of the items.  This unavoidably pulls all of the objects into memory, which
 can be a problem if your data set is very large.  When trying to write a
-functionally-styled program, it would be natural to write something like::
+functionally styled program, it would be natural to write something like::
 
    links = [link for link in get_all_links() if not link.followed]
    for link in links:
@@ -337,7 +337,7 @@ returned.
       wrote patches implementing function decorators, but the one that was actually
       checked in was patch #979728, written by Mark Russell.
 
-   https://www.python.org/moin/PythonDecoratorLibrary
+   https://wiki.python.org/moin/PythonDecoratorLibrary
       This Wiki page contains several examples of decorators.
 
 .. ======================================================================
@@ -472,7 +472,7 @@ PEP 327: Decimal Data Type
 ==========================
 
 Python has always supported floating-point (FP) numbers, based on the underlying
-C :c:type:`double` type, as a data type.  However, while most programming
+C :c:expr:`double` type, as a data type.  However, while most programming
 languages provide a floating-point type, many people (even programmers) are
 unaware that floating-point numbers don't represent certain decimal fractions
 accurately.  The new :class:`Decimal` type can represent these fractions
@@ -501,7 +501,7 @@ mantissa is multiplied by 4 (2 to the power of the exponent 2); 1.25 \* 4 equals
 5.
 
 Modern systems usually provide floating-point support that conforms to a
-standard called IEEE 754.  C's :c:type:`double` type is usually implemented as a
+standard called IEEE 754.  C's :c:expr:`double` type is usually implemented as a
 64-bit IEEE 754 number, which uses 52 bits of space for the mantissa.  This
 means that numbers can only be specified to 52 bits of precision.  If you're
 trying to represent numbers whose expansion repeats endlessly, the expansion is
@@ -517,8 +517,8 @@ Sometimes you can see this inaccuracy when the number is printed::
    >>> 1.1
    1.1000000000000001
 
-The inaccuracy isn't always visible when you print the number because the FP-to-
-decimal-string conversion is provided by the C library, and most C libraries try
+The inaccuracy isn't always visible when you print the number because the
+FP-to-decimal-string conversion is provided by the C library, and most C libraries try
 to produce sensible output.  Even if it's not displayed, however, the inaccuracy
 is still there and subsequent operations can magnify the error.
 
@@ -595,8 +595,8 @@ exponent::
      ...
    decimal.InvalidOperation: x ** (non-integer)
 
-You can combine :class:`Decimal` instances with integers, but not with floating-
-point numbers::
+You can combine :class:`Decimal` instances with integers, but not with
+floating-point numbers::
 
    >>> a + 4
    Decimal("39.72")
@@ -684,10 +684,10 @@ includes a quick-start tutorial and a reference.
       Raymond Hettinger, Aahz, and Tim Peters.
 
    http://www.lahey.com/float.htm
-      The article uses Fortran code to illustrate many of the problems that floating-
-      point inaccuracy can cause.
+      The article uses Fortran code to illustrate many of the problems that
+      floating-point inaccuracy can cause.
 
-   http://www2.hursley.ibm.com/decimal/
+   http://speleotrove.com/decimal/
       A description of a decimal-based representation.  This representation is being
       proposed as a standard, and underlies the new Python decimal type.  Much of this
       material was written by Mike Cowlishaw, designer of the Rexx language.
@@ -741,8 +741,8 @@ functions in Python's implementation required that the numeric locale remain set
 to the ``'C'`` locale.  Often this was because the code was using the C
 library's :c:func:`atof` function.
 
-Not setting the numeric locale caused trouble for extensions that used third-
-party C libraries, however, because they wouldn't have the correct locale set.
+Not setting the numeric locale caused trouble for extensions that used third-party
+C libraries, however, because they wouldn't have the correct locale set.
 The motivating example was GTK+, whose user interface widgets weren't displaying
 numbers in the current locale.
 
@@ -750,13 +750,13 @@ The solution described in the PEP is to add three new functions to the Python
 API that perform ASCII-only conversions, ignoring the locale setting:
 
 * ``PyOS_ascii_strtod(str, ptr)``  and ``PyOS_ascii_atof(str, ptr)``
-  both convert a string to a C :c:type:`double`.
+  both convert a string to a C :c:expr:`double`.
 
 * ``PyOS_ascii_formatd(buffer, buf_len, format, d)`` converts a
-  :c:type:`double` to an ASCII string.
+  :c:expr:`double` to an ASCII string.
 
 The code for these functions came from the GLib library
-(http://library.gnome.org/devel/glib/stable/), whose developers kindly
+(https://developer.gnome.org/glib/stable/), whose developers kindly
 relicensed the relevant functions and donated them to the Python Software
 Foundation.  The :mod:`locale` module  can now change the numeric locale,
 letting extensions such as GTK+  produce the correct results.
@@ -918,8 +918,8 @@ Here are all of the changes that Python 2.4 makes to the core Python language.
 
   (Contributed by Raymond Hettinger.)
 
-* Encountering a failure while importing a module no longer leaves a partially-
-  initialized module object in ``sys.modules``.  The incomplete module object left
+* Encountering a failure while importing a module no longer leaves a partially initialized
+  module object in ``sys.modules``.  The incomplete module object left
   behind would fool further imports of the same module into succeeding, leading to
   confusing errors.   (Fixed by Tim Peters.)
 
@@ -998,7 +998,7 @@ complete list of changes, or look through the CVS logs for all the details.
   that lets you perform a limited number of passes through the polling loop.  The
   default is still to loop forever.
 
-* The :mod:`base64` module now has more complete RFC 3548 support for Base64,
+* The :mod:`base64` module now has more complete :rfc:`3548` support for Base64,
   Base32, and Base16 encoding and decoding, including optional case folding and
   optional alternative alphabets. (Contributed by Barry Warsaw.)
 
@@ -1028,8 +1028,8 @@ complete list of changes, or look through the CVS logs for all the details.
   previous ones left off.  (Implemented by Walter Dörwald.)
 
 * There is a new :mod:`collections` module for  various specialized collection
-  datatypes.   Currently it contains just one type, :class:`deque`,  a double-
-  ended queue that supports efficiently adding and removing elements from either
+  datatypes.  Currently it contains just one type, :class:`deque`, a double-ended
+  queue that supports efficiently adding and removing elements from either
   end::
 
      >>> from collections import deque
@@ -1425,7 +1425,9 @@ specifying the :const:`doctest.REPORT_UDIFF` (unified diffs),
            print word
 
 Running the above function's tests with :const:`doctest.REPORT_UDIFF` specified,
-you get the following output::
+you get the following output:
+
+.. code-block:: none
 
    **********************************************************************
    File "t.py", line 15, in g
@@ -1451,7 +1453,7 @@ Some of the changes to Python's build process and to the C API are:
   extension functions: :c:macro:`Py_RETURN_NONE`, :c:macro:`Py_RETURN_TRUE`, and
   :c:macro:`Py_RETURN_FALSE`. (Contributed by Brett Cannon.)
 
-* Another new macro, :c:macro:`Py_CLEAR(obj)`,  decreases the reference count of
+* Another new macro, :c:macro:`Py_CLEAR`,  decreases the reference count of
   *obj* and sets *obj* to the null pointer.  (Contributed by Jim Fulton.)
 
 * A new function, ``PyTuple_Pack(N, obj1, obj2, ..., objN)``, constructs
@@ -1462,7 +1464,7 @@ Some of the changes to Python's build process and to the C API are:
   lookups without masking exceptions raised during the look-up process.
   (Contributed by Raymond Hettinger.)
 
-* The :c:macro:`Py_IS_NAN(X)` macro returns 1 if  its float or double argument
+* The :c:expr:`Py_IS_NAN(X)` macro returns 1 if  its float or double argument
   *X* is a NaN.   (Contributed by Tim Peters.)
 
 * C code can avoid unnecessary locking by using the new
@@ -1481,10 +1483,10 @@ Some of the changes to Python's build process and to the C API are:
 
 * Python can now be built with additional profiling for the interpreter itself,
   intended as an aid to people developing the Python core.  Providing
-  :option:`----enable-profiling` to the :program:`configure` script will let you
+  :option:`!--enable-profiling` to the :program:`configure` script will let you
   profile the interpreter with :program:`gprof`, and providing the
-  :option:`----with-tsc` switch enables profiling using the Pentium's Time-Stamp-
-  Counter register.  Note that the :option:`----with-tsc` switch is slightly
+  :option:`!--with-tsc` switch enables profiling using the Pentium's
+  Time-Stamp-Counter register.  Note that the :option:`!--with-tsc` switch is slightly
   misnamed, because the profiling feature also works on the PowerPC platform,
   though that processor architecture doesn't call that register "the TSC
   register".  (Contributed by Jeremy Hylton.)
@@ -1521,7 +1523,7 @@ code:
   empty list instead of raising a :exc:`TypeError` exception if called with no
   arguments.
 
-* You can no longer compare the :class:`date` and :class:`datetime` instances
+* You can no longer compare the :class:`date` and :class:`~datetime.datetime` instances
   provided by the :mod:`datetime` module.  Two  instances of different classes
   will now always be unequal, and  relative comparisons (``<``, ``>``) will raise
   a :exc:`TypeError`.
@@ -1538,8 +1540,8 @@ code:
 
 * The :mod:`tarfile` module now generates GNU-format tar files by default.
 
-* Encountering a failure while importing a module no longer leaves a partially-
-  initialized module object in ``sys.modules``.
+* Encountering a failure while importing a module no longer leaves a
+  partially initialized module object in ``sys.modules``.
 
 * :const:`None` is now a constant; code that binds a new value to  the name
   ``None`` is now a syntax error.

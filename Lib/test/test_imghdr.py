@@ -1,9 +1,12 @@
 import imghdr
 import io
 import os
+import pathlib
 import unittest
 import warnings
-from test.support import findfile, TESTFN, unlink
+from test.support import findfile
+from test.support.os_helper import TESTFN, unlink
+
 
 TEST_FILES = (
     ('python.png', 'png'),
@@ -16,7 +19,9 @@ TEST_FILES = (
     ('python.ras', 'rast'),
     ('python.sgi', 'rgb'),
     ('python.tiff', 'tiff'),
-    ('python.xbm', 'xbm')
+    ('python.xbm', 'xbm'),
+    ('python.webp', 'webp'),
+    ('python.exr', 'exr'),
 )
 
 class UnseekableIO(io.FileIO):
@@ -46,6 +51,12 @@ class TestImghdr(unittest.TestCase):
                 data = stream.read()
             self.assertEqual(imghdr.what(None, data), expected)
             self.assertEqual(imghdr.what(None, bytearray(data)), expected)
+
+    def test_pathlike_filename(self):
+        for filename, expected in TEST_FILES:
+            with self.subTest(filename=filename):
+                filename = findfile(filename, subdir='imghdrdata')
+                self.assertEqual(imghdr.what(pathlib.Path(filename)), expected)
 
     def test_register_test(self):
         def test_jumbo(h, file):

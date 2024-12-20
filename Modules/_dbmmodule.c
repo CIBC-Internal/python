@@ -14,62 +14,68 @@
  */
 #if defined(HAVE_NDBM_H)
 #include <ndbm.h>
-static char *which_dbm = "GNU gdbm";  /* EMX port of GDBM */
+static const char which_dbm[] = "GNU gdbm";  /* EMX port of GDBM */
 #elif defined(HAVE_GDBM_NDBM_H)
 #include <gdbm/ndbm.h>
-static char *which_dbm = "GNU gdbm";
+static const char which_dbm[] = "GNU gdbm";
 #elif defined(HAVE_GDBM_DASH_NDBM_H)
 #include <gdbm-ndbm.h>
-static char *which_dbm = "GNU gdbm";
+static const char which_dbm[] = "GNU gdbm";
 #elif defined(HAVE_BERKDB_H)
 #include <db.h>
-static char *which_dbm = "Berkeley DB";
+static const char which_dbm[] = "Berkeley DB";
 #else
 #error "No ndbm.h available!"
 #endif
 
+typedef struct {
+    PyTypeObject *dbm_type;
+    PyObject *dbm_error;
+} _dbm_state;
+
+static inline _dbm_state*
+get_dbm_state(PyObject *module)
+{
+    void *state = PyModule_GetState(module);
+    assert(state != NULL);
+    return (_dbm_state *)state;
+}
+
 /*[clinic input]
-module dbm
-class dbm.dbm "dbmobject *" "&Dbmtype"
+module _dbm
+class _dbm.dbm "dbmobject *" "&Dbmtype"
 [clinic start generated code]*/
-/*[clinic end generated code: output=da39a3ee5e6b4b0d input=92450564684a69a3]*/
+/*[clinic end generated code: output=da39a3ee5e6b4b0d input=9b1aa8756d16150e]*/
 
 typedef struct {
     PyObject_HEAD
+    int flags;
     int di_size;        /* -1 means recompute */
     DBM *di_dbm;
 } dbmobject;
 
-static PyTypeObject Dbmtype;
+#include "clinic/_dbmmodule.c.h"
 
-#define is_dbmobject(v) (Py_TYPE(v) == &Dbmtype)
-#define check_dbmobject_open(v) if ((v)->di_dbm == NULL) \
-               { PyErr_SetString(DbmError, "DBM object has already been closed"); \
-                 return NULL; }
-
-static PyObject *DbmError;
-
-/*[python input]
-class dbmobject_converter(self_converter):
-    type = "dbmobject *"
-    def pre_render(self):
-        super().pre_render()
-        self.name = 'dp'
-[python start generated code]*/
-/*[python end generated code: output=da39a3ee5e6b4b0d input=6ad536357913879a]*/
+#define check_dbmobject_open(v, err)                                \
+    if ((v)->di_dbm == NULL) {                                      \
+        PyErr_SetString(err, "DBM object has already been closed"); \
+        return NULL;                                                \
+    }
 
 static PyObject *
-newdbmobject(const char *file, int flags, int mode)
+newdbmobject(_dbm_state *state, const char *file, int flags, int mode)
 {
-    dbmobject *dp;
-
-    dp = PyObject_New(dbmobject, &Dbmtype);
-    if (dp == NULL)
+    dbmobject *dp = PyObject_GC_New(dbmobject, state->dbm_type);
+    if (dp == NULL) {
         return NULL;
+    }
     dp->di_size = -1;
+    dp->flags = flags;
+    PyObject_GC_Track(dp);
+
     /* See issue #19296 */
     if ( (dp->di_dbm = dbm_open((char *)file, flags, mode)) == 0 ) {
-        PyErr_SetFromErrno(DbmError);
+        PyErr_SetFromErrnoWithFilename(state->dbm_error, file);
         Py_DECREF(dp);
         return NULL;
     }
@@ -77,20 +83,32 @@ newdbmobject(const char *file, int flags, int mode)
 }
 
 /* Methods */
+static int
+dbm_traverse(dbmobject *dp, visitproc visit, void *arg)
+{
+    Py_VISIT(Py_TYPE(dp));
+    return 0;
+}
 
 static void
 dbm_dealloc(dbmobject *dp)
 {
-    if ( dp->di_dbm )
+    PyObject_GC_UnTrack(dp);
+    if (dp->di_dbm) {
         dbm_close(dp->di_dbm);
-    PyObject_Del(dp);
+    }
+    PyTypeObject *tp = Py_TYPE(dp);
+    tp->tp_free(dp);
+    Py_DECREF(tp);
 }
 
 static Py_ssize_t
 dbm_length(dbmobject *dp)
 {
+    _dbm_state *state = PyType_GetModuleState(Py_TYPE(dp));
+    assert(state != NULL);
     if (dp->di_dbm == NULL) {
-             PyErr_SetString(DbmError, "DBM object has already been closed");
+             PyErr_SetString(state->dbm_error, "DBM object has already been closed");
              return -1;
     }
     if ( dp->di_size < 0 ) {
@@ -111,12 +129,14 @@ dbm_subscript(dbmobject *dp, PyObject *key)
 {
     datum drec, krec;
     Py_ssize_t tmp_size;
-
-    if (!PyArg_Parse(key, "s#", &krec.dptr, &tmp_size) )
+    _dbm_state *state = PyType_GetModuleState(Py_TYPE(dp));
+    assert(state != NULL);
+    if (!PyArg_Parse(key, "s#", &krec.dptr, &tmp_size)) {
         return NULL;
+    }
 
     krec.dsize = tmp_size;
-    check_dbmobject_open(dp);
+    check_dbmobject_open(dp, state->dbm_error);
     drec = dbm_fetch(dp->di_dbm, krec);
     if ( drec.dptr == 0 ) {
         PyErr_SetObject(PyExc_KeyError, key);
@@ -124,7 +144,7 @@ dbm_subscript(dbmobject *dp, PyObject *key)
     }
     if ( dbm_error(dp->di_dbm) ) {
         dbm_clearerr(dp->di_dbm);
-        PyErr_SetString(DbmError, "");
+        PyErr_SetString(state->dbm_error, "");
         return NULL;
     }
     return PyBytes_FromStringAndSize(drec.dptr, drec.dsize);
@@ -141,69 +161,91 @@ dbm_ass_sub(dbmobject *dp, PyObject *v, PyObject *w)
                         "dbm mappings have bytes or string keys only");
         return -1;
     }
+    _dbm_state *state = PyType_GetModuleState(Py_TYPE(dp));
+    assert(state != NULL);
     krec.dsize = tmp_size;
     if (dp->di_dbm == NULL) {
-             PyErr_SetString(DbmError, "DBM object has already been closed");
+             PyErr_SetString(state->dbm_error, "DBM object has already been closed");
              return -1;
     }
     dp->di_size = -1;
     if (w == NULL) {
         if ( dbm_delete(dp->di_dbm, krec) < 0 ) {
             dbm_clearerr(dp->di_dbm);
-            PyErr_SetObject(PyExc_KeyError, v);
+            /* we might get a failure for reasons like file corrupted,
+               but we are not able to distinguish it */
+            if (dp->flags & O_RDWR) {
+                PyErr_SetObject(PyExc_KeyError, v);
+            }
+            else {
+                PyErr_SetString(state->dbm_error, "cannot delete item from database");
+            }
             return -1;
         }
     } else {
         if ( !PyArg_Parse(w, "s#", &drec.dptr, &tmp_size) ) {
             PyErr_SetString(PyExc_TypeError,
-                 "dbm mappings have byte or string elements only");
+                 "dbm mappings have bytes or string elements only");
             return -1;
         }
         drec.dsize = tmp_size;
         if ( dbm_store(dp->di_dbm, krec, drec, DBM_REPLACE) < 0 ) {
             dbm_clearerr(dp->di_dbm);
-            PyErr_SetString(DbmError,
+            PyErr_SetString(state->dbm_error,
                             "cannot add item to database");
             return -1;
         }
     }
     if ( dbm_error(dp->di_dbm) ) {
         dbm_clearerr(dp->di_dbm);
-        PyErr_SetString(DbmError, "");
+        PyErr_SetString(state->dbm_error, "");
         return -1;
     }
     return 0;
 }
 
-static PyMappingMethods dbm_as_mapping = {
-    (lenfunc)dbm_length,                /*mp_length*/
-    (binaryfunc)dbm_subscript,          /*mp_subscript*/
-    (objobjargproc)dbm_ass_sub,         /*mp_ass_subscript*/
-};
+/*[clinic input]
+_dbm.dbm.close
+
+Close the database.
+[clinic start generated code]*/
 
 static PyObject *
-dbm__close(dbmobject *dp, PyObject *unused)
+_dbm_dbm_close_impl(dbmobject *self)
+/*[clinic end generated code: output=c8dc5b6709600b86 input=046db72377d51be8]*/
 {
-    if (dp->di_dbm)
-        dbm_close(dp->di_dbm);
-    dp->di_dbm = NULL;
-    Py_INCREF(Py_None);
-    return Py_None;
+    if (self->di_dbm) {
+        dbm_close(self->di_dbm);
+    }
+    self->di_dbm = NULL;
+    Py_RETURN_NONE;
 }
 
+/*[clinic input]
+_dbm.dbm.keys
+
+    cls: defining_class
+
+Return a list of all keys in the database.
+[clinic start generated code]*/
+
 static PyObject *
-dbm_keys(dbmobject *dp, PyObject *unused)
+_dbm_dbm_keys_impl(dbmobject *self, PyTypeObject *cls)
+/*[clinic end generated code: output=f2a593b3038e5996 input=d3706a28fc051097]*/
 {
     PyObject *v, *item;
     datum key;
     int err;
 
-    check_dbmobject_open(dp);
+    _dbm_state *state = PyType_GetModuleState(cls);
+    assert(state != NULL);
+    check_dbmobject_open(self, state->dbm_error);
     v = PyList_New(0);
-    if (v == NULL)
+    if (v == NULL) {
         return NULL;
-    for (key = dbm_firstkey(dp->di_dbm); key.dptr;
-         key = dbm_nextkey(dp->di_dbm)) {
+    }
+    for (key = dbm_firstkey(self->di_dbm); key.dptr;
+         key = dbm_nextkey(self->di_dbm)) {
         item = PyBytes_FromStringAndSize(key.dptr, key.dsize);
         if (item == NULL) {
             Py_DECREF(v);
@@ -226,13 +268,15 @@ dbm_contains(PyObject *self, PyObject *arg)
     datum key, val;
     Py_ssize_t size;
 
+    _dbm_state *state = PyType_GetModuleState(Py_TYPE(dp));
+    assert(state != NULL);
     if ((dp)->di_dbm == NULL) {
-        PyErr_SetString(DbmError,
+        PyErr_SetString(state->dbm_error,
                         "DBM object has already been closed");
          return -1;
     }
     if (PyUnicode_Check(arg)) {
-        key.dptr = PyUnicode_AsUTF8AndSize(arg, &size);
+        key.dptr = (char *)PyUnicode_AsUTF8AndSize(arg, &size);
         key.dsize = size;
         if (key.dptr == NULL)
             return -1;
@@ -240,7 +284,7 @@ dbm_contains(PyObject *self, PyObject *arg)
     else if (!PyBytes_Check(arg)) {
         PyErr_Format(PyExc_TypeError,
                      "dbm key must be bytes or string, not %.100s",
-                     arg->ob_type->tp_name);
+                     Py_TYPE(arg)->tp_name);
         return -1;
     }
     else {
@@ -251,119 +295,89 @@ dbm_contains(PyObject *self, PyObject *arg)
     return val.dptr != NULL;
 }
 
-static PySequenceMethods dbm_as_sequence = {
-    0,                          /* sq_length */
-    0,                          /* sq_concat */
-    0,                          /* sq_repeat */
-    0,                          /* sq_item */
-    0,                          /* sq_slice */
-    0,                          /* sq_ass_item */
-    0,                          /* sq_ass_slice */
-    dbm_contains,               /* sq_contains */
-    0,                          /* sq_inplace_concat */
-    0,                          /* sq_inplace_repeat */
-};
-
 /*[clinic input]
-
-dbm.dbm.get
-
-    self: dbmobject
-
-    key: str(length=True)
+_dbm.dbm.get
+    cls: defining_class
+    key: str(accept={str, robuffer}, zeroes=True)
     default: object = None
     /
 
 Return the value for key if present, otherwise default.
 [clinic start generated code]*/
 
-PyDoc_STRVAR(dbm_dbm_get__doc__,
-"get($self, key, default=None, /)\n"
-"--\n"
-"\n"
-"Return the value for key if present, otherwise default.");
-
-#define DBM_DBM_GET_METHODDEF    \
-    {"get", (PyCFunction)dbm_dbm_get, METH_VARARGS, dbm_dbm_get__doc__},
-
 static PyObject *
-dbm_dbm_get_impl(dbmobject *dp, const char *key, Py_ssize_clean_t key_length, PyObject *default_value);
-
-static PyObject *
-dbm_dbm_get(dbmobject *dp, PyObject *args)
-{
-    PyObject *return_value = NULL;
-    const char *key;
-    Py_ssize_clean_t key_length;
-    PyObject *default_value = Py_None;
-
-    if (!PyArg_ParseTuple(args,
-        "s#|O:get",
-        &key, &key_length, &default_value))
-        goto exit;
-    return_value = dbm_dbm_get_impl(dp, key, key_length, default_value);
-
-exit:
-    return return_value;
-}
-
-static PyObject *
-dbm_dbm_get_impl(dbmobject *dp, const char *key, Py_ssize_clean_t key_length, PyObject *default_value)
-/*[clinic end generated code: output=452ea11394e7e92d input=aecf5efd2f2b1a3b]*/
+_dbm_dbm_get_impl(dbmobject *self, PyTypeObject *cls, const char *key,
+                  Py_ssize_clean_t key_length, PyObject *default_value)
+/*[clinic end generated code: output=34851b5dc1c664dc input=66b993b8349fa8c1]*/
 {
     datum dbm_key, val;
-
+    _dbm_state *state = PyType_GetModuleState(cls);
+    assert(state != NULL);
     dbm_key.dptr = (char *)key;
     dbm_key.dsize = key_length;
-    check_dbmobject_open(dp);
-    val = dbm_fetch(dp->di_dbm, dbm_key);
-    if (val.dptr != NULL)
+    check_dbmobject_open(self, state->dbm_error);
+    val = dbm_fetch(self->di_dbm, dbm_key);
+    if (val.dptr != NULL) {
         return PyBytes_FromStringAndSize(val.dptr, val.dsize);
+    }
 
     Py_INCREF(default_value);
     return default_value;
 }
 
-static PyObject *
-dbm_setdefault(dbmobject *dp, PyObject *args)
-{
-    datum key, val;
-    PyObject *defvalue = NULL;
-    char *tmp_ptr;
-    Py_ssize_t tmp_size;
+/*[clinic input]
+_dbm.dbm.setdefault
+    cls: defining_class
+    key: str(accept={str, robuffer}, zeroes=True)
+    default: object(c_default="NULL") = b''
+    /
 
-    if (!PyArg_ParseTuple(args, "s#|O:setdefault",
-                          &tmp_ptr, &tmp_size, &defvalue))
-        return NULL;
-    key.dptr = tmp_ptr;
-    key.dsize = tmp_size;
-    check_dbmobject_open(dp);
-    val = dbm_fetch(dp->di_dbm, key);
-    if (val.dptr != NULL)
+Return the value for key if present, otherwise default.
+
+If key is not in the database, it is inserted with default as the value.
+[clinic start generated code]*/
+
+static PyObject *
+_dbm_dbm_setdefault_impl(dbmobject *self, PyTypeObject *cls, const char *key,
+                         Py_ssize_clean_t key_length,
+                         PyObject *default_value)
+/*[clinic end generated code: output=d5c68fe673886767 input=126a3ff15c5f8232]*/
+{
+    datum dbm_key, val;
+    Py_ssize_t tmp_size;
+    _dbm_state *state = PyType_GetModuleState(cls);
+    assert(state != NULL);
+    dbm_key.dptr = (char *)key;
+    dbm_key.dsize = key_length;
+    check_dbmobject_open(self, state->dbm_error);
+    val = dbm_fetch(self->di_dbm, dbm_key);
+    if (val.dptr != NULL) {
         return PyBytes_FromStringAndSize(val.dptr, val.dsize);
-    if (defvalue == NULL) {
-        defvalue = PyBytes_FromStringAndSize(NULL, 0);
-        if (defvalue == NULL)
+    }
+    if (default_value == NULL) {
+        default_value = PyBytes_FromStringAndSize(NULL, 0);
+        if (default_value == NULL) {
             return NULL;
+        }
         val.dptr = NULL;
         val.dsize = 0;
     }
     else {
-        if ( !PyArg_Parse(defvalue, "s#", &val.dptr, &tmp_size) ) {
+        if ( !PyArg_Parse(default_value, "s#", &val.dptr, &tmp_size) ) {
             PyErr_SetString(PyExc_TypeError,
-                "dbm mappings have byte string elements only");
+                "dbm mappings have bytes or string elements only");
             return NULL;
         }
         val.dsize = tmp_size;
-        Py_INCREF(defvalue);
+        Py_INCREF(default_value);
     }
-    if (dbm_store(dp->di_dbm, key, val, DBM_INSERT) < 0) {
-        dbm_clearerr(dp->di_dbm);
-        PyErr_SetString(DbmError, "cannot add item to database");
-        Py_DECREF(defvalue);
+    if (dbm_store(self->di_dbm, dbm_key, val, DBM_INSERT) < 0) {
+        dbm_clearerr(self->di_dbm);
+        PyErr_SetString(state->dbm_error, "cannot add item to database");
+        Py_DECREF(default_value);
         return NULL;
     }
-    return defvalue;
+    return default_value;
 }
 
 static PyObject *
@@ -377,63 +391,50 @@ static PyObject *
 dbm__exit__(PyObject *self, PyObject *args)
 {
     _Py_IDENTIFIER(close);
-    return _PyObject_CallMethodId(self, &PyId_close, NULL);
+    return _PyObject_CallMethodIdNoArgs(self, &PyId_close);
 }
 
-
 static PyMethodDef dbm_methods[] = {
-    {"close",           (PyCFunction)dbm__close,        METH_NOARGS,
-     "close()\nClose the database."},
-    {"keys",            (PyCFunction)dbm_keys,          METH_NOARGS,
-     "keys() -> list\nReturn a list of all keys in the database."},
-    DBM_DBM_GET_METHODDEF
-    {"setdefault",      (PyCFunction)dbm_setdefault,    METH_VARARGS,
-     "setdefault(key[, default]) -> value\n"
-     "Return the value for key if present, otherwise default.  If key\n"
-     "is not in the database, it is inserted with default as the value."},
+    _DBM_DBM_CLOSE_METHODDEF
+    _DBM_DBM_KEYS_METHODDEF
+    _DBM_DBM_GET_METHODDEF
+    _DBM_DBM_SETDEFAULT_METHODDEF
     {"__enter__", dbm__enter__, METH_NOARGS, NULL},
     {"__exit__",  dbm__exit__, METH_VARARGS, NULL},
-    {NULL,              NULL}           /* sentinel */
+    {NULL,  NULL}           /* sentinel */
 };
 
-static PyTypeObject Dbmtype = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    "_dbm.dbm",
-    sizeof(dbmobject),
-    0,
-    (destructor)dbm_dealloc,  /*tp_dealloc*/
-    0,                            /*tp_print*/
-    0,                        /*tp_getattr*/
-    0,                            /*tp_setattr*/
-    0,                            /*tp_reserved*/
-    0,                            /*tp_repr*/
-    0,                            /*tp_as_number*/
-    &dbm_as_sequence,             /*tp_as_sequence*/
-    &dbm_as_mapping,              /*tp_as_mapping*/
-    0,                    /*tp_hash*/
-    0,                    /*tp_call*/
-    0,                    /*tp_str*/
-    0,                    /*tp_getattro*/
-    0,                    /*tp_setattro*/
-    0,                    /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,   /*tp_flags*/
-    0,                        /*tp_doc*/
-    0,                        /*tp_traverse*/
-    0,                        /*tp_clear*/
-    0,                        /*tp_richcompare*/
-    0,                        /*tp_weaklistoffset*/
-    0,                        /*tp_iter*/
-    0,                        /*tp_iternext*/
-    dbm_methods,          /*tp_methods*/
+static PyType_Slot dbmtype_spec_slots[] = {
+    {Py_tp_dealloc, dbm_dealloc},
+    {Py_tp_traverse, dbm_traverse},
+    {Py_tp_methods, dbm_methods},
+    {Py_sq_contains, dbm_contains},
+    {Py_mp_length, dbm_length},
+    {Py_mp_subscript, dbm_subscript},
+    {Py_mp_ass_subscript, dbm_ass_sub},
+    {0, 0}
+};
+
+
+static PyType_Spec dbmtype_spec = {
+    .name = "_dbm.dbm",
+    .basicsize = sizeof(dbmobject),
+    // Calling PyType_GetModuleState() on a subclass is not safe.
+    // dbmtype_spec does not have Py_TPFLAGS_BASETYPE flag
+    // which prevents to create a subclass.
+    // So calling PyType_GetModuleState() in this file is always safe.
+    .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION |
+              Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_IMMUTABLETYPE),
+    .slots = dbmtype_spec_slots,
 };
 
 /* ----------------------------------------------------------------- */
 
 /*[clinic input]
 
-dbm.open as dbmopen
+_dbm.open as dbmopen
 
-    filename: str
+    filename: unicode
         The filename to open.
 
     flags: str="r"
@@ -449,66 +450,49 @@ Return a database object.
 
 [clinic start generated code]*/
 
-PyDoc_STRVAR(dbmopen__doc__,
-"open($module, filename, flags=\'r\', mode=0o666, /)\n"
-"--\n"
-"\n"
-"Return a database object.\n"
-"\n"
-"  filename\n"
-"    The filename to open.\n"
-"  flags\n"
-"    How to open the file.  \"r\" for reading, \"w\" for writing, etc.\n"
-"  mode\n"
-"    If creating a new file, the mode bits for the new file\n"
-"    (e.g. os.O_RDWR).");
-
-#define DBMOPEN_METHODDEF    \
-    {"open", (PyCFunction)dbmopen, METH_VARARGS, dbmopen__doc__},
-
 static PyObject *
-dbmopen_impl(PyModuleDef *module, const char *filename, const char *flags, int mode);
-
-static PyObject *
-dbmopen(PyModuleDef *module, PyObject *args)
-{
-    PyObject *return_value = NULL;
-    const char *filename;
-    const char *flags = "r";
-    int mode = 438;
-
-    if (!PyArg_ParseTuple(args,
-        "s|si:open",
-        &filename, &flags, &mode))
-        goto exit;
-    return_value = dbmopen_impl(module, filename, flags, mode);
-
-exit:
-    return return_value;
-}
-
-static PyObject *
-dbmopen_impl(PyModuleDef *module, const char *filename, const char *flags, int mode)
-/*[clinic end generated code: output=9a7b725f9c4dcec2 input=6499ab0fab1333ac]*/
+dbmopen_impl(PyObject *module, PyObject *filename, const char *flags,
+             int mode)
+/*[clinic end generated code: output=9527750f5df90764 input=376a9d903a50df59]*/
 {
     int iflags;
-
-    if ( strcmp(flags, "r") == 0 )
+    _dbm_state *state =  get_dbm_state(module);
+    assert(state != NULL);
+    if (strcmp(flags, "r") == 0) {
         iflags = O_RDONLY;
-    else if ( strcmp(flags, "w") == 0 )
+    }
+    else if (strcmp(flags, "w") == 0) {
         iflags = O_RDWR;
-    else if ( strcmp(flags, "rw") == 0 ) /* B/W compat */
+    }
+    else if (strcmp(flags, "rw") == 0) {
+        /* Backward compatibility */
         iflags = O_RDWR|O_CREAT;
-    else if ( strcmp(flags, "c") == 0 )
+    }
+    else if (strcmp(flags, "c") == 0) {
         iflags = O_RDWR|O_CREAT;
-    else if ( strcmp(flags, "n") == 0 )
+    }
+    else if (strcmp(flags, "n") == 0) {
         iflags = O_RDWR|O_CREAT|O_TRUNC;
+    }
     else {
-        PyErr_SetString(DbmError,
+        PyErr_SetString(state->dbm_error,
                         "arg 2 to open should be 'r', 'w', 'c', or 'n'");
         return NULL;
     }
-    return newdbmobject(filename, iflags, mode);
+
+    PyObject *filenamebytes = PyUnicode_EncodeFSDefault(filename);
+    if (filenamebytes == NULL) {
+        return NULL;
+    }
+    const char *name = PyBytes_AS_STRING(filenamebytes);
+    if (strlen(name) != (size_t)PyBytes_GET_SIZE(filenamebytes)) {
+        Py_DECREF(filenamebytes);
+        PyErr_SetString(PyExc_ValueError, "embedded null character");
+        return NULL;
+    }
+    PyObject *self = newdbmobject(state, name, iflags, mode);
+    Py_DECREF(filenamebytes);
+    return self;
 }
 
 static PyMethodDef dbmmodule_methods[] = {
@@ -516,42 +500,70 @@ static PyMethodDef dbmmodule_methods[] = {
     { 0, 0 },
 };
 
+static int
+_dbm_exec(PyObject *module)
+{
+    _dbm_state *state = get_dbm_state(module);
+    state->dbm_type = (PyTypeObject *)PyType_FromModuleAndSpec(module,
+                                                        &dbmtype_spec, NULL);
+    if (state->dbm_type == NULL) {
+        return -1;
+    }
+    state->dbm_error = PyErr_NewException("_dbm.error", PyExc_OSError, NULL);
+    if (state->dbm_error == NULL) {
+        return -1;
+    }
+    if (PyModule_AddStringConstant(module, "library", which_dbm) < 0) {
+        return -1;
+    }
+    if (PyModule_AddType(module, (PyTypeObject *)state->dbm_error) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int
+_dbm_module_traverse(PyObject *module, visitproc visit, void *arg)
+{
+    _dbm_state *state = get_dbm_state(module);
+    Py_VISIT(state->dbm_error);
+    Py_VISIT(state->dbm_type);
+    return 0;
+}
+
+static int
+_dbm_module_clear(PyObject *module)
+{
+    _dbm_state *state = get_dbm_state(module);
+    Py_CLEAR(state->dbm_error);
+    Py_CLEAR(state->dbm_type);
+    return 0;
+}
+
+static void
+_dbm_module_free(void *module)
+{
+    _dbm_module_clear((PyObject *)module);
+}
+
+static PyModuleDef_Slot _dbmmodule_slots[] = {
+    {Py_mod_exec, _dbm_exec},
+    {0, NULL}
+};
 
 static struct PyModuleDef _dbmmodule = {
     PyModuleDef_HEAD_INIT,
-    "_dbm",
-    NULL,
-    -1,
-    dbmmodule_methods,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    .m_name = "_dbm",
+    .m_size = sizeof(_dbm_state),
+    .m_methods = dbmmodule_methods,
+    .m_slots = _dbmmodule_slots,
+    .m_traverse = _dbm_module_traverse,
+    .m_clear = _dbm_module_clear,
+    .m_free = _dbm_module_free,
 };
 
 PyMODINIT_FUNC
-PyInit__dbm(void) {
-    PyObject *m, *d, *s;
-
-    if (PyType_Ready(&Dbmtype) < 0)
-        return NULL;
-    m = PyModule_Create(&_dbmmodule);
-    if (m == NULL)
-        return NULL;
-    d = PyModule_GetDict(m);
-    if (DbmError == NULL)
-        DbmError = PyErr_NewException("_dbm.error",
-                                      PyExc_IOError, NULL);
-    s = PyUnicode_FromString(which_dbm);
-    if (s != NULL) {
-        PyDict_SetItemString(d, "library", s);
-        Py_DECREF(s);
-    }
-    if (DbmError != NULL)
-        PyDict_SetItemString(d, "error", DbmError);
-    if (PyErr_Occurred()) {
-        Py_DECREF(m);
-        m = NULL;
-    }
-    return m;
+PyInit__dbm(void)
+{
+    return PyModuleDef_Init(&_dbmmodule);
 }

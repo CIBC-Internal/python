@@ -1,8 +1,8 @@
 """Test relative imports (PEP 328)."""
 from .. import util
-from . import util as import_util
-import sys
 import unittest
+import warnings
+
 
 class RelativeImports:
 
@@ -66,9 +66,11 @@ class RelativeImports:
                 uncache_names.append(name[:-len('.__init__')])
         with util.mock_spec(*create) as importer:
             with util.import_state(meta_path=[importer]):
-                for global_ in globals_:
-                    with util.uncache(*uncache_names):
-                        callback(global_)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    for global_ in globals_:
+                        with util.uncache(*uncache_names):
+                            callback(global_)
 
 
     def test_module_from_module(self):
@@ -131,6 +133,7 @@ class RelativeImports:
             self.assertEqual(module.__name__, 'pkg')
             self.assertTrue(hasattr(module, 'subpkg2'))
             self.assertEqual(module.subpkg2.attr, 'pkg.subpkg2.__init__')
+        self.relative_import_test(create, globals_, callback)
 
     def test_deep_import(self):
         # [deep import]
@@ -154,7 +157,7 @@ class RelativeImports:
                     {'__name__': 'pkg', '__path__': ['blah']})
         def callback(global_):
             self.__import__('pkg')
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ImportError):
                 self.__import__('', global_, fromlist=['top_level'],
                                     level=2)
         self.relative_import_test(create, globals_, callback)
@@ -165,7 +168,7 @@ class RelativeImports:
         globals_ = {'__package__': 'pkg'}, {'__name__': 'pkg.module'}
         def callback(global_):
             self.__import__('pkg')
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ImportError):
                 self.__import__('', global_, fromlist=['top_level'],
                                     level=2)
         self.relative_import_test(create, globals_, callback)
@@ -205,11 +208,25 @@ class RelativeImports:
 
     def test_relative_import_no_globals(self):
         # No globals for a relative import is an error.
-        with self.assertRaises(KeyError):
-            self.__import__('sys', level=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with self.assertRaises(KeyError):
+                self.__import__('sys', level=1)
 
-Frozen_RelativeImports, Source_RelativeImports = util.test_both(
-        RelativeImports, __import__=import_util.__import__)
+    def test_relative_import_no_package(self):
+        with self.assertRaises(ImportError):
+            self.__import__('a', {'__package__': '', '__spec__': None},
+                            level=1)
+
+    def test_relative_import_no_package_exists_absolute(self):
+        with self.assertRaises(ImportError):
+            self.__import__('sys', {'__package__': '', '__spec__': None},
+                            level=1)
+
+
+(Frozen_RelativeImports,
+ Source_RelativeImports
+ ) = util.test_both(RelativeImports, __import__=util.__import__)
 
 
 if __name__ == '__main__':

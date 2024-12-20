@@ -59,6 +59,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addSuccess(test)
         if self.showAll:
             self.stream.writeln("ok")
+            self.stream.flush()
         elif self.dots:
             self.stream.write('.')
             self.stream.flush()
@@ -67,6 +68,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addError(test, err)
         if self.showAll:
             self.stream.writeln("ERROR")
+            self.stream.flush()
         elif self.dots:
             self.stream.write('E')
             self.stream.flush()
@@ -75,6 +77,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addFailure(test, err)
         if self.showAll:
             self.stream.writeln("FAIL")
+            self.stream.flush()
         elif self.dots:
             self.stream.write('F')
             self.stream.flush()
@@ -83,6 +86,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addSkip(test, reason)
         if self.showAll:
             self.stream.writeln("skipped {0!r}".format(reason))
+            self.stream.flush()
         elif self.dots:
             self.stream.write("s")
             self.stream.flush()
@@ -91,6 +95,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addExpectedFailure(test, err)
         if self.showAll:
             self.stream.writeln("expected failure")
+            self.stream.flush()
         elif self.dots:
             self.stream.write("x")
             self.stream.flush()
@@ -99,6 +104,7 @@ class TextTestResult(result.TestResult):
         super(TextTestResult, self).addUnexpectedSuccess(test)
         if self.showAll:
             self.stream.writeln("unexpected success")
+            self.stream.flush()
         elif self.dots:
             self.stream.write("u")
             self.stream.flush()
@@ -106,6 +112,7 @@ class TextTestResult(result.TestResult):
     def printErrors(self):
         if self.dots or self.showAll:
             self.stream.writeln()
+            self.stream.flush()
         self.printErrorList('ERROR', self.errors)
         self.printErrorList('FAIL', self.failures)
 
@@ -115,6 +122,7 @@ class TextTestResult(result.TestResult):
             self.stream.writeln("%s: %s" % (flavour,self.getDescription(test)))
             self.stream.writeln(self.separator2)
             self.stream.writeln("%s" % err)
+            self.stream.flush()
 
 
 class TextTestRunner(object):
@@ -126,7 +134,13 @@ class TextTestRunner(object):
     resultclass = TextTestResult
 
     def __init__(self, stream=None, descriptions=True, verbosity=1,
-                 failfast=False, buffer=False, resultclass=None, warnings=None):
+                 failfast=False, buffer=False, resultclass=None, warnings=None,
+                 *, tb_locals=False):
+        """Construct a TextTestRunner.
+
+        Subclasses should accept **kwargs to ensure compatibility as the
+        interface changes.
+        """
         if stream is None:
             stream = sys.stderr
         self.stream = _WritelnDecorator(stream)
@@ -134,6 +148,7 @@ class TextTestRunner(object):
         self.verbosity = verbosity
         self.failfast = failfast
         self.buffer = buffer
+        self.tb_locals = tb_locals
         self.warnings = warnings
         if resultclass is not None:
             self.resultclass = resultclass
@@ -147,6 +162,7 @@ class TextTestRunner(object):
         registerResult(result)
         result.failfast = self.failfast
         result.buffer = self.buffer
+        result.tb_locals = self.tb_locals
         with warnings.catch_warnings():
             if self.warnings:
                 # if self.warnings is set, use it to filter all the warnings
@@ -159,8 +175,8 @@ class TextTestRunner(object):
                 if self.warnings in ['default', 'always']:
                     warnings.filterwarnings('module',
                             category=DeprecationWarning,
-                            message='Please use assert\w+ instead.')
-            startTime = time.time()
+                            message=r'Please use assert\w+ instead.')
+            startTime = time.perf_counter()
             startTestRun = getattr(result, 'startTestRun', None)
             if startTestRun is not None:
                 startTestRun()
@@ -170,7 +186,7 @@ class TextTestRunner(object):
                 stopTestRun = getattr(result, 'stopTestRun', None)
                 if stopTestRun is not None:
                     stopTestRun()
-            stopTime = time.time()
+            stopTime = time.perf_counter()
         timeTaken = stopTime - startTime
         result.printErrors()
         if hasattr(result, 'separator2'):
@@ -210,4 +226,5 @@ class TextTestRunner(object):
             self.stream.writeln(" (%s)" % (", ".join(infos),))
         else:
             self.stream.write("\n")
+        self.stream.flush()
         return result
